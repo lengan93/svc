@@ -8,6 +8,7 @@
 
 	#include "Node.h"
 	#include "SharedMutex.h"
+	#include "utils-functions.h"
 
 	using namespace std;
 	
@@ -49,9 +50,9 @@
 				this->first = NULL;
 				this->last = NULL;
 				this->count = 0;
-				countMutex = new shared_mutex();
-				firstMutex = new shared_mutex();
-				lastMutex = new shared_mutex();
+				countMutex = new SharedMutex();
+				firstMutex = new SharedMutex();
+				lastMutex = new SharedMutex();
 				waitDataThreads = new Queue<pthread_t>();								
 			}
 		

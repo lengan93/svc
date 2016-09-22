@@ -2,6 +2,7 @@
 #define __TOM_QUEUE__
 	
 	#include "Node.h"
+	#include <cstddef>
 
 	template <class T>
 	class Queue{

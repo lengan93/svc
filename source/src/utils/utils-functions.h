@@ -1,8 +1,14 @@
 #ifndef __TOM_UTILS_FUNCTIONS__
 #define __TOM_UTILS_FUNCTIONS__
 
-	#include <csginal>
+	#include <csignal>
 	#include <sys/time.h>
+	#include <cstdint>
+	#include <cstdlib>
+	#include <cstdio>
+	#include <thread>
+	
+	#define sigev_notify_thread_id _sigev_un._tid
 	
 	//--	print a buffer in HEX
 	void printBuffer(const uint8_t* data, size_t len){

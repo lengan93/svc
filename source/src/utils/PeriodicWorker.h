@@ -46,7 +46,7 @@
 		
 		struct sigevent evt;
 		evt.sigev_notify = SIGEV_SIGNAL;
-		evt.sigev_signo = SVC_PERIODIC_SIGNAL;
+		evt.sigev_signo = PERIODIC_SIGNAL;
 		evt.sigev_notify_thread_id = pthread_self();
 		timer_create(CLOCK_REALTIME, &evt, &pw->timer);
 
