@@ -1,8 +1,9 @@
 #ifndef __TOM_QUEUE__
 #define __TOM_QUEUE__
+	
+	#include "Node.h"
 
 	template <class T>
-
 	class Queue{
 		private:
 			Node<T>* first;

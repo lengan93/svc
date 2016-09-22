@@ -1,8 +1,7 @@
 #ifndef __TOM_SHARED_MUTEX__
 #define __TOM_SHARED_MUTEX__
 
-	#include "Queue.h"
-	#include "Node.h"	
+	#include "Queue.h"	
 	#include <mutex>
 	#include <csignal>
 
@@ -10,8 +9,7 @@
 	
 	#define SHARED_MUTEX_SIGNAL SIGUSR1
 
-	class SharedMutex{	
-	
+	class SharedMutex{		
 		private:		
 			int readerPresence;	
 			int writerPresence;						
