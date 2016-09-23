@@ -20,12 +20,17 @@ SendFileAppServer::SendFileAppServer(){
 	SVCEndPoint* endPoint;
 		
 	printf("Listening for incoming connection...");
-	endPoint = svcInstance->listenConnection();
-	if (endPoint!=NULL){
-		printf("\nclient connected");		
+	try{
+		endPoint = svcInstance->listenConnection();
+		if (endPoint!=NULL){
+			printf("\nclient connected");		
+		}
+		else{
+			printf("\nConnection attempt failed");
+		}
 	}
-	else{
-		printf("\nConnection attempt failed");
+	catch (Exception ex){
+		printf("\nSignal interrupted");
 	}
 }
 

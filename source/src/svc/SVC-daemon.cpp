@@ -247,7 +247,7 @@ void* DaemonEndPoint::processingOutgoingMessage(void* args){
 						message->len -= ((2 + 4)*1);
 						message->data[ENDPOINTID_LENGTH + 2]--;
 						//--	add version info
-						message->data[ENDPOINTID_LENGTH] = message->data[ENDPOINTID_LENGTH] | SVC_VERSION<<6;
+						message->data[ENDPOINTID_LENGTH] = message->data[ENDPOINTID_LENGTH] | SVC_VERSION<<4;
 						
 						//--	TODO:	add key exchange step 1
 						_this->outQueue->enqueue(message);
@@ -606,7 +606,7 @@ void* htpReadingLoop(void* args){
 				if (infoByte & SVC_COMMAND_FRAME){				
 					enum SVCCommand cmd = (enum SVCCommand)htpReceiveBuffer[SESSIONID_LENGTH + ENDPOINTID_LENGTH + 1];
 					if (cmd == SVC_CMD_CONNECT_STEP1){
-						if ((infoByte & 0xC0)>>6 == SVC_VERSION){
+						if ((infoByte & 0x30)>>4 == SVC_VERSION){
 							extractParams(htpReceiveBuffer + SESSIONID_LENGTH + ENDPOINTID_LENGTH + 2, &params);
 							//--	check if we have service for this sessionID
 							if (sessionID!=SVC_DEFAULT_SESSIONID){
