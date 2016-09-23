@@ -356,15 +356,19 @@ SVCEndPoint* SVC::listenConnection(){
 			}
 		}
 	}
-	else{
-		//--	dequeueWait == NULL means it is interrupted by SIGINT
-		throw SVC_ERROR_SIGNAL_INTERRUPTED;
-	}
+	
 	if (rs == NULL){
 		delete sigNot;
 		removeEndPointByID(endPoint->endPointID);
 	}
-	return rs;
+	
+	if (message==NULL){
+		//--	dequeueWait interrupted by SIGINT
+		throw SVC_ERROR_SIGNAL_INTERRUPTED;
+	}
+	else{
+		return rs;
+	}
 }
 
 
