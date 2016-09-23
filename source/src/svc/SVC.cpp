@@ -32,26 +32,23 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	}
 	
 	//--	connect to daemon's endpoint
+	memset(&this->daemonSocketAddress, 0, sizeof(this->daemonSocketAddress));
+	this->daemonSocketAddress.sun_family = AF_LOCAL;
 	memcpy(this->daemonSocketAddress.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
 	connect(this->svcSocket, (struct sockaddr*) &this->daemonSocketAddress, sizeof(this->daemonSocketAddress));
-	
 	
 	//--	init variables
 	this->connectionRequest = new MutexedQueue<Message*>();
 	this->endPointsMutex = new SharedMutex();
 	
-	/*	BLOCKING SIGNAL
+	//--	BLOCK ALL KIND OF SIGNAL 
 	sigset_t sig;
 	sigfillset(&sig);
-	sigaddset(&sig, SIGUSR2);
-	sigaddset(&sig, SIGUSR1);
-	
 	
 	if (pthread_sigmask(SIG_BLOCK, &sig, NULL)!=0){
 		errorString = SVC_ERROR_CRITICAL;
 		goto errorInit;
-	}
-	*/
+	}	
 	
 	//--	create reading thread
 	this->working = true;
@@ -416,9 +413,9 @@ void SVCEndPoint::sendCommand(enum SVCCommand cmd, vector<Message*>* params){
 	}
 	
 	//--	SEND	--//
-	send(this->svc->svcSocket, buffer, bufferLength, 0);
-	//printf("\nendpoint send: ");
-	//printBuffer(buffer, bufferLength);
+	int rs = send(this->svc->svcSocket, buffer, bufferLength, 0);
+	printf("\nendpoint send: %d %d \\", rs, errno);	
+	printBuffer(buffer, bufferLength);
 	//--	free params
 	clearParams(params);
 }
