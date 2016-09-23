@@ -11,7 +11,7 @@
 	#define sigev_notify_thread_id _sigev_un._tid
 	
 	//--	print a buffer in HEX
-	void printBuffer(const uint8_t* data, size_t len){
+	static inline void printBuffer(const uint8_t* data, size_t len){
 		for (int i=0;i<len;i++){
 			printf("%02x ", data[i]);
 		}
@@ -20,7 +20,7 @@
 
 	//--	block and wait for the presence of a signal
 	//--	return FALSE if the waiting is interrupted by a SIGINT
-	bool waitSignal(int waitingSignal){
+	static inline bool waitSignal(int waitingSignal){
 		sigset_t sig;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
@@ -33,7 +33,7 @@
 
 	//--	timeoutSignal and waitingSignal must be differrent, otherwise the behavior is undefined
 	//--	return TRUE if caught signal is correct, otherwise return FALSE
-	bool waitSignal(int waitingSignal, int timeoutSignal, int timeout){
+	static inline bool waitSignal(int waitingSignal, int timeoutSignal, int timeout){
 		sigset_t sig;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
