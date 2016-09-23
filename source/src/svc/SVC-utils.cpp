@@ -4,22 +4,22 @@
 //--	SIGNAL NOTIFICATOR class
 
 SignalNotificator::SignalNotificator(){
-	/*	need to init this array to NULL, otherwise left memory will cause addNotificator to throw exception	*/
+	//--	need to init this array to NULL, otherwise left memory will cause addNotificator to throw exception
 	for (uint8_t cmd = 0; cmd<_SVC_CMD_COUNT; cmd++){
 		this->notificationArray[cmd] = NULL;
 	}			
 }
 
-void SignalNotificator::waitCommandHandler(const uint8_t* buffer, size_t datalen, void* args){
+void SignalNotificator::waitCommandHandler(const Message* message, void* args){
 	struct SVCDataReceiveNotificator* notificator = (struct SVCDataReceiveNotificator*)args;	
-	vector<SVCCommandParam*>* params = (vector<SVCCommandParam*>*)notificator->args;
+	vector<Message*>* params = (vector<Message*>*)notificator->args;
 
-	extractParams(buffer + ENDPOINTID_LENGTH + 2, params);
-	//signal the thread calling waitCommand
+	extractParams(message->data + ENDPOINTID_LENGTH + 2, params);
+	//--	signal the thread calling waitCommand
 	pthread_kill(notificator->thread, SVC_ACQUIRED_SIGNAL);
 }
 
-bool SignalNotificator::waitCommand(enum SVCCommand cmd, vector<SVCCommandParam*>* params, int timeout){
+bool SignalNotificator::waitCommand(enum SVCCommand cmd, vector<Message*>* params, int timeout){
 	//--	create new notificator
 	clearParams(params);
 	struct SVCDataReceiveNotificator* notificator = new struct SVCDataReceiveNotificator();
@@ -71,10 +71,7 @@ SVCDataReceiveNotificator* SignalNotificator::getNotificator(enum SVCCommand cmd
 	return rs;
 }
 
-
-
 //--	UTILS FUNCTION IMPLEMEMTATION	--//
-
 bool isEncryptedCommand(enum SVCCommand command){
 	return (command != SVC_CMD_CHECK_ALIVE 
 			&& command != SVC_CMD_CHECK_ALIVE
@@ -83,7 +80,7 @@ bool isEncryptedCommand(enum SVCCommand command){
 			&& command != SVC_CMD_CONNECT_STEP3);
 }
 
-void extractParams(const uint8_t* buffer, vector<SVCCommandParam*>* params){
+void extractParams(const uint8_t* buffer, vector<Message*>* params){
 	
 	int argc = buffer[0];
 	int pointer = 1;
@@ -91,12 +88,12 @@ void extractParams(const uint8_t* buffer, vector<SVCCommandParam*>* params){
 	
 	for (int i=0; i<argc; i++){		
 		len = *((uint16_t*)(buffer+pointer));
-		params->push_back(new SVCCommandParam(len, buffer + pointer + 2));
+		params->push_back(new Message(buffer + pointer + 2, len));
 		pointer += len+2;
 	}
 }
 
-void clearParams(vector<SVCCommandParam*>* params){
+void clearParams(vector<Message*>* params){
 	for (int i=0; i<params->size(); i++){
 		delete (*params)[i];
 	}

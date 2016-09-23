@@ -8,7 +8,7 @@
 //--	SVC IMPLEMENTATION	//
 SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	
-	char* errorString;	
+	const char* errorString;	
 	
 	//--	copy param
 	this->authenticator = authenticator;
@@ -104,13 +104,17 @@ SVCEndPoint* SVC::getEndPointByID(uint64_t endPointID){
 
 void SVC::removeEndPointByID(uint64_t endPointID){
 	this->endPointsMutex->lock();
-	for (int i = this->endPoints.begin(); it<this->endPoints.end(); i++){
+	for (int i = 0; i<this->endPoints.size(); i++){
 		SVCEndPoint* endPoint = this->endPoints[i];
 		if (endPoint!=NULL){
-			this->endPoints.erase(this->endPoints.begin() + i);
-			delete endPoint;
-			break;
+			if (endPoint->endPointID == endPointID){
+				this->endPoints.erase(this->endPoints.begin() + i);
+				delete endPoint;
+				break;
+			}
+			//--	ID not matched
 		}
+		//--	NULL reference
 	}
 	this->endPointsMutex->unlock();
 }
@@ -162,7 +166,7 @@ void* SVC::processPacket(void* args){
 					//--	notify the corresponding endPoint
 					SVCDataReceiveNotificator* notificator = endPoint->signalNotificator->getNotificator(cmd);
 					if (notificator!=NULL){
-						notificator->handler(buffer, byteRead, notificator);
+						notificator->handler(new Message(buffer, byteRead), notificator);
 						endPoint->signalNotificator->removeNotificator(cmd);
 					}
 					//--	discard. the endpoint is not waiting for this
@@ -197,7 +201,7 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 	srand(time(NULL));
 	uint64_t endPointID = (uint64_t)hasher(to_string(rand()));	
 	endPoint = new SVCEndPoint(this, sigNot);
-	endPoint->setEndPointID(endPointID);
+	endPoint->endPointID=endPointID;
 	
 	endPointsMutex->lock();
 	endPoints.push_back(endPoint);
@@ -215,9 +219,9 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 	uint32_t serverAddress  = remoteHost->getHostAddress();
 	
 	clearParams(&params);
-	params.push_back(new Message((uint8_t*)challengeSent.c_str()), challengeSent.size());
-	params.push_back(new Message((uint8_t*) &this->hashAppID), 4);
-	params.push_back(new Message((uint8_t*) &serverAddress), 4);
+	params.push_back(new Message((uint8_t*)challengeSent.c_str(), challengeSent.size()));
+	params.push_back(new Message((uint8_t*) &this->hashAppID, 4));
+	params.push_back(new Message((uint8_t*) &serverAddress, 4));
 	endPoint->sendCommand(SVC_CMD_CONNECT_STEP1, &params);
 	
 	printf("\nSVC_CMD_CONNECT_STEP1 sent");
@@ -257,8 +261,8 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 				clearParams(&params);
 				identity = this->authenticator->getIdentity();
 				proof = this->authenticator->generateProof(challengeReceived);
-				params.push_back(new Message(identity.size(), (uint8_t*)identity.c_str()));
-				params.push_back(new Message(proof.size(), (uint8_t*)proof.c_str()));
+				params.push_back(new Message((uint8_t*)identity.c_str(), identity.size()));
+				params.push_back(new Message((uint8_t*)proof.c_str(), proof.size()));
 				endPoint->sendCommand(SVC_CMD_CONNECT_STEP4, &params);
 				printf("\nsend CONNECT_STEP4 with client's identity: %s\nproof: %s", identity.c_str(), proof.c_str());
 				rs = endPoint;
@@ -276,7 +280,7 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 	*/
 	if (rs == NULL){
 		delete sigNot;
-		delete endPoint;
+		removeEndPointByID(endPoint->endPointID);
 	}
 	return rs;
 }
@@ -326,9 +330,9 @@ SVCEndPoint* SVC::listenConnection(){
 		printf("\nchallenge received: %s\n", challengeReceived.c_str());
 		//--	send response
 		clearParams(&params);
-		params.push_back(new Message(identity.size(), (uint8_t*)identity.c_str()));
-		params.push_back(new Message(proof.size(), (uint8_t*)proof.c_str()));
-		params.push_back(new Message(challengeSent.size(), (uint8_t*)challengeSent.c_str()));
+		params.push_back(new Message((uint8_t*)identity.c_str(), identity.size()));
+		params.push_back(new Message((uint8_t*)proof.c_str(), proof.size()));
+		params.push_back(new Message((uint8_t*)challengeSent.c_str(), challengeSent.size()));
 		endPoint->sendCommand(SVC_CMD_CONNECT_STEP2, &params);
 		printf("\nsend CONNECT_STEP2 with:\nidentity:%s\nproof:%s\nchallenge:%s", identity.c_str(), proof.c_str(), challengeSent.c_str());
 		
@@ -350,7 +354,7 @@ SVCEndPoint* SVC::listenConnection(){
 				printf("client's identity verified!\n");
 				//--	tell the daemon endpoint
 				clearParams(&params);
-				endPoint->sendCommand(SVC_CMD_CONNECT_CLIENT_VERIFIED, &params);
+				endPoint->sendCommand(SVC_CMD_CONNECT_OK, &params);
 				rs = endPoint;
 			}
 		}
@@ -361,7 +365,7 @@ SVCEndPoint* SVC::listenConnection(){
 	}
 	if (rs == NULL){
 		delete sigNot;
-		delete endPoint;
+		removeEndPointByID(endPoint->endPointID);
 	}
 	return rs;
 }
@@ -369,25 +373,11 @@ SVCEndPoint* SVC::listenConnection(){
 
 //--	SVCENDPOINT class	//
 
-
-
 SVCEndPoint::SVCEndPoint(SVC* svc, SignalNotificator* sigNot){
 	this->svc = svc;
 	this->signalNotificator = sigNot;
 	this->dataQueue = new MutexedQueue<Message*>();
 };
-
-void SVCEndPoint::setEndPointID(uint64_t endPointID){
-	this->endPointID = endPointID;
-	//--	create new un socket to write to
-	/*this->endPointSocket = sock(AF_LOCAL, SOCK_DGRAM, 0);
-
-	memset(&this->daemonSocketAddress, 0, sizeof(this->daemonSocketAddress));
-	this->daemonSocketAddress.sun_family = AF_LOCAL;
-	memcpy(this->daemonSocketAddress.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
-	this->svcDaemonSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	connect(this->svcDaemonSocket, (struct sockaddr*) &this->daemonSocketAddress, sizeof(this->daemonSocketAddress));*/
-}
 
 void SVCEndPoint::sendCommand(enum SVCCommand cmd, vector<Message*>* params){				
 
@@ -426,9 +416,9 @@ void SVCEndPoint::sendCommand(enum SVCCommand cmd, vector<Message*>* params){
 	}
 	
 	//--	SEND	--//
-	send(this->svc->svcDaemonSocket, buffer, bufferLength, 0);
-	printf("\nendpoint send: ");
-	printBuffer(buffer, bufferLength);
+	send(this->svc->svcSocket, buffer, bufferLength, 0);
+	//printf("\nendpoint send: ");
+	//printBuffer(buffer, bufferLength);
 	//--	free params
 	clearParams(params);
 }

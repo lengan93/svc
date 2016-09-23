@@ -1,11 +1,20 @@
 #ifndef __SVC_DAEMON_HEADER__
 #define __SVC_DAEMON_HEADER__
 
-	#include "../utils/MutexedQueue.h"
+	#define SVC_VERSION 0x01
+	/*
+	 * SVC DAEMON IMPLEMENTATION
+	 * THE VERSION MUST BE CHANGED APPROPRIATELY	 
+	 * */
+	
 
+	#include "../utils/MutexedQueue.h"
+	#include "../utils/PeriodicWorker.h"
+	#include "SVC-utils.h"
+	#include "SVC-header.h"
+	
 	#include <string>
 	#include <iostream>
-	#include <unordered_map>
 	#include <unistd.h>
 	#include <cstdlib>
 	#include <csignal>
@@ -18,15 +27,14 @@
 	#include <sys/types.h>
 	#include <netinet/in.h>
 
-	#define SVC_VERSION 0x01
-
 	using namespace std;
-
+	
+	//--	forward class declaration
 	class DaemonEndPoint;
 	class DaemonService;
 
-	static unordered_map<uint64_t, DaemonService*> serviceTable;
-	static shared_mutex* serviceTableMutex;
+	static vector<DaemonService*> serviceTable;
+	static SharedMutex* serviceTableMutex;
 	static hash<string> hasher;
 
 	struct sockaddr_un daemonSockUnAddress;
@@ -47,28 +55,23 @@
 	class DaemonService{
 	
 		friend class DaemonEndPoint;
-	
-		bool isConnected;
-		bool working;
-	
-		struct sockaddr_in sockAddr;
-		socklen_t sockLen;
-		PeriodicWorker* threadCheckAlive;
-
-		//--	CRYPTO VARIABLES	--//
-		static void checkAliveEndPoint(void* args);
-		void sendData(const uint8_t* buffer, size_t bufferLen);	
-		bool encryptMessage(const uint8_t* plainMessage, size_t plainLen, uint8_t* encryptedMessage, size_t* encryptedLen);		
-		bool decryptMessage(const uint8_t* encryptedMessage, size_t encryptedLen, uint8_t* plainMessage, size_t* plainLen);
-	
-		void sendData(const uint8_t* buffer, size_t bufferLen);
+		private:
+			bool isConnected;
+			volatile bool working;
 		
-		static void checkEndPointAlive(void* args);
+			struct sockaddr_in sockAddr;
+			socklen_t sockLen;
+			PeriodicWorker* threadCheckAlive;
+
+			//--	CRYPTO VARIABLES	--//
+			static void checkAliveEndPoint(void* args);
+			void sendData(const uint8_t* buffer, size_t bufferLen);	
+			bool encryptMessage(const uint8_t* plainMessage, size_t plainLen, uint8_t* encryptedMessage, size_t* encryptedLen);		
+			bool decryptMessage(const uint8_t* encryptedMessage, size_t encryptedLen, uint8_t* plainMessage, size_t* plainLen);		
 	
 		public:
-	
-			unordered_map<uint64_t, DaemonEndPoint*> endPoints;
-			shared_mutex* endPointsMutex;
+			vector<DaemonEndPoint*> endPoints;
+			SharedMutex* endPointsMutex;
 			uint32_t sessionID;
 			uint32_t address;
 		
@@ -77,9 +80,9 @@
 		
 			bool isWorking();		
 			void stopWorking();
-		
 			void removeDaemonEndPoint(uint64_t endPointID);
 			DaemonEndPoint* addDaemonEndPoint(uint64_t endPointID, uint32_t appID);
+			DaemonEndPoint* getDaemonEndPoint(uint64_t endPointID);
 	};
 
 	class DaemonEndPoint{
@@ -93,13 +96,11 @@
 			pthread_t processOutgoingThread;
 			pthread_t sendInThread;
 			pthread_t sendOutThread;
-			bool working;
+			volatile bool working;
 			
 			int liveTime;
 			bool isAuthenticated;			
-			uint64_t endPointID;
-			uint32_t appID;	
-	
+					
 			struct sockaddr_un unSockAddr;
 			int unSock;
 			
@@ -112,16 +113,14 @@
 			
 			void sendCheckAlive();		
 
-		public:	
-
+		public:
+			uint64_t endPointID;
+			uint32_t appID;
 			MutexedQueue<Message*>* incomingQueue;
 			MutexedQueue<Message*>* outgoingQueue;
 			MutexedQueue<Message*>* inQueue;
 			MutexedQueue<Message*>* outQueue;
 			
-			uint64_t endPointID;
-			uint32_t appID;	
-		
 			DaemonEndPoint(DaemonService* daemonService, uint64_t endPointID, uint32_t appID);
 			~DaemonEndPoint();
 		

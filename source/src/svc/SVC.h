@@ -3,11 +3,13 @@
 #ifndef __SVC__
 #define __SVC__
 
+	#include "../utils/Message.h"
 	#include "../utils/MutexedQueue.h"
-	#include "authenticator/SVCAuthenticator.h"
+	#include "SVC-header.h"
+	#include "SVC-utils.h"
 	#include "host/SVCHost.h"
-	#include "SVCApp.h"
-
+	#include "authenticator/SVCAuthenticator.h"
+	
 	#include <unistd.h>	//--	for unlink
 	#include <sys/un.h>
 
@@ -20,17 +22,17 @@
 	
 	class SVCEndPoint{			
 		friend class SVC;			
-		private:			
+		private:
+			SVC* svc;		
 			struct sockaddr_un endPointSocketAddress;
-			int endPointSocket;			
-			MutexedQueue<Message*>* dataQueue;			
-			SVC* svc;
+			int endPointSocket;
 			uint64_t endPointID;
-			SignalNotificator* signalNotificator;
 			
-			SVCEndPoint(SVC* svc);
-			void sendCommand(enum SVCCommand cmd, vector<SVCCommandParam*>* params);
-			void setEndPointID(uint64_t endPointID);
+			MutexedQueue<Message*>* dataQueue;					
+			SignalNotificator* signalNotificator;
+						
+			SVCEndPoint(SVC* svc, SignalNotificator* sigNot);
+			void sendCommand(enum SVCCommand cmd, vector<Message*>* params);
 			
 		public:
 			~SVCEndPoint();						
@@ -58,7 +60,7 @@
 			static void* processPacket(void* args);	
 			
 			SVCEndPoint* getEndPointByID(uint64_t endPointID);
-			void SVC::removeEndPointByID(uint64_t endPointID)
+			void removeEndPointByID(uint64_t endPointID);
 							
 			void destruct();
 			

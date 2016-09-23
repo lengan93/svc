@@ -21,7 +21,7 @@ void DaemonService::sendData(const uint8_t* buffer, size_t bufferLen){
 DaemonService::DaemonService(const struct sockaddr_in* sockaddr, socklen_t sockLen){
 	this->isConnected = false;
 	this->sessionID = SVC_DEFAULT_SESSIONID;
-	this->endPointsMutex = new shared_mutex();
+	this->endPointsMutex = new SharedMutex();
 	this->address = 0x00000000;
 	
 	//--	create socket to sendout data
@@ -31,12 +31,12 @@ DaemonService::DaemonService(const struct sockaddr_in* sockaddr, socklen_t sockL
 	this->working = true;
 	
 	//--	create periodic worker
-	threadCheckAlive = new PeriodicWorker(1000, checkEndPointAlive, this);
+	//threadCheckAlive = new PeriodicWorker(1000, checkEndPointAlive, this);
 
 	printf("service started with address: ");
 	printBuffer((uint8_t*) &this->sockAddr, sockLen);
 }
-
+/*
 void DaemonService::checkEndPointAlive(void* args){
 	//printf("\nchecking endpoint alive");
 	DaemonService* _this = (DaemonService*)args;
@@ -56,9 +56,8 @@ void DaemonService::checkEndPointAlive(void* args){
 		}
 	}
 	_this->endPointsMutex->unlock();
-	
 }
-		
+*/
 bool DaemonService::isWorking(){
 	return working;
 }
@@ -66,34 +65,48 @@ bool DaemonService::isWorking(){
 void DaemonService::stopWorking(){
 	this->isConnected = false;
 	this->working = false;
-	this->periodicWorker->stopWorking();
+	//this->periodicWorker->stopWorking();
 	//--	stop all remaining endpoint
 	this->endPointsMutex->lock();			
-	for (DaemonEndPoint* endPoint : this->endPoints){
+	for (int i=0;i<this->endPoints.size(); i++){
+		DaemonEndPoint* endPoint = this->endPoints[i];
 		if (endPoint!=NULL){
 			endPoint->stopWorking();
-			this->endPoints[endPointID] = NULL;
+			this->endPoints.erase(this->endPoints.begin()+i);
 			delete endPoint;
 		}
 	}
 	this->endPointsMutex->unlock();
 	
 	//--	stop the alive checker
-	threadCheckAlive->stopWorking();
+	//threadCheckAlive->stopWorking();
 	
 	//--	remove all references to current service
 	serviceTableMutex->lock();
-	for (auto& it : this->endPoints){
-		uint64_t endPointID = it.first;
-		serviceTable[endPointID] = NULL;
-	}
+	serviceTable.clear();
 	serviceTableMutex->unlock();
 }
 
 DaemonService::~DaemonService(){
 	//--	TODO:	remove crypto variables
+	if (this->working){
+		stopWorking();
+	}
 	delete this->endPointsMutex;
 	delete this->threadCheckAlive;
+}
+
+DaemonEndPoint* DaemonService::getDaemonEndPoint(uint64_t endPointID){
+	this->endPointsMutex->lock_shared();
+	for(int i=0; i<this->endPoints.size(); i++){
+		if (this->endPoints[i]!=NULL){
+			if (this->endPoints[i]->endPointID == endPointID){
+				this->endPointsMutex->unlock_shared();
+				return this->endPoints[i];
+			}
+		}
+	}
+	this->endPointsMutex->unlock_shared();
 }
 
 void DaemonService::removeDaemonEndPoint(uint64_t endPointID){
@@ -271,7 +284,7 @@ void* DaemonEndPoint::processingOutgoingMessage(void* args){
 						_this->outQueue->enqueue(message);
 						_this->outgoingQueue->dequeue();
 						
-					case SVC_CMD_CONNECT_CLIENT_VERIFIED:
+					case SVC_CMD_CONNECT_OK:
 						_this->isAuthenticated = true;		
 						delete _this->outgoingQueue->dequeue();
 						
@@ -287,6 +300,7 @@ void* DaemonEndPoint::processingOutgoingMessage(void* args){
 	}
 }
 
+/*
 void DaemonEndPoint::sendCheckAlive(){
 	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	memcpy(buffer, (uint8_t*) &this->endPointID, ENDPOINTID_LENGTH);
@@ -297,6 +311,7 @@ void DaemonEndPoint::sendCheckAlive(){
 	buffer[ENDPOINTID_LENGTH + 2] = 0;
 	this->inQueue->enqueue(new Message(buffer, ENDPOINTID_LENGTH + 3));
 }
+*/
 
 void* DaemonEndPoint::sendPacketToApp(void* args){
 	DaemonEndPoint* _this = (DaemonEndPoint*)args;
@@ -487,7 +502,7 @@ void signal_handler(int sig){
 void* unixReadingLoop(void* args){
 	
 	int byteRead;
-	vector<SVCCommandParam*> params;
+	vector<Message*> params;
 
 	while (working){	
 		do{
@@ -565,7 +580,7 @@ void* htpReadingLoop(void* args){
 	int byteRead;
 	struct sockaddr_in sockAddr;
 	socklen_t sockLen = sizeof(sockAddr);
-	vector<SVCCommandParam*> params;
+	vector<Message*> params;
 
 	while (working){	
 		do{
@@ -639,7 +654,7 @@ int main(int argc, char** argv){
 
 	htpReceiveBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	unixReceiveBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	serviceTableMutex = new shared_mutex();
+	serviceTableMutex = new SharedMutex();
 	
 	//--	check if the daemon is already existed
 	int rs = unlink(SVC_DAEMON_PATH.c_str());
@@ -648,11 +663,10 @@ int main(int argc, char** argv){
 		goto errorInit;
 	}
 
-	//--	create a daemon server unix socket
+	//--	create a daemon server unix socket and bind
 	memset(&daemonSockUnAddress, 0, sizeof(daemonSockUnAddress));
 	daemonSockUnAddress.sun_family = AF_LOCAL;
 	memcpy(daemonSockUnAddress.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());		
-	//--	bind the socket
 	daemonUnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);	
 	if (bind(daemonUnSocket, (struct sockaddr*) &daemonSockUnAddress, sizeof(daemonSockUnAddress)) == -1) {		
 		errorString = SVC_ERROR_BINDING;
@@ -660,12 +674,11 @@ int main(int argc, char** argv){
     }
     
     //--TODO:	TO BE CHANGED TO HTP
-    //--	create htp socket
+    //--	create htp socket and bind to localhost
     memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
     daemonSockInAddress.sin_family = AF_INET;
     daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
-	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);
-    //--	bind this socket to localhost
+	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);   
     daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
     if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){
     	errorString = SVC_ERROR_BINDING;
@@ -673,21 +686,22 @@ int main(int argc, char** argv){
     }
     
     //--	set thread signal mask, block all kind of signals
-    sigset_t sigset;
+   /* sigset_t sigset;
     sigemptyset(&sigset);
 	sigaddset(&sigset, SVC_ACQUIRED_SIGNAL);
 	sigaddset(&sigset, SVC_SHARED_MUTEX_SIGNAL);
 	sigaddset(&sigset, SVC_PERIODIC_SIGNAL);
 	sigaddset(&sigset, SVC_TIMEOUT_SIGNAL);
     pthread_sigmask(SIG_BLOCK, &sigset, NULL);
+    */
     
-    //--	handle signals
+    //--	handle SIGINT
 	struct sigaction act;
 	act.sa_handler = signal_handler;
 	sigfillset(&act.sa_mask);
 	sigdelset(&act.sa_mask, SIGINT);
 	sigaction(SIGINT, &act, NULL);
-
+	
     //--	create a thread to read from unix domain socket
     working = true;
     pthread_attr_init(&unixReadingThreadAttr);
@@ -710,9 +724,8 @@ int main(int argc, char** argv){
     	printf("\nSVC daemon is running...");
     	pthread_join(unixReadingThread, NULL);   
     	pthread_join(htpReadingThread, NULL);
-    	    	   
     	
-    	//--	DO CLEANING UP BEFORE EXIT	--//    	
+    	//--	DO CLEANING UP BEFORE EXIT	--//
     	//--	remove all DaemonService instances	
 		for (DaemonService* service : serviceTable){
 			if (service!=NULL){
