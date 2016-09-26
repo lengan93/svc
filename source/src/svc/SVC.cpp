@@ -4,8 +4,7 @@
 #include <iostream>
 #include <errno.h>
 
-
-//--	SVC IMPLEMENTATION	//
+//--	SVC IMPLEMENTATION	--//
 SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	
 	const char* errorString;	
@@ -41,7 +40,7 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	this->connectionRequest = new MutexedQueue<Message*>();
 	this->endPointsMutex = new SharedMutex();
 	
-	//--	BLOCK ALL KIND OF SIGNAL 
+	//--	BLOCK ALL KIND OF SIGNAL
 	sigset_t sig;
 	sigfillset(&sig);
 	
@@ -59,7 +58,7 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	goto success;
 	
 	errorInit:
-		//destruct params manually
+		//--	destruct params manually
 		this->destruct();
 		throw errorString;
 		
@@ -187,13 +186,13 @@ void* SVC::processPacket(void* args){
 
 SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 	
+	/*
 	SVCEndPoint* rs = NULL;
 	SVCEndPoint* endPoint;
 	SignalNotificator* sigNot;		
 	vector<Message*> params;
 	
-	sigNot = new SignalNotificator();
-	
+	sigNot = new SignalNotificator();	
 	//--	the endPointID is totally random
 	srand(time(NULL));
 	uint64_t endPointID = (uint64_t)hasher(to_string(rand()));	
@@ -203,32 +202,33 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 	endPointsMutex->lock();
 	endPoints.push_back(endPoint);
 	endPointsMutex->unlock();
-
+	*/
+	
 	//--	authentication variables
-	string identity;
-	string challengeSent;
+	string randomSercret = this->authenticator->generateRandomSecret();
+	string challengeSent = this->authenticator->generateChallenge();
 	string challengeReceived;
 	string proof;
 	
-	//--	send establishing request to the daemon with appropriate params			
-	
-	challengeSent = this->authenticator->generateChallenge();
+	//--	send establishing request to the daemon with appropriate params		
 	uint32_t serverAddress  = remoteHost->getHostAddress();
 	
 	clearParams(&params);
+	params.push_back(new Message((uint8_t*)randomSecret.c_str(), randomSecret.size()));
 	params.push_back(new Message((uint8_t*)challengeSent.c_str(), challengeSent.size()));
 	params.push_back(new Message((uint8_t*) &this->hashAppID, 4));
 	params.push_back(new Message((uint8_t*) &serverAddress, 4));
-	endPoint->sendCommand(SVC_CMD_CONNECT_STEP1, &params);
+	endPoint->sendCommand(SVC_CMD_CONNECT_INNER1, &params);
 	
-	printf("\nSVC_CMD_CONNECT_STEP1 sent");
+	printf("\nSVC_CMD_CONNECT_INNER1 sent");
 	//--	wait for SVC_CMD_CONNECT_STEP2, identity + proof + challenge, respectively. keyexchange is retained at daemon level.
-	if (sigNot->waitCommand(SVC_CMD_CONNECT_STEP2, &params, SVC_DEFAULT_TIMEOUT)){
+	
+	/*if (sigNot->waitCommand(SVC_CMD_CONNECT_STEP2, &params, SVC_DEFAULT_TIMEOUT)){
 		printf("\nSVC_CMD_CONNECT_STEP2 received");
 		//--	get identity, proof, challenge
-		/*for (int i=0; i<=2; i++){
-			printf("params[%d]: ", i);printBuffer(params[i]->data, params[i]->len);
-		}*/
+		//for (int i=0; i<=2; i++){
+		//	printf("params[%d]: ", i);printBuffer(params[i]->data, params[i]->len);
+		
 		char ch[SVC_DEFAULT_BUFSIZ] = "";
 		memcpy(ch, params[0]->data, params[0]->len);
 		identity = string(ch);
@@ -263,23 +263,19 @@ SVCEndPoint* SVC::establishConnection(SVCHost* remoteHost){
 				endPoint->sendCommand(SVC_CMD_CONNECT_STEP4, &params);
 				printf("\nsend CONNECT_STEP4 with client's identity: %s\nproof: %s", identity.c_str(), proof.c_str());
 				rs = endPoint;
-			}
-			/*
-			else: no response from daemon, error occured or timeout
-			*/								
-		}
-		/*
-		else: server identity verification failed, exception
-		*/
+			}		
+			//--	else: no response from daemon, error occured or timeout			
+		}		
+		//--	else: server identity verification failed, exception		
 	}
-	/*
-	else: time out
-	*/
+	//--	else: time out
+	
 	if (rs == NULL){
 		delete sigNot;
 		removeEndPointByID(endPoint->endPointID);
 	}
 	return rs;
+	*/
 }
 
 

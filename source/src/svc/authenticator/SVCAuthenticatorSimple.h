@@ -2,12 +2,19 @@
 #define __SVC_AUTHENTICATOR_PKI__
 
 	#include "SVCAuthenticator.h"
+	
+	#define RANDOM_LENGTH 256
 
-	class SVCAuthenticatorPKI : SVCAuthenticator{
-
+	class SVCAuthenticatorSimple : SVCAuthenticator{
+		
+		static hasher<string> hasher;		
+		
+		private:
+			std::string randomStrGen(int length);		
+	
 		public:
-			SVCAuthenticatorPKI(string caPath, string certpath, string keyPath);
-			virtual ~SVCAuthenticatorPKI();
+			SVCAuthenticatorSimple();
+			virtual ~SVCAuthenticatorSimple();
 			
 			virtual bool verify(std::string randomSecret, std::string challenge, std::string proof);
 			virtual std::string generateRandomSecret();

@@ -21,16 +21,15 @@
 	class SVC;
 	
 	class SVCEndPoint{			
-		friend class SVC;			
-		private:
-			SVC* svc;		
-			struct sockaddr_un endPointSocketAddress;
-			int endPointSocket;
-			uint64_t endPointID;
-			
-			MutexedQueue<Message*>* dataQueue;					
-			SignalNotificator* signalNotificator;
-						
+		friend class SVC;
+		
+		MutexedQueue<Message*>* dataQueue;
+		
+		SVC* svc;			
+		uint64_t endPointID;							
+		SignalNotificator* signalNotificator;	
+		
+		private:						
 			SVCEndPoint(SVC* svc, SignalNotificator* sigNot);
 			void sendCommand(enum SVCCommand cmd, vector<Message*>* params);
 			
@@ -41,27 +40,26 @@
 	};
 	
 	class SVC{
-		friend class SVCEndPoint;		
-		private:			 
-			SVCAuthenticator* authenticator;
-			uint32_t hashAppID;	
-			
-			SharedMutex* endPointsMutex;
-			vector<SVCEndPoint*> endPoints;
-			MutexedQueue<Message*>* connectionRequest;
+		friend class SVCEndPoint;
+		
+		SVCAuthenticator* authenticator;
+		uint32_t hashAppID;
+		
+		SharedMutex* endPointsMutex;
+		vector<SVCEndPoint*> endPoints;
+		MutexedQueue<Message*>* connectionRequest;
 
-			string svcClientPath;
-			struct sockaddr_un daemonSocketAddress;
-			struct sockaddr_un svcSocketAddress;
-			int svcSocket;
-
-			pthread_t readingThread;
-			volatile bool working;
-			static void* processPacket(void* args);	
-			
+		string svcClientPath;
+		struct sockaddr_un daemonSocketAddress;
+		struct sockaddr_un svcSocketAddress;
+		int svcSocket;
+		pthread_t readingThread;
+		volatile bool working;
+		
+		private:			 		
+			static void* processPacket(void* args);				
 			SVCEndPoint* getEndPointByID(uint64_t endPointID);
-			void removeEndPointByID(uint64_t endPointID);
-							
+			void removeEndPointByID(uint64_t endPointID);							
 			void destruct();
 			
 		public:				

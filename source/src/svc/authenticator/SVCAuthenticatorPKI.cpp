@@ -1,25 +1,24 @@
 #include "SVCAuthenticatorPKI.h"
 
+using namespace std;
 
 SVCAuthenticatorPKI::SVCAuthenticatorPKI(string caPath, string certpath, string keyPath){
-
-
 }
 
-
-string SVCAuthenticatorPKI::getIdentity(){
-	
-
+SVCAuthenticatorPKI::~SVCAuthenticatorPKI(){
 }
 
-bool SVCAuthenticatorPKI::verifyIdentity(string identity, string proof){
-
+bool SVCAuthenticatorPKI::verify(std::string randomSecret, std::string challenge, std::string proof){
 }
 
-string SVCAuthenticatorPKI::generateProof(string challenge){
-
-
+string SVCAuthenticatorPKI::generateRandomSecret(){
 }
 
-string SVCAuthenticatorPKI::generateChallenge(){
+string SVCAuthenticatorPKI::generateChallenge(std::string randomSecret){
+}
+
+string SVCAuthenticatorPKI::resolveChallenge(string challenge){
+}
+
+string SVCAuthenticatorPKI::generateProof(std::string solution){
 }
