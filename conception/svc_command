@@ -5,10 +5,12 @@ SVC frame format for daemon
 - 1 byte info
     data/command: 7th bit
     responded from daemon: 6th bit
+    version: 5&4th bit
 	encrypted: 3th bit
 	using tcp: 2th bit	 //used by htp layer
 	priority: 1&0 th bit //used by htp layer
 -------------------------------------------------------
+
 - data packet structure
 	[encrypted]
 	+ data length: 4 byte	
@@ -17,35 +19,25 @@ SVC frame format for daemon
 	
 - command packet structure
 	[encrypted]
-	+ command id: 1 byte		
-		° SVC_CMD_CHECK_ALIVE:	
-		
-		° SVC_CMD_CONNECT_STEP1:
-			- client to daemon1: 3 argument: [(n bytes - challenge), (4 bytes - appID), (4 bytes - address)]
-			- daemon1 to daemon2: 2 argument: [(n bytes - challenge), (4 bytes - appID), (n bytes - STS1)]
-			- daemon2 to server: 1 argument: [(n bytes - challenge)]
-			
-		° SVC_CMD_CONNECT_STEP2:
-			- server to daemon2: 3 argument: [(n bytes - identity), (n bytes - proof), (n bytes - challenge)]
-			- daemon2 to daemon1: 4 argument: [(n bytes - identity), (n bytes - proof), (n bytes - challenge), (n bytes - STS2)]
-			- daemon1 to client: 3 argument: [(n bytes - identity), (n bytes - proof), (n bytes - challenge)]
-			
-		° SVC_CMD_CONNECT_STEP3:
-			- client to daemon1: 2 argument: [(n bytes - identity), (n bytes - proof)]
-			- daemon1 to daemon2: 2 argument: [(n bytes - identity), (n bytes - proof), (n bytes - STS3)]
-			- daemon2 to server: 2 argument: [(n bytes - identity), (n bytes - proof)]
+	+ command id: 1 byte						
+		° SVC_CMD_CONNECT_INNER1:
+		° SVC_CMD_CONNECT_OUTER1:
+		° SVC_CMD_CONNECT_INNER2:
+		° SVC_CMD_CONNECT_INNER3:
+		° SVC_CMD_CONNECT_OUTER2:
+		° SVC_CMD_CONNECT_INNER4:
+		° SVC_CMD_CONNECT_INNER5:
+		° SVC_CMD_CONNECT_INNER6:
+		° SVC_CMD_CONNECT_INNER7:
+		° SVC_CMD_CONNECT_OUTER3:
+		° SVC_CMD_CONNECT_INNER8:
+		° SVC_CMD_CONNECT_INNER9:
 
-		
 	+ number of arguments: 1 byte
 	+ [arguments' lengths in 2 bytes followed by arguments]
 	
 	+ HMAC (if encrypted)
-	
-- session exchange at and after connection:
-	+ SVC_CMD_CONNECT_STEP1, set sessionID = 0 and send appID
-	+ at receiving, find appID and temporarily use the sessionID of the receiver
-	+ repeat until SVC_CMD_CONNECT_STEP3, when we have the common secret
-	+ derive new sessionID from the common secret
-	+ the two daemons use this sessionID to identify futher communication.
+------------------------------------------------------	
+
 	
 	
