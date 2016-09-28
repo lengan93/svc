@@ -10,7 +10,7 @@
 		uint8_t* sharedKey;
 		
 		private:
-			std::string randomStrGen(int length);
+
 	
 		public:
 			SVCAuthenticatorSharedSecret(string secretPath);

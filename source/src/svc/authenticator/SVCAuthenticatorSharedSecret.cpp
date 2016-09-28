@@ -6,16 +6,6 @@
 
 using namespace std;
 
-string SVCAuthenticatorSharedSecret::randomStrGen(int length) {	
-    static string charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
-    string result;
-    result.resize(length);
-    
-    for (int i = 0; i < length; i++)
-        result[i] = charset[rand() % charset.length()];
-    return result;
-}
-
 SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){	
 	//--	load shared secret from file
 	ifstream fileStream;
