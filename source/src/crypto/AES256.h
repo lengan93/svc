@@ -93,8 +93,8 @@
 		
 		public:
 			AES256(const uint8_t* key);
-			size_t encrypt(const std::string& data, std::string& encrypted);
-			size_t decrypt(const std::string& encrypted, std::string& data);
+			void encrypt(const uint8_t* data, size_t dataLen, uint8_t** encrypted, size_t* encryptedLen);
+			bool decrypt(const uint8_t* encrypted, size_t encryptedLen, uint8_t** data, size_t* dataLen);
 			~AES256();
 	};
 

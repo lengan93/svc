@@ -1,5 +1,6 @@
 #include "AES256.h"
 
+#include <iostream>
 using namespace std;
 
 AES256::AES256(const uint8_t* key)
@@ -118,25 +119,28 @@ void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){
 			blockout[i*Nb+j] = state[i*Nb+j];
 		}
 	}
+	delete state;
 }
 //----------------------------//
 
-size_t AES256::encrypt(const string& data, string& encrypted){
-	size_t paddedLen = data.size()%(BLOCK_SIZE>>3)>0? data.size() + (BLOCK_SIZE>>3) - data.size()%(BLOCK_SIZE>>3) : data.size();
-	uint8_t* paddedData = (uint8_t*)malloc(paddedLen);
-	memset(paddedData, 0, paddedLen);
-	memcpy(paddedData, data.c_str(), data.size());
-	
+void AES256::encrypt(const uint8_t* data, size_t dataLen, uint8_t** encrypted, size_t* encryptedLen){
+	*encryptedLen = dataLen%(BLOCK_SIZE>>3)>0? dataLen + (BLOCK_SIZE>>3) - dataLen%(BLOCK_SIZE>>3) : dataLen;
+	//cout<<"Data size: "<<data.size()<<" & Padded len: "<<encryptedLen<<endl;
+	*encrypted = (uint8_t*)malloc(*encryptedLen);
+	memset(*encrypted, 0, *encryptedLen);
+	memcpy(*encrypted, data, dataLen);
+
+	cout<<"paddedData: ";
+	printBuffer(*encrypted, *encryptedLen);	
+
 	//--	encrypt data, block by block
-	for (int i = 0; i<paddedLen/(BLOCK_SIZE>>3); i++){
-		encryptBlock(paddedData+i*(BLOCK_SIZE>>3), paddedData+i*(BLOCK_SIZE>>3));
-	}
-	encrypted = string((char*)paddedData);
-	return paddedLen;
+	for (int i = 0; i<*encryptedLen/(BLOCK_SIZE>>3); i++){
+		encryptBlock(*encrypted+i*(BLOCK_SIZE>>3), *encrypted+i*(BLOCK_SIZE>>3));
+	}	
 }
 
-size_t AES256::decrypt(const string& encrypted, string& data){	
-	
+bool decrypt(const uint8_t* encrypted, size_t encryptedLen, uint8_t** data, size_t* dataLen){
+	return true;	
 }
 
 AES256::~AES256(){
@@ -149,13 +153,17 @@ int main(int argc, char** argv){
 	uint8_t key[KEY_LENGTH];
 	stringToHex(keyHexString, key);
 	AES256* aes256 = new AES256(key);
-	
+
+
 	string data = "These are some data";
-	string encrypted;
-	aes256->encrypt(data, encrypted);
+	cout<<"Input data to be encrypted: ";
+	cin>>data;
+	uint8_t* encrypted;
+	size_t encryptedLen;
+	aes256->encrypt((uint8_t*)data.c_str(), data.size(), &encrypted, &encryptedLen);
 	
 	printf("encrypted data, hex: ");
-	printBuffer((uint8_t*)encrypted.c_str(), encrypted.size());
+	printBuffer(encrypted, encryptedLen);
 	return 0;
 }
 
