@@ -5,8 +5,9 @@ using namespace std;
 
 AES256::AES256(const uint8_t* key)
 {
-	this->aesKey = (uint8_t*)malloc(KEY_LENGTH>>3);
-	memcpy(this->aesKey, key, KEY_LENGTH>>3);	
+	this->aesKey = (uint8_t*)malloc(KEY_LENGTH);
+	memcpy(this->aesKey, key, KEY_LENGTH);
+	this->state = (uint8_t*)malloc(Nb<<2);
 	keyExpansion();	
 }
 
@@ -30,7 +31,7 @@ uint32_t AES256::rotWord(uint32_t word){
 	return rs;
 }
 
-void AES256::addRoundKey(uint8_t* state, int fromByte){
+void AES256::addRoundKey(int fromByte){
 	uint8_t* p = (uint8_t*)&exKey[fromByte>>2];
 	for (int i=0;i<4;i++){
 		for (int j=0;j<Nb;j++){
@@ -39,7 +40,7 @@ void AES256::addRoundKey(uint8_t* state, int fromByte){
 	}	
 }
 
-void AES256::subBytes(uint8_t* state){
+void AES256::subBytes(){
 	for (int i=0;i<4;i++){
 		for (int j=0;j<Nb;j++){
 			state[i*Nb+j] = sbox[state[i*Nb+j]];
@@ -47,7 +48,7 @@ void AES256::subBytes(uint8_t* state){
 	}
 }
 
-void AES256::shiftRows(uint8_t* state){
+void AES256::shiftRows(){
 	uint8_t t;
 	for (int i=0;i<4;i++){	
 		for (int r=0;r<i;r++){
@@ -60,17 +61,54 @@ void AES256::shiftRows(uint8_t* state){
 	}
 }
 
-void AES256::mixColumns(uint8_t* state){
-	int i;
-	uint8_t tmp,tm,t;
-	for(i=0;i<Nb;i++)
-	{	
-		t=state[i];
-		tmp = state[i] ^ state[Nb+i] ^ state[2*Nb+i] ^ state[3*Nb+i] ;
-		tm = state[i] ^ state[Nb+i]; tm = xtime(tm); state[i] ^= tm ^ tmp;
-		tm = state[Nb+i] ^ state[2*Nb+i]; tm = xtime(tm); state[Nb+i] ^= tm ^ tmp;
-		tm = state[2*Nb+i] ^ state[3*Nb+i]; tm = xtime(tm); state[2*Nb+i] ^= tm ^ tmp;
-		tm = state[3*Nb+i] ^ t; tm = xtime(tm); state[3*Nb+i] ^= tm ^ tmp;
+void AES256::mixColumns(){
+	int r, c;
+	uint8_t old[4];
+	
+	for(c=0;c<Nb;c++){
+		for (r=0; r<4; r++){
+			old[r]=state[r*Nb+c];
+		}
+		state[0*Nb+c] = mul02[old[0]] ^ mul03[old[1]] ^ old[2] ^ old[3];
+		state[1*Nb+c] = old[0] ^ mul02[old[1]] ^ mul03[old[2]] ^ old[3];
+		state[2*Nb+c] = old[0] ^ old[1] ^ mul02[old[2]] ^ mul03[old[3]];
+		state[3*Nb+c] = mul03[old[0]] ^ old[1] ^ old[2] ^ mul02[old[3]];
+	}
+}
+
+void AES256::invSubBytes(){
+	for (int i=0;i<4;i++){
+		for (int j=0;j<Nb;j++){
+			state[i*Nb+j] = sboxInv[state[i*Nb+j]];
+		}
+	}
+}
+
+void AES256::invShiftRows(){
+	uint8_t t;
+	for (int i=0;i<4;i++){	
+		for (int r=0;r<i;r++){
+			t = state[i*Nb+Nb-1];
+			for (int j=Nb-1;j>=1;j--){				
+				state[i*Nb+j]=state[i*Nb+j-1];
+			}
+			state[i*Nb]=t;		
+		}
+	}
+}
+
+void AES256::invMixColumns(){
+	int r, c;
+	uint8_t old[4];
+	
+	for(c=0;c<Nb;c++){
+		for (r=0; r<4; r++){
+			old[r]=state[r*Nb+c];
+		}
+		state[0*Nb+c] = mul0e[old[0]] ^ mul0b[old[1]] ^ mul0d[old[2]] ^ mul09[old[3]];
+		state[1*Nb+c] = mul09[old[0]] ^ mul0e[old[1]] ^ mul0b[old[2]] ^ mul0d[old[3]];
+		state[2*Nb+c] = mul0d[old[0]] ^ mul09[old[1]] ^ mul0e[old[2]] ^ mul0b[old[3]];
+		state[3*Nb+c] = mul0b[old[0]] ^ mul0d[old[1]] ^ mul09[old[2]] ^ mul0e[old[3]];
 	}
 }
 
@@ -98,53 +136,106 @@ void AES256::keyExpansion(){
 	}	
 }
 
-void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){
-	uint8_t* state = (uint8_t*)malloc(4*Nb);
+void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){	
 	//--	copy blockin to state
 	for (int i=0;i<4;i++){
 		for (int j=0;j<Nb;j++){
 			state[i*Nb+j] = blockin[i*Nb+j];
 		}
 	}
-	addRoundKey(state, 0);
+
+	//--	aes algorithm
+	addRoundKey(0);
 	for (int round = 1; round<=Nr; round++){
-		subBytes(state);
-		shiftRows(state);
-		if (round<Nr) mixColumns(state);
-		addRoundKey(state, round*Nb);		
+		subBytes();
+		shiftRows();
+		if (round<Nr) mixColumns();
+		addRoundKey(round*Nb);		
 	}	
+
 	//--	copy state to blockout
 	for (int i=0;i<4;i++){
 		for (int j=0;j<Nb;j++){
 			blockout[i*Nb+j] = state[i*Nb+j];
 		}
 	}
-	delete state;
+}
+
+void AES256::decryptBlock(const uint8_t* blockin, uint8_t* blockout){
+	//--	copy blockin to state
+	for (int i=0;i<4;i++){
+		for (int j=0;j<Nb;j++){
+			state[i*Nb+j] = blockin[i*Nb+j];
+		}
+	}
+
+	//--	invert aes algorithm
+	for (int round = Nr; round>=1; round--){
+		addRoundKey(round*Nb);
+		if (round<Nr) invMixColumns();			
+		invShiftRows();
+		invSubBytes();				
+	}
+	addRoundKey(0);
+	
+	//--	copy state to blockout
+	for (int i=0;i<4;i++){
+		for (int j=0;j<Nb;j++){
+			blockout[i*Nb+j] = state[i*Nb+j];
+		}
+	}
 }
 //----------------------------//
 
-void AES256::encrypt(const uint8_t* data, size_t dataLen, uint8_t** encrypted, size_t* encryptedLen){
-	*encryptedLen = dataLen%(BLOCK_SIZE>>3)>0? dataLen + (BLOCK_SIZE>>3) - dataLen%(BLOCK_SIZE>>3) : dataLen;
-	//cout<<"Data size: "<<data.size()<<" & Padded len: "<<encryptedLen<<endl;
+void AES256::encrypt(const uint8_t* data, uint32_t dataLen, uint8_t** encrypted, uint32_t* encryptedLen){
+	//--	add 4 bytes for dataLen info after padding
+	//dataLen+=4;
+	*encryptedLen = dataLen%BLOCK_SIZE>0? dataLen + BLOCK_SIZE - dataLen%BLOCK_SIZE : dataLen;
+	
+	//--	copy data to encrypted
 	*encrypted = (uint8_t*)malloc(*encryptedLen);
 	memset(*encrypted, 0, *encryptedLen);
 	memcpy(*encrypted, data, dataLen);
+	//memcpy(*encrypted, (uint8_t*)&dataLen, 4);
 
-	cout<<"paddedData: ";
+	cout<<"\npaddedData: \n";
 	printBuffer(*encrypted, *encryptedLen);	
 
 	//--	encrypt data, block by block
-	for (int i = 0; i<*encryptedLen/(BLOCK_SIZE>>3); i++){
-		encryptBlock(*encrypted+i*(BLOCK_SIZE>>3), *encrypted+i*(BLOCK_SIZE>>3));
-	}	
+	int blockNum = *encryptedLen/(BLOCK_SIZE);
+	for (int i = 0; i<blockNum; i++){
+		encryptBlock(*encrypted+i*(BLOCK_SIZE), *encrypted+i*(BLOCK_SIZE));
+	}
+
+	cout<<"\nencryptedData: \n";
+	printBuffer(*encrypted, *encryptedLen);	
 }
 
-bool decrypt(const uint8_t* encrypted, size_t encryptedLen, uint8_t** data, size_t* dataLen){
-	return true;	
+bool AES256::decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** data, uint32_t* dataLen){
+	if (encryptedLen<=0 || encryptedLen%BLOCK_SIZE>0){
+		return false;
+	}
+	else{
+		//--	copy encrypted to data to process
+		*dataLen = encryptedLen;
+		*data = (uint8_t*)malloc(*dataLen);
+		
+		//--	reverse the encryption process
+		int blockNum = encryptedLen/BLOCK_SIZE;
+		for (int i = 0; i<blockNum; i++){
+			decryptBlock(*data+i*BLOCK_SIZE, *data+i*BLOCK_SIZE);
+		}
+		
+		cout<<"\ndecryptedData: \n";
+		printBuffer(*data, *dataLen);	
+
+		return true;
+	}	
 }
 
 AES256::~AES256(){
 	delete this->aesKey;
+	delete this->state;	
 	delete this->exKey;
 }
 
@@ -159,11 +250,13 @@ int main(int argc, char** argv){
 	cout<<"Input data to be encrypted: ";
 	cin>>data;
 	uint8_t* encrypted;
+	uint8_t* decrypted;
 	size_t encryptedLen;
+	size_t decryptedLen;
+
 	aes256->encrypt((uint8_t*)data.c_str(), data.size(), &encrypted, &encryptedLen);
-	
-	printf("encrypted data, hex: ");
-	printBuffer(encrypted, encryptedLen);
+	aes256->decrypt(encrypted, encryptedLen, &decrypted, &decryptedLen);
+
 	return 0;
 }
 
