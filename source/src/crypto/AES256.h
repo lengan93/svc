@@ -185,7 +185,6 @@
 
 	class AES256{
 		 
-		
 		uint8_t* aesKey;
 		uint32_t* exKey;		
 		uint8_t* state;
@@ -202,14 +201,13 @@
 			void invSubBytes();
 			void invShiftRows();
 			void invMixColumns();
-			
-			void encryptBlock(const uint8_t* blockin, uint8_t* blockout);
-			void decryptBlock(const uint8_t* blockin, uint8_t* blockout);
 		
 		public:
 			AES256(const uint8_t* key);
-			void encrypt(const uint8_t* data, uint32_t dataLen, uint8_t** encrypted, uint32_t* encryptedLen);
-			bool decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** data, uint32_t* dataLen);
+			//void encrypt(const uint8_t* data, uint32_t dataLen, uint8_t** encrypted, uint32_t* encryptedLen);
+			//bool decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** data, uint32_t* dataLen);			
+			void encryptBlock(const uint8_t* blockin, uint8_t* blockout);
+			void decryptBlock(const uint8_t* blockin, uint8_t* blockout);
 			~AES256();
 	};
 
