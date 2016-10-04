@@ -17,6 +17,16 @@
 		}
 		printf("\n");
 	}
+	
+	static inline void printBitString(const uint8_t* data, size_t len){
+		for (int i=0;i<len;i++){
+			uint8_t b = data[i];
+			for (int j=0;j<8;j++){
+				printf("%d", b%2);
+				b>>=1;
+			}
+		}
+	}
 
 	//--	block and wait for the presence of a signal
 	//--	return FALSE if the waiting is interrupted by a SIGINT
