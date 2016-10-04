@@ -33,7 +33,7 @@
 			void dec32(uint8_t* block);
 			
 			//--	return gHash(X) under hashSubKey			
-			bool gHash(const uint8_t* block, uint32_t blockLen, uint8_t* hash);
+			bool gHash(const uint8_t* data, uint32_t dataLen, uint8_t** hash);
 			//--	GCTR
 			void gCTR(const uint8_t* icb, const uint8_t* xstr, uint8_t* ystr, uint32_t strLen);
 		

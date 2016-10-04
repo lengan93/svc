@@ -5,6 +5,19 @@
 
 using namespace std;
 
+void generateRandomData(uint32_t length, uint8_t* data){
+	uint32_t readByte = 0;
+	int urandom = open("/dev/urandom", O_RDONLY);
+	
+	while (readByte < length){
+		ssize_t result = read(urandom, data+readByte, length-readByte);
+		if (result>0){
+			readByte += result;
+		}
+	}
+	close(urandom);
+}
+
 string hexToString(uint8_t* data, size_t len){
 	string rs = "";
 	uint8_t b;

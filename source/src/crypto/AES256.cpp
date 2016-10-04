@@ -151,30 +151,30 @@ void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){
 			state[i*Nb+j] = blockin[i*Nb+j];
 		}
 	}
-	//printf("\nEncryption block:\n");
-	//printBuffer(state, 4*Nb);
+	printf("\nEncryption block:\n");
+	printBuffer(state, 4*Nb);
 
 	//--	aes algorithm
 	addRoundKey(0);
-	//printBuffer(state, 4*Nb);
+	printBuffer(state, 4*Nb);
 	
 	for (int round = 1; round<Nr; round++){
 		subBytes();
-		//printBuffer(state, 4*Nb);
+		printBuffer(state, 4*Nb);
 		shiftRows();
-		//printBuffer(state, 4*Nb);
+		printBuffer(state, 4*Nb);
 		mixColumns();
-		//printBuffer(state, 4*Nb);
+		printBuffer(state, 4*Nb);
 		addRoundKey(round*Nb);
-		//printBuffer(state, 4*Nb);	
+		printBuffer(state, 4*Nb);	
 	}
 	
 	subBytes();
-	//printBuffer(state, 4*Nb);
+	printBuffer(state, 4*Nb);
 	shiftRows();
-	//printBuffer(state, 4*Nb);
+	printBuffer(state, 4*Nb);
 	addRoundKey(Nr*Nb);
-	//printBuffer(state, 4*Nb);
+	printBuffer(state, 4*Nb);
 
 	//--	copy state to blockout
 	for (int i=0;i<4;i++){
@@ -224,7 +224,7 @@ void AES256::decryptBlock(const uint8_t* blockin, uint8_t* blockout){
 	}
 }
 //----------------------------//
-/*
+
 void AES256::encrypt(const uint8_t* data, uint32_t dataLen, uint8_t** encrypted, uint32_t* encryptedLen){
 	//--	add 4 bytes for dataLen info after padding
 	//dataLen+=4;
@@ -266,7 +266,7 @@ bool AES256::decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** 
 		return true;
 	}	
 }
-*/
+
 
 AES256::~AES256(){
 	memset(this->aesKey, 0, KEY_LENGTH);
@@ -279,16 +279,17 @@ AES256::~AES256(){
 
 /*
 int main(int argc, char** argv){
-	string keyHexString = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+	string keyHexString = "E3C08A8F06C6E3AD95A70557B23F75483CE33021A9C72B7025666204C69C0B72";
 	uint8_t key[KEY_LENGTH];
 	stringToHex(keyHexString, key);
 	AES256* aes256 = new AES256(key);
 	
 	
-	string dataString = "Athong rat chi la kute";
+	string dataString = "12153524C0895E81B2C2846500000001";
+	uint32_t dataLen = dataString.size()/2;
+	uint8_t data[dataLen];
+	stringToHex(dataString, data);
 	
-	uint8_t* data = (uint8_t*)dataString.c_str();
-	uint32_t dataLen = dataString.size();
 	
 	uint8_t* encrypted;
 	uint32_t encryptedLen;
@@ -310,6 +311,6 @@ int main(int argc, char** argv){
 	delete encrypted;
 	delete decrypted;
 	return 0;
-}
-*/
+}*/
+
 
