@@ -12,12 +12,10 @@ void AESGCM::xorBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 }
 
 void AESGCM::bitRightShiftBlock(uint8_t* block){
-	for (int i=0;i<BLOCK_SIZE-1;i++){
-		block[i] = block[i]>>1;
-		if (block[i+1]&1)
-			block[i] = block[i] || 0x80;
-		block[i+1] = block[i+1]>>1;		
+	for (int i=BLOCK_SIZE-1;i>=1;i--){
+		block[i] = (block[i]<<1) | ((block[i-1] & 0x80)>>7);		
 	}
+	block[0]=block[0]<<1;
 }
 
 void AESGCM::inc32(uint8_t* block){
@@ -62,24 +60,39 @@ void AESGCM::dec32(uint8_t* block){
 
 bool AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blockY){	
 	
+	printf("\nmulBlock:\n");
 	uint8_t* blockV = (uint8_t*)malloc(BLOCK_SIZE);
+	uint8_t* blockCopyX = (uint8_t*)malloc(BLOCK_SIZE);
 	uint8_t bitCheck = 0x01;
+	memcpy(blockCopyX, blockX, BLOCK_SIZE);
+	
+	//-- Z0
 	memset(blockZ, 0, BLOCK_SIZE);
+	//-- V0
 	memcpy(blockV, blockY, BLOCK_SIZE);
+	
+	printf("\n--Z0:");
+	printBuffer(blockZ, BLOCK_SIZE);
+	printf("\n--V0:");
+	printBuffer(blockV, BLOCK_SIZE);	
+	
 	for (int i=0;i<BLOCK_SIZE*8;i++){
 		//--	check if blockX[bit-i] == 1
-		if (blockX[i>>3] & (bitCheck<<(i%8))){
+		if (blockCopyX[i/8] & (bitCheck<<(i%8))){
 			xorBlock(blockZ, blockZ, blockV);
 		}		
-		if (blockV[0] & 1){
+		if (blockV[BLOCK_SIZE-1] & 0x01){
 			bitRightShiftBlock(blockV);
 			xorBlock(blockV, blockV, this->blockR);
 		}
 		else{
 			bitRightShiftBlock(blockV);
 		}
+		printf("\n--V%d:",i+1);
+		printBuffer(blockV, BLOCK_SIZE);
 	}
 	delete blockV;
+	delete blockCopyX;
 }
 
 bool AESGCM::gHash(const uint8_t* data, uint32_t dataLen, uint8_t** hash){
@@ -89,14 +102,16 @@ bool AESGCM::gHash(const uint8_t* data, uint32_t dataLen, uint8_t** hash){
 	//uint8_t* blockX = (uint8_t*)malloc(BLOCK_SIZE);
 	*hash = (uint8_t*)malloc(BLOCK_SIZE);
 	memset(*hash, 0, BLOCK_SIZE);
+	printf("\nX0:\n");
+	printBuffer(*hash, BLOCK_SIZE);
 	int m = dataLen/BLOCK_SIZE;
-	for (int i=0; i<m; i++){		
+	for (int i=0; i<m; i++){	
 		//memcpy(blockX, data + i*BLOCK_SIZE, BLOCK_SIZE);
 		xorBlock(*hash, *hash, data+i*BLOCK_SIZE);
-		printf("\nxorBlock: ");
+		printf("\nxorBlock: \n");
 		printBuffer(*hash, BLOCK_SIZE);
 		mulBlock(*hash, *hash, this->hashSubKey);
-		printf("\nmulBlock: ");
+		printf("\nX%d:\n", i+1);
 		printBuffer(*hash, BLOCK_SIZE);
 	}
 	//delete blockX;
@@ -160,7 +175,7 @@ AESGCM::AESGCM(const uint8_t* key, enum SecurityParameter secuParam){
 	//--	init blockR
 	this->blockR = (uint8_t*)malloc(BLOCK_SIZE);
 	memset(this->blockR, 0, BLOCK_SIZE);
-	this->blockR[BLOCK_SIZE-1] = 0xE1;
+	this->blockR[0] = 0x87;
 	//--	generate gHash subkey
 	this->hashSubKey = (uint8_t*)malloc(BLOCK_SIZE);
 	memset(hashSubKey, 0, BLOCK_SIZE);
@@ -216,6 +231,7 @@ bool AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uin
 	inc32(blockJ);
 	gCTR(blockJ, data, *encrypted, dataLen);
 	dec32(blockJ);
+	
 	//--	4. calculate u, v
 	int u = dataLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - dataLen%BLOCK_SIZE;
 	int v = aadLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - aadLen%BLOCK_SIZE;
