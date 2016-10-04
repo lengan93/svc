@@ -62,37 +62,39 @@ bool AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 	
 	printf("\nmulBlock:\n");
 	uint8_t* blockV = (uint8_t*)malloc(BLOCK_SIZE);
-	uint8_t* blockCopyX = (uint8_t*)malloc(BLOCK_SIZE);
+	uint8_t* blockCopyY = (uint8_t*)malloc(BLOCK_SIZE);
 	uint8_t bitCheck = 0x01;
-	memcpy(blockCopyX, blockX, BLOCK_SIZE);
+	memcpy(blockCopyY, blockY, BLOCK_SIZE);
 	
+	//-- V0
+	memcpy(blockV, blockX, BLOCK_SIZE);
 	//-- Z0
 	memset(blockZ, 0, BLOCK_SIZE);
-	//-- V0
-	memcpy(blockV, blockY, BLOCK_SIZE);
+	
 	
 	printf("\n--Z0:");
 	printBuffer(blockZ, BLOCK_SIZE);
-	printf("\n--V0:");
-	printBuffer(blockV, BLOCK_SIZE);	
+	//printf("\n--V00:");
+	//printBitString(blockV, BLOCK_SIZE);	
 	
 	for (int i=0;i<BLOCK_SIZE*8;i++){
 		//--	check if blockX[bit-i] == 1
-		if (blockCopyX[i/8] & (bitCheck<<(i%8))){
+		if (blockCopyY[i/8] & (bitCheck<<(i%8)) > 0){
 			xorBlock(blockZ, blockZ, blockV);
 		}		
-		if (blockV[BLOCK_SIZE-1] & 0x01){
+		if (blockV[BLOCK_SIZE-1] & 0x80 > 0){
 			bitRightShiftBlock(blockV);
 			xorBlock(blockV, blockV, this->blockR);
 		}
 		else{
 			bitRightShiftBlock(blockV);
 		}
-		printf("\n--V%d:",i+1);
-		printBuffer(blockV, BLOCK_SIZE);
+		//printf("\n--V%2.0d:",i+1);
+		//printBitString(blockV, BLOCK_SIZE);
 	}
 	delete blockV;
-	delete blockCopyX;
+	delete blockCopyY;
+	
 }
 
 bool AESGCM::gHash(const uint8_t* data, uint32_t dataLen, uint8_t** hash){
