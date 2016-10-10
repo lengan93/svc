@@ -4,6 +4,17 @@
 	#include "AES256.h"
 	
 	#define ERROR_DATALENGTH_NOT_SUPPORTED "Length not supported"
+	//#undef BLOCK_SIZE
+	//#define BLOCK_SIZE 1
+	
+	#define BIT(x) 0x01<<x	
+	#define GET_BE32(a) ((((uint32_t) (a)[0]) << 24) | (((uint32_t) (a)[1]) << 16) | (((uint32_t) (a)[2]) << 8) | ((uint32_t) (a)[3]))
+	#define PUT_BE32(a, val) do {                          \
+                (a)[0] = (uint8_t) ((((uint32_t) (val)) >> 24) & 0xff);   \
+                (a)[1] = (uint8_t) ((((uint32_t) (val)) >> 16) & 0xff);   \
+                (a)[2] = (uint8_t) ((((uint32_t) (val)) >> 8) & 0xff);    \
+                (a)[3] = (uint8_t) (((uint32_t) (val)) & 0xff);           \
+        } while (0)
 	
 	enum SecurityParameter : int {
 		SECU_128 = 128,
@@ -16,8 +27,7 @@
 	class AESGCM{
 
 		AES256* aes256;		
-		uint8_t* hashSubKey;
-		uint8_t* blockR;
+		uint8_t* hashSubKey;		
 		enum SecurityParameter secuParam;
 
 		private:
@@ -37,8 +47,8 @@
 			//--	GCTR
 			void gCTR(const uint8_t* icb, const uint8_t* xstr, uint8_t* ystr, uint32_t strLen);
 		
-		public:			
-			//--	SECURITY PARAMETERS
+		public:
+			//--	SECURITY PARAMETERS	
 			AESGCM(const uint8_t* key, enum SecurityParameter secuParam);
 			~AESGCM();			
 			bool encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen);

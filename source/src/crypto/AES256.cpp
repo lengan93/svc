@@ -123,8 +123,6 @@ void AES256::keyExpansion(){
 	uint32_t temp;
 	int i;
 	
-	//printf("exKeyLen: %d, Nb; %d, Nr: %d\n", exKeyLen, Nb, Nr);
-	
 	for (i=0; i<Nk; i++){
 		exKey[i] = *((uint32_t*)(this->aesKey+i*4));
 	}
@@ -139,9 +137,6 @@ void AES256::keyExpansion(){
 		}
 		exKey[i] = exKey[i-Nk] ^ temp;
 	}
-	
-	//cout<<"\nKey expansion: \n";
-	//printBuffer((uint8_t*)exKey, exKeyLen*4); 
 }
 
 void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){	
@@ -151,30 +146,30 @@ void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){
 			state[i*Nb+j] = blockin[i*Nb+j];
 		}
 	}
-	printf("\nEncryption block:\n");
-	printBuffer(state, 4*Nb);
+	//printf("\nEncryption block:\n");
+	//printBuffer(state, 4*Nb);
 
 	//--	aes algorithm
 	addRoundKey(0);
-	printBuffer(state, 4*Nb);
+	//printBuffer(state, 4*Nb);
 	
 	for (int round = 1; round<Nr; round++){
 		subBytes();
-		printBuffer(state, 4*Nb);
+		//printBuffer(state, 4*Nb);
 		shiftRows();
-		printBuffer(state, 4*Nb);
+		//printBuffer(state, 4*Nb);
 		mixColumns();
-		printBuffer(state, 4*Nb);
+		//printBuffer(state, 4*Nb);
 		addRoundKey(round*Nb);
-		printBuffer(state, 4*Nb);	
+		//printBuffer(state, 4*Nb);	
 	}
 	
 	subBytes();
-	printBuffer(state, 4*Nb);
+	//printBuffer(state, 4*Nb);
 	shiftRows();
-	printBuffer(state, 4*Nb);
+	//printBuffer(state, 4*Nb);
 	addRoundKey(Nr*Nb);
-	printBuffer(state, 4*Nb);
+	//printBuffer(state, 4*Nb);
 
 	//--	copy state to blockout
 	for (int i=0;i<4;i++){
@@ -226,18 +221,12 @@ void AES256::decryptBlock(const uint8_t* blockin, uint8_t* blockout){
 //----------------------------//
 
 void AES256::encrypt(const uint8_t* data, uint32_t dataLen, uint8_t** encrypted, uint32_t* encryptedLen){
-	//--	add 4 bytes for dataLen info after padding
-	//dataLen+=4;
 	*encryptedLen = dataLen%BLOCK_SIZE>0? dataLen + BLOCK_SIZE - dataLen%BLOCK_SIZE : dataLen;
 	
 	//--	copy data to encrypted
 	*encrypted = (uint8_t*)malloc(*encryptedLen);
 	memset(*encrypted, 0, *encryptedLen);
 	memcpy(*encrypted, data, dataLen);
-	//memcpy(*encrypted, (uint8_t*)&dataLen, 4);
-
-	//cout<<"\npaddedData: \n";
-	//printBuffer(*encrypted, *encryptedLen);	
 
 	//--	encrypt data, block by block
 	int blockNum = *encryptedLen/(BLOCK_SIZE);
@@ -253,8 +242,7 @@ bool AES256::decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** 
 	else{
 		//--	copy encrypted to data to process
 		*dataLen = encryptedLen;
-		*data = (uint8_t*)malloc(*dataLen);
-		//printf("encrpytedlen %d, dataen %d\n", encryptedLen, *dataLen);
+		*data = (uint8_t*)malloc(*dataLen);	
 		memcpy(*data, encrypted, encryptedLen);
 		
 		//--	reverse the encryption process
@@ -271,7 +259,7 @@ bool AES256::decrypt(const uint8_t* encrypted, uint32_t encryptedLen, uint8_t** 
 AES256::~AES256(){
 	memset(this->aesKey, 0, KEY_LENGTH);
 	memset(this->state, 0, 4*Nb);
-	memset(this->state, 0, Nb*(Nr+1)*4);
+	memset(this->exKey, 0, Nb*(Nr+1)*4);
 	delete this->aesKey;
 	delete this->state;	
 	delete this->exKey;

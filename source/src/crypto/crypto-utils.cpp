@@ -18,7 +18,7 @@ void generateRandomData(uint32_t length, uint8_t* data){
 	close(urandom);
 }
 
-string hexToString(uint8_t* data, size_t len){
+string hexToString(const uint8_t* data, uint32_t len){
 	string rs = "";
 	uint8_t b;
 	for (int i=0;i<len;i++){

@@ -5,7 +5,7 @@
 	#include <fcntl.h>    /* For O_RDWR */
 	#include <unistd.h>   /* For open(), creat() */
 
-	extern std::string hexToString(uint8_t* data, size_t len);
+	extern std::string hexToString(const uint8_t* data, uint32_t len);
 	extern int stringToHex(const std::string& hexString, uint8_t* data);
 	extern void generateRandomData(uint32_t length, uint8_t* data);
 	
