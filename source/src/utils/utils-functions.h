@@ -21,9 +21,8 @@
 	static inline void printBitString(const uint8_t* data, size_t len){
 		for (int i=0;i<len;i++){
 			uint8_t b = data[i];
-			for (int j=0;j<8;j++){
-				printf("%d", b%2);
-				b>>=1;
+			for (int j=7;j>=0;j--){
+				printf("%d", ((b&(0x01<<j))>>j));				
 			}
 		}
 	}
