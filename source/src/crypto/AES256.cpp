@@ -114,8 +114,6 @@ void AES256::invMixColumns(){
 
 //--	PRIVATE METHODS		--//
 void AES256::keyExpansion(){
-	cout<<"\nAES key:\n";
-	printBuffer(this->aesKey, KEY_LENGTH);
 	
 	int exKeyLen = Nb*(Nr+1);
 	this->exKey = (uint32_t*)malloc(exKeyLen*4);
@@ -146,31 +144,19 @@ void AES256::encryptBlock(const uint8_t* blockin, uint8_t* blockout){
 			state[i*Nb+j] = blockin[i*Nb+j];
 		}
 	}
-	//printf("\nEncryption block:\n");
-	//printBuffer(state, 4*Nb);
 
 	//--	aes algorithm
-	addRoundKey(0);
-	//printBuffer(state, 4*Nb);
-	
+	addRoundKey(0);	
 	for (int round = 1; round<Nr; round++){
-		subBytes();
-		//printBuffer(state, 4*Nb);
-		shiftRows();
-		//printBuffer(state, 4*Nb);
-		mixColumns();
-		//printBuffer(state, 4*Nb);
-		addRoundKey(round*Nb);
-		//printBuffer(state, 4*Nb);	
+		subBytes();	
+		shiftRows();	
+		mixColumns();	
+		addRoundKey(round*Nb);		
 	}
-	
 	subBytes();
-	//printBuffer(state, 4*Nb);
 	shiftRows();
-	//printBuffer(state, 4*Nb);
 	addRoundKey(Nr*Nb);
-	//printBuffer(state, 4*Nb);
-
+	
 	//--	copy state to blockout
 	for (int i=0;i<4;i++){
 		for (int j=0;j<Nb;j++){
@@ -186,30 +172,18 @@ void AES256::decryptBlock(const uint8_t* blockin, uint8_t* blockout){
 			state[i*Nb+j] = blockin[i*Nb+j];
 		}
 	}
-	
-	//printf("\nDecryption block:\n");
-	//printBuffer(state, 4*Nb);
-	
 	//--	invert aes algorithm
-	addRoundKey(Nr*Nb);
-	//printBuffer(state, 4*Nb);
+	addRoundKey(Nr*Nb);	
 	for (int round = Nr-1; round>=1; round--){		
-		invShiftRows();
-		//printBuffer(state, 4*Nb);
-		invSubBytes();
-		//printBuffer(state, 4*Nb);
-		addRoundKey(round*Nb);
-		//printBuffer(state, 4*Nb);
-		invMixColumns();
-		//printBuffer(state, 4*Nb);
+		invShiftRows();	
+		invSubBytes();		
+		addRoundKey(round*Nb);		
+		invMixColumns();	
 	}
 	
-	invShiftRows();
-	//printBuffer(state, 4*Nb);
+	invShiftRows();	
 	invSubBytes();
-	//printBuffer(state, 4*Nb);
 	addRoundKey(0);
-	//printBuffer(state, 4*Nb);
 	
 	//--	copy state to blockout
 	for (int i=0;i<4;i++){
@@ -264,41 +238,3 @@ AES256::~AES256(){
 	delete this->state;	
 	delete this->exKey;
 }
-
-/*
-int main(int argc, char** argv){
-	string keyHexString = "E3C08A8F06C6E3AD95A70557B23F75483CE33021A9C72B7025666204C69C0B72";
-	uint8_t key[KEY_LENGTH];
-	stringToHex(keyHexString, key);
-	AES256* aes256 = new AES256(key);
-	
-	
-	string dataString = "12153524C0895E81B2C2846500000001";
-	uint32_t dataLen = dataString.size()/2;
-	uint8_t data[dataLen];
-	stringToHex(dataString, data);
-	
-	
-	uint8_t* encrypted;
-	uint32_t encryptedLen;
-	
-	uint8_t* decrypted;	
-	uint32_t decryptedLen;
-	
-	printf("\nInmain: Data:\n");
-	printBuffer(data, dataLen);
-
-	aes256->encrypt(data, dataLen, &encrypted, &encryptedLen);
-	printf("\nInmain: Encrypted data:\n");
-	printBuffer(encrypted, encryptedLen);
-	
-	aes256->decrypt(encrypted, encryptedLen, &decrypted, &decryptedLen);
-	printf("\nInmain: Decrypted data:\n");
-	printBuffer(decrypted, decryptedLen);
-	
-	delete encrypted;
-	delete decrypted;
-	return 0;
-}*/
-
-
