@@ -66,7 +66,8 @@ void AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 			if (blockXCopy[i] & BIT(7 - j)) {
 				//--	Z_(i + 1) = Z_i XOR V_i
 				xorBlock(blockZ, blockZ, blockV);
-			} else {
+			}
+			else {
 				//--	Z_(i + 1) = Z_i
 				xorBlock(blockZ, blockZ, this->blockZero); //--	side channel counter mesure: timing attack
 			}
@@ -74,7 +75,8 @@ void AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 			if (blockV[BLOCK_SIZE-1] & 0x01) {				
 				bitRightShiftBlock(blockV); //--	V_(i + 1) = (V_i >> 1) XOR R
 				blockV[0] ^= 0xe1; //--		R = 11100001 || 0^120
-			} else {
+			}
+			else {
 				//--	V_(i + 1) = V_i >> 1
 				bitRightShiftBlock(blockV);
 				blockV[0] ^= 0x00; //--	side channel counter mesure: timing attack
@@ -97,9 +99,9 @@ void AESGCM::gHash(uint8_t* hash, const uint8_t* data, uint32_t dataLen){
 	}
 }
 
-void AESGCM::gCTR(const uint8_t* icb, const uint8_t* xstr, uint8_t* ystr, uint32_t strLen){
+void AESGCM::gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen){
 		
-	if (strLen>0){
+	if (strLen>0){		
 		uint8_t* cb = (uint8_t*)malloc(BLOCK_SIZE); //-- counter
 		uint8_t* cbC = (uint8_t*)malloc(BLOCK_SIZE); //-- encrypted counter
 		int lastBlockSize = strLen%BLOCK_SIZE;
@@ -131,7 +133,6 @@ void AESGCM::gCTR(const uint8_t* icb, const uint8_t* xstr, uint8_t* ystr, uint32
 		delete cb;
 		delete cbC;
 	}
-	//--	else: do nothing with empty string
 }
 
 void AESGCM::prepareBlockJ(const uint8_t* iv, uint32_t ivLen){
@@ -161,6 +162,7 @@ AESGCM::AESGCM(const uint8_t* key, enum SecurityParameter secuParam){
 	this->aes256 = new AES256(key);
 	this->secuParam = secuParam;
 	this->blockJ = (uint8_t*)malloc(BLOCK_SIZE);
+	this->tagLen = secuParam>>3;
 	
 	//-- blockZero used in counter mesure
 	this->blockZero = (uint8_t*)malloc(BLOCK_SIZE);
@@ -179,65 +181,83 @@ AESGCM::~AESGCM(){
 	delete this->blockZero;
 }
 
-void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){
+void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag){
 	//--	1. H has been calculated before
 	//--	2. prepare blockJ	
 	prepareBlockJ(iv, ivLen);
 	
-	//--	3. calculate C(ipher)
-	*encrypted = (uint8_t*)malloc(dataLen);
-	*encryptedLen = dataLen;
+	//--	3. chiffer
 	inc32(this->blockJ);
-	gCTR(this->blockJ, data, *encrypted, dataLen);
+	*encryptedLen = dataLen;
+	*encrypted = (uint8_t*)malloc(dataLen);
+	gCTR(*encrypted, this->blockJ, data, dataLen);
 	dec32(this->blockJ);
 	
 	//--	4. calculate u, v
-	int u = dataLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - dataLen%BLOCK_SIZE;
+	int u = *encryptedLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - *encryptedLen%BLOCK_SIZE;
 	int v = aadLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - aadLen%BLOCK_SIZE;
 	//-- define blockS
-	uint32_t blockSLen = aadLen + v + dataLen + u + BLOCK_SIZE;
+	uint32_t blockSLen = aadLen + v + *encryptedLen + u + BLOCK_SIZE;
 	uint8_t* blockS = (uint8_t*)malloc(blockSLen);
 	memset(blockS, 0, blockSLen);
 	memcpy(blockS, aad, aadLen);
 	memcpy(blockS + (aadLen+v), *encrypted, *encryptedLen);
 	//-- add aadLen and encryptedLen, bit (not byte) length
-	//aadLen<<=3;
-	//*encryptedLen<<=3;
-	//uint8_t* p = (uint8_t*)&aadLen;
-	//uint8_t* q = (uint8_t*)encryptedLen;
 	PUT_BE32(blockS + blockSLen-4, *encryptedLen<<3);
 	PUT_BE32(blockS + blockSLen-12, aadLen<<3);
-	/*
-	for (int i=1;i<=4; i++){
-		//-- copy encryptedLen
-		blockS[blockSLen - i] = q[i-1];
-		//-- copy aadLen, skip 8 bytes = 64 bits of encryptedLen
-		blockS[blockSLen - 8 - i] = p[i-1];
-	}
-	aadLen>>=3;
-	*encryptedLen>>=3;
-	*/
-	uint8_t* hashBlockS = (uint8_t*)malloc(BLOCK_SIZE);;
-	gHash(hashBlockS, blockS, blockSLen);	
+	uint8_t* hashBlockS = (uint8_t*)malloc(BLOCK_SIZE);
+	gHash(hashBlockS, blockS, blockSLen);
 	
-	//--	5. calculate T
-	*tagLen = this->secuParam/8;
-	*tag = (uint8_t*)malloc(*tagLen);
-	gCTR(this->blockJ, hashBlockS, blockS, blockSLen);
-	memcpy(*tag, blockS, *tagLen);
+	//--	5. calculate T	
+	*tag = (uint8_t*)malloc(this->tagLen);
+	gCTR(blockS, this->blockJ, hashBlockS, BLOCK_SIZE);//-- reuse blockS to contain result
+	memcpy(*tag, blockS, this->tagLen);
 	
 	//--	6. clear and return
 	delete hashBlockS;
-	delete blockS;	
+	delete blockS;
 }
 
-bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen){
-	if (tagLen != this->secuParam/8){
-		return false;
-	}
+bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint8_t** data, uint32_t* dataLen){
+	//--	1. check lengths
 	
+	//--	2. generate blockJ
+	prepareBlockJ(iv, ivLen);
+	
+	//--	3. dechiffer
+	inc32(this->blockJ);
+	*dataLen = encryptedLen;
+	*data = (uint8_t*)malloc(encryptedLen);
+	gCTR(*data, this->blockJ, encrypted, encryptedLen);
+	dec32(this->blockJ);
+	
+	//--	4. calculate u, v
+	int u = encryptedLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - encryptedLen%BLOCK_SIZE;
+	int v = aadLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - aadLen%BLOCK_SIZE;
+	//-- define blockS
+	uint32_t blockSLen = aadLen + v + encryptedLen + u + BLOCK_SIZE;
+	uint8_t* blockS = (uint8_t*)malloc(blockSLen);
+	memset(blockS, 0, blockSLen);
+	memcpy(blockS, aad, aadLen);
+	memcpy(blockS + (aadLen+v), encrypted, encryptedLen);
+	//-- add aadLen and encryptedLen, bit (not byte) length
+	PUT_BE32(blockS + blockSLen-4, encryptedLen<<3);
+	PUT_BE32(blockS + blockSLen-12, aadLen<<3);
+	uint8_t* hashBlockS = (uint8_t*)malloc(BLOCK_SIZE);
+	gHash(hashBlockS, blockS, blockSLen);	
+	
+	//--	5. calculate T'
+	uint8_t* tagT = (uint8_t*)malloc(this->tagLen);
+	gCTR(blockS, this->blockJ, hashBlockS, BLOCK_SIZE);//-- reuse blockS to contain result
+	memcpy(tagT, blockS, this->tagLen);
+	
+	//--	6. clear and return
+	delete hashBlockS;
+	delete blockS;
+	return memcmp(tagT, tag, this->tagLen)==0;	
 }
 
+/*
 int main(int argc, char** argv){
 	string keyHexString = "feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308";
 	uint8_t key[KEY_LENGTH];
@@ -246,18 +266,18 @@ int main(int argc, char** argv){
 	
 	string ivHex = "9313225df88406e555909c5aff5269aa6a7a9538534f7da1e4c303d2a318a728c3c0c95156809539fcf0e2429a6b525416aedbf5a0de6a57a637b39b";
 	uint32_t ivLen = ivHex.size()/2;
-	uint8_t iv[ivLen];
+	uint8_t* iv =(uint8_t*)malloc(ivLen);
 	stringToHex(ivHex, iv);
 	//generateRandomData(ivLen, iv);
 	
 	string dataHex = "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39";
 	uint32_t dataLen = dataHex.size()/2;
-	uint8_t dataBin[dataLen];
+	uint8_t* dataBin = (uint8_t*)malloc(dataLen);
 	stringToHex(dataHex, dataBin);
 	
 	string aadHex = "feedfacedeadbeeffeedfacedeadbeefabaddad2";
 	uint32_t aadLen = aadHex.size()/2;
-	uint8_t aadBin[aadLen];
+	uint8_t* aadBin = (uint8_t*)malloc(aadLen);
 	stringToHex(aadHex, aadBin);
 	
 	uint8_t* encrypted;
@@ -271,12 +291,24 @@ int main(int argc, char** argv){
 	printf("\nIv: \n");
 	printBuffer(iv, ivLen);
 	
-	aesGCM->encrypt(iv, ivLen, dataBin, dataLen, aadBin, aadLen, &encrypted, &encryptedLen, &tag, &tagLen);
+	aesGCM->encrypt(iv, ivLen, dataBin, dataLen, aadBin, aadLen, &encrypted, &encryptedLen, &tag);
 	
 	printf("\nEncrypted data: \n");
 	printBuffer(encrypted, encryptedLen);
 	printf("\nAuthentication tag: \n");
-	printBuffer(tag, tagLen);
+	printBuffer(tag, aesGCM->tagLen);
+	
+	if (aesGCM->decrypt(iv, ivLen, encrypted, encryptedLen, aadBin, aadLen, tag, &dataBin, &dataLen)){	
+		printf("\nDecrypted data: \n");
+		printBuffer(dataBin, dataLen);
+	}
+	else{
+		printf("\nDecrypt failed");
+	}
 
-}
+	delete dataBin;
+	delete iv;
+	delete aadBin;
+	delete tag;
+}*/
 

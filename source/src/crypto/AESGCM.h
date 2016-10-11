@@ -15,14 +15,12 @@
 	
 	class AESGCM{
 
-		AES256* aes256;		
-		
+		//--	block chiffer
+		AES256* aes256;
 		//--	prefedined blocks
 		uint8_t* hashSubKey;
 		uint8_t* blockZero;
 		uint8_t* blockJ;
-		
-		
 		
 		enum SecurityParameter secuParam;
 
@@ -35,14 +33,16 @@
 						
 			void prepareBlockJ(const uint8_t* iv, uint32_t ivLen);
 			void gHash(uint8_t* hash, const uint8_t* data, uint32_t dataLen);
-			void gCTR(const uint8_t* icb, const uint8_t* xstr, uint8_t* ystr, uint32_t strLen);
+			void gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen);
 		
 		public:
 			//--	SECURITY PARAMETERS	
+			uint32_t tagLen;
+			
 			AESGCM(const uint8_t* key, enum SecurityParameter secuParam);
-			~AESGCM();			
-			void encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen);
-			bool decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen);
+			~AESGCM();
+			void encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag);
+			bool decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint8_t** data, uint32_t* dataLen);
 	};
 
 #endif
