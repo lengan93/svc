@@ -5,7 +5,7 @@
 	
 	#define ERROR_DATALENGTH_NOT_SUPPORTED "Length not supported"
 	
-	enum SecurityParameter : int {
+	enum SecurityParameter : uint8_t {
 		SECU_128 = 128,
 		SECU_120 = 120,
 		SECU_112 = 112,
@@ -38,13 +38,11 @@
 			void gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen);
 		
 		public:
-			//--	SECURITY PARAMETERS	
-			uint32_t tagLen;
-			
+			//--	SECURITY PARAMETERS
 			AESGCM(const uint8_t* key, enum SecurityParameter secuParam);
 			~AESGCM();
-			void encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag);
-			bool decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint8_t** data, uint32_t* dataLen);
+			void encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen);
+			bool decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen);
 	};
 
 #endif

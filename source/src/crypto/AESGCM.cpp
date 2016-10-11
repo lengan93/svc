@@ -203,7 +203,7 @@ AESGCM::~AESGCM(){
 	delete this->blockJ;
 }
 
-void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag){
+void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){
 	//--	1. H has been calculated before
 	//--	2. prepare blockJ	
 	prepBlockJ(iv, ivLen);
@@ -218,15 +218,16 @@ void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uin
 	//--	4. calculate blockS
 	calcBlockS(aad, aadLen, *encrypted, dataLen);
 	
-	//--	5. calculate T	
-	*tag = (uint8_t*)malloc(this->tagLen);
+	//--	5. calculate T
+	*tagLen=this->secuParam>>3;
+	*tag = (uint8_t*)malloc(*tagLen);
 	gCTR(blockS, this->blockJ, this->blockS, BLOCK_SIZE);//-- reuse blockS to contain result
-	memcpy(*tag, blockS, this->tagLen);
+	memcpy(*tag, blockS, *tagLen);
 }
 
-bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint8_t** data, uint32_t* dataLen){
+bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen){
 	//--	1. check lengths
-	
+	if (tagLen!=this->secuParam>>3) return false;
 	//--	2. generate blockJ
 	prepBlockJ(iv, ivLen);
 	
@@ -241,12 +242,12 @@ bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted
 	calcBlockS(aad, aadLen, encrypted, encryptedLen);
 	
 	//--	5. calculate T'
-	uint8_t* tagT = (uint8_t*)malloc(this->tagLen);
+	uint8_t* tagT = (uint8_t*)malloc(tagLen);
 	gCTR(this->blockS, this->blockJ, this->blockS, BLOCK_SIZE);//-- reuse blockS to contain result
-	memcpy(tagT, blockS, this->tagLen);
+	memcpy(tagT, blockS, tagLen);
 	
 	//--	6. return
-	return memcmp(tagT, tag, this->tagLen)==0;	
+	return memcmp(tagT, tag, tagLen)==0;	
 }
 
 /*

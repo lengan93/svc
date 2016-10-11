@@ -5,7 +5,6 @@
 	#include <fcntl.h>    /* For O_RDWR */
 	#include <unistd.h>   /* For open(), creat() */
 	
-	
 	#define BIT(x) 0x01<<x	
 	#define GET_BE32(a) ((((uint32_t) (a)[0]) << 24) | (((uint32_t) (a)[1]) << 16) | (((uint32_t) (a)[2]) << 8) | ((uint32_t) (a)[3]))
 	#define PUT_BE32(a, val) do {                          \
@@ -16,7 +15,7 @@
         } while (0)
 
 	extern std::string hexToString(const uint8_t* data, uint32_t len);
-	extern int stringToHex(const std::string& hexString, uint8_t* data);
+	extern uint32_t stringToHex(const std::string& hexString, uint8_t** data);
 	extern void generateRandomData(uint32_t length, uint8_t* data);
 	
 #endif // UTILS_H
