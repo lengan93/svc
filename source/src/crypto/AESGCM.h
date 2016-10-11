@@ -21,6 +21,7 @@
 		uint8_t* hashSubKey;
 		uint8_t* blockZero;
 		uint8_t* blockJ;
+		uint8_t* blockS;
 		
 		enum SecurityParameter secuParam;
 
@@ -31,7 +32,8 @@
 			void inc32(uint8_t* block);
 			void dec32(uint8_t* block);
 						
-			void prepareBlockJ(const uint8_t* iv, uint32_t ivLen);
+			inline void prepBlockJ(const uint8_t* iv, uint32_t ivLen);
+			inline void calcBlockS(const uint8_t* aad, uint32_t aadLen, const uint8_t* encrypted, uint32_t encryptedLen);
 			void gHash(uint8_t* hash, const uint8_t* data, uint32_t dataLen);
 			void gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen);
 		
