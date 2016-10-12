@@ -10,7 +10,7 @@ using namespace std;
 int main(int argc, char** argv){
 
 	string appID = string("SEND_FILE_APP");	
-	SVCAuthenticatorSimple authenticator = new SVCAuthenticatorSimple();
+	SVCAuthenticatorSharedSecret authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	SVC svc = new SVC(appID, authenticator);	
 	SVCEndPoint endPoint = svc->listenConnection();

@@ -11,7 +11,7 @@ int main(int argc, char** argv){
 
 	string appID = string("SEND_FILE_APP");
 	SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
-	SVCAuthenticatorSimple authenticator = new SVCAuthenticatorSimple();
+	SVCAuthenticatorSharedSecret authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	SVC svc = new SVC(appID, authenticator);	
 	SVCEndPoint endPoint = svc->establishConnection(remoteHost);
