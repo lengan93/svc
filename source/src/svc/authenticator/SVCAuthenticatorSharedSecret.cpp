@@ -14,8 +14,10 @@ SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){
 	stringstream buffer;
 	buffer << key.rdbuf();
 	
+	//printf("\nread shared secret: %s", buffer.str().c_str());
+	
 	//-- convert form hex to binary form	
-	stringToHex(buffer.str(), &sharedKey);
+	stringToHex(buffer.str().c_str(), &sharedKey);
 	
 	//-- create aesgcm and hash instances
 	this->aesGCM = new AESGCM(sharedKey, SECU_128);
@@ -59,6 +61,10 @@ string SVCAuthenticatorSharedSecret::generateChallenge(){
 	delete tag;
 	delete challengeBuf;
 	return rs;
+}
+
+string SVCAuthenticatorSharedSecret::getChallengeSecret(){
+	return this->challenge;
 }
 
 string SVCAuthenticatorSharedSecret::resolveChallenge(string challenge){

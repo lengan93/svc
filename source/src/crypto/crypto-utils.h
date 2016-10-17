@@ -4,6 +4,7 @@
 	#include "../utils/utils-functions.h"
 	#include <fcntl.h>    /* For O_RDWR */
 	#include <unistd.h>   /* For open(), creat() */
+	#include <cstdlib>
 	
 	#define BIT(x) 0x01<<x	
 	#define GET_BE32(a) ((((uint32_t) (a)[0]) << 24) | (((uint32_t) (a)[1]) << 16) | (((uint32_t) (a)[2]) << 8) | ((uint32_t) (a)[3]))

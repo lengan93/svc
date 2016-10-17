@@ -179,8 +179,7 @@ void AESGCM::calcBlockS(const uint8_t* aad, uint32_t aadLen, const uint8_t* encr
 AESGCM::AESGCM(const uint8_t* key, enum SecurityParameter secuParam){	
 	this->aes256 = new AES256(key);
 	this->secuParam = secuParam;
-	this->blockJ = (uint8_t*)malloc(BLOCK_SIZE);
-	this->tagLen = secuParam>>3;
+	this->blockJ = (uint8_t*)malloc(BLOCK_SIZE);	
 	
 	//-- blockZero used in counter mesure
 	this->blockZero = (uint8_t*)malloc(BLOCK_SIZE);

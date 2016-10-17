@@ -10,12 +10,18 @@
 	class Message{
 		public:
 			uint8_t* data;
-			size_t len;
+			uint32_t len;
 			
-			Message(const uint8_t* data, size_t len){
+			Message(uint32_t len){
 				this->data = (uint8_t*)malloc(DEFAULT_BUFFER_SIZE);
 				this->len = len;
-				memcpy(this->data, data, this->len);
+				memset(this->data, 0, len);
+			}
+			
+			Message(const uint8_t* data, uint32_t len){
+				this->data = (uint8_t*)malloc(DEFAULT_BUFFER_SIZE);
+				this->len = len;
+				memcpy(this->data, data, len);
 			}	
 			~Message(){
 				delete data;

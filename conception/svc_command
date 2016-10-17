@@ -1,7 +1,7 @@
 SVC frame format for daemon
 
 -------------------------SVC level---------------------
-- endpointID : 8 bytes 
+- endpointID : 8 bytes
 - 1 byte info
     data/command: 7th bit
     responded from daemon: 6th bit
@@ -9,6 +9,7 @@ SVC frame format for daemon
 	encrypted: 3th bit
 	using tcp: 2th bit	 //used by htp layer
 	priority: 1&0 th bit //used by htp layer
+- 4 bytes sequence
 -------------------------------------------------------
 
 - data packet structure
@@ -19,8 +20,13 @@ SVC frame format for daemon
 	
 - command packet structure
 	[encrypted]
-	+ command id: 1 byte						
-		° SVC_CMD_CONNECT_INNER1:
+	+ command id: 1 byte
+		° SVC_CMD_CREATE_ENDPOINT:
+		  +  app to daemon: 		
+		° SVC_CMD_CONNECT_INNER1: 
+		  +  ep1 to daemon1: challenge || appID || challengeSecret || remote address
+		  +  daemon1 to daemon2: challenge || appID || DH-1
+		  +  daemon2 to ep2: challenge
 		° SVC_CMD_CONNECT_OUTER1:
 		° SVC_CMD_CONNECT_INNER2:
 		° SVC_CMD_CONNECT_INNER3:

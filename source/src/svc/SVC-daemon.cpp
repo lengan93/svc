@@ -1,504 +1,47 @@
 #include "SVC-daemon.h"
 
-//--	class DaemonService
-	
-bool DaemonService::encryptMessage(const uint8_t* plainMessage, size_t plainLen, uint8_t* encryptedMessage, size_t* encryptedLen){
-	memcpy(encryptedMessage, plainMessage, plainLen);
-	*encryptedLen = plainLen;
-	return true;
-}
-	
-bool DaemonService::decryptMessage(const uint8_t* encryptedMessage, size_t encryptedLen, uint8_t* plainMessage, size_t* plainLen){
-	memcpy(plainMessage, encryptedMessage, encryptedLen);
-	*plainLen = encryptedLen;
-	return true;
-}
-	
-void DaemonService::sendData(const uint8_t* buffer, size_t bufferLen){
-	sendto(daemonInSocket, buffer, bufferLen, 0, (struct sockaddr*) &this->sockAddr, this->sockLen);
-}
-
-DaemonService::DaemonService(const struct sockaddr_in* sockaddr, socklen_t sockLen){
-	this->isConnected = false;
-	this->sessionID = SVC_DEFAULT_SESSIONID;
-	this->endPointsMutex = new SharedMutex();
-	this->address = 0x00000000;
-	
-	//--	create socket to sendout data
-	//--TODO: to be changed to htp
-	memcpy(&this->sockAddr, sockaddr, sockLen);
-	this->sockLen = sockLen;	
-	this->working = true;
-	
-	//--	create periodic worker
-	//threadCheckAlive = new PeriodicWorker(1000, checkEndPointAlive, this);
-
-	printf("service started with address: ");
-	printBuffer((uint8_t*) &this->sockAddr, sockLen);
-}
-/*
-void DaemonService::checkEndPointAlive(void* args){
-	//printf("\nchecking endpoint alive");
-	DaemonService* _this = (DaemonService*)args;
-	_this->endPointsMutex->lock();
-	for (auto& it : _this->endPoints){
-		DaemonEndPoint* ep = it.second;
-		if (ep!=NULL){
-			if (!ep->isAuthenticated){
-				ep->liveTime -= 1000;
-				if (ep->liveTime<=0){
-					//--	remove this endpoint
-					ep->stopWorking();
-					_this->endPoints[ep->endPointID] = NULL;
-					delete ep;
-				}
-			}
-		}
-	}
-	_this->endPointsMutex->unlock();
-}
-*/
-bool DaemonService::isWorking(){
-	return working;
-}
-
-void DaemonService::stopWorking(){
-	this->isConnected = false;
-	this->working = false;
-	//this->periodicWorker->stopWorking();
-	//--	stop all remaining endpoint
-	this->endPointsMutex->lock();			
-	for (int i=0;i<this->endPoints.size(); i++){
-		DaemonEndPoint* endPoint = this->endPoints[i];
-		if (endPoint!=NULL){
-			endPoint->stopWorking();
-			this->endPoints.erase(this->endPoints.begin()+i);
-			delete endPoint;
-		}
-	}
-	this->endPointsMutex->unlock();
-	
-	//--	stop the alive checker
-	//threadCheckAlive->stopWorking();
-	
-	//--	remove all references to current service
-	serviceTableMutex->lock();
-	serviceTable.clear();
-	serviceTableMutex->unlock();
-}
-
-DaemonService::~DaemonService(){
-	//--	TODO:	remove crypto variables
-	if (this->working){
-		stopWorking();
-	}
-	delete this->endPointsMutex;
-	delete this->threadCheckAlive;
-}
-
-DaemonEndPoint* DaemonService::getDaemonEndPoint(uint64_t endPointID){
-	this->endPointsMutex->lock_shared();
-	for(int i=0; i<this->endPoints.size(); i++){
-		if (this->endPoints[i]!=NULL){
-			if (this->endPoints[i]->endPointID == endPointID){
-				this->endPointsMutex->unlock_shared();
-				return this->endPoints[i];
-			}
-		}
-	}
-	this->endPointsMutex->unlock_shared();
-}
-
-void DaemonService::removeDaemonEndPoint(uint64_t endPointID){
-	DaemonEndPoint* endPoint = this->getDaemonEndPoint(endPointID);
-	if (endPoint!=NULL){
-		endPoint->stopWorking();
-		//-- remove reference from vector
-		this->endPointsMutex->lock();
-		for(int i=0; i<this->endPoints.size(); i++){
-			if (this->endPoints[i]!=NULL){
-				if (this->endPoints[i]->endPointID == endPointID){
-					this->endPoints.erase(this->endPoints.begin() + i);
-					break;
-				}
-			}
-		}
-		this->endPointsMutex->unlock();
-		delete endPoint;
-	}
-}
-
-DaemonEndPoint* DaemonService::addDaemonEndPoint(uint64_t endPointID, uint32_t appID){
-	DaemonEndPoint* endPoint = new DaemonEndPoint(this, endPointID, appID);
-	this->endPointsMutex->lock();
-	this->endPoints.push_back(endPoint);
-	this->endPointsMutex->unlock();
-	return endPoint;
-}
+using namespace std;
 
 //--	class DaemonEndPoint
-
-void* DaemonEndPoint::processingIncomingMessage(void* args){
-	DaemonEndPoint* _this = (DaemonEndPoint*)args;
-	Message* message;
-	uint8_t* decryptedBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	size_t decryptedLen;
-
-	while (_this->working){
-		if (_this->incomingQueue->peak(&message)){
-			printf("\nprocessingIncomingMessage can peak: ");
-			printBuffer(message->data, message->len);
-			uint8_t infoByte = message->data[ENDPOINTID_LENGTH];
-			bool process = true;
-			if (infoByte & SVC_ENCRYPTED){
-				if (_this->daemonService->decryptMessage(message->data + ENDPOINTID_LENGTH+1, message->len - ENDPOINTID_LENGTH-1, decryptedBuffer, &decryptedLen)){
-					//--	replace the encrypted content with decrypted content
-					memcpy(message->data+ENDPOINTID_LENGTH + 1, decryptedBuffer, decryptedLen);
-					message->len = ENDPOINTID_LENGTH + 1 + decryptedLen;
-				}
-				else{
-					//--	failed to decrypt
-					process = false;
-				}
-			}
-			else{				
-				if (infoByte & SVC_COMMAND_FRAME){
-					enum SVCCommand cmd = (enum SVCCommand)(message->data[ENDPOINTID_LENGTH+1]);
-					//--	only process allowed-non-encrypt commands
-					process = !isEncryptedCommand(cmd);
-				}
-				else{
-					//--	ignore unencrypted data packet
-					process = false;
-				}
-			}
-		
-			//--	packet checking done, start processing
-			if (process){
-				if (infoByte & SVC_COMMAND_FRAME){
-					enum SVCCommand cmd = (enum SVCCommand)(message->data[ENDPOINTID_LENGTH + 1]);
-					switch (cmd){
-						case SVC_CMD_CONNECT_STEP1:								
-							//--	TODO:	extract key exchange 1 info						
-							//--	forward to SVC connection queue
-							_this->inQueue->enqueue(message);
-							_this->incomingQueue->dequeue();
-							break;
-						
-						case SVC_CMD_CONNECT_STEP2:
-							//--	TODO:	extract key exchange 2 info
-						
-							//--	forward
-							_this->inQueue->enqueue(message);
-							_this->incomingQueue->dequeue();
-							break;
-													
-						case SVC_CMD_CONNECT_STEP3:
-							//--	TODO:	extract key exchange 3 info
-														
-							//--	no forward, remove message
-							delete _this->incomingQueue->dequeue();
-							break;
-					
-						case SVC_CMD_CONNECT_STEP4:
-							//--	forward
-							//--	extract sessionID info
-							_this->inQueue->enqueue(message);
-							_this->incomingQueue->dequeue();
-							break;
-						
-						default:
-							//--	remove the message
-							delete _this->incomingQueue->dequeue();
-							break;
-					}
-				}
-				else{
-					//--	forward data packet to app
-					_this->inQueue->enqueue(message);
-					_this->incomingQueue->dequeue();
-				}
-			}
-			else{
-				//--	remove for not being valid
-				delete _this->incomingQueue->dequeue();
-			}				
-		}
-		//--	else: queue is empty
-	}
-}
-
-void* DaemonEndPoint::processingOutgoingMessage(void* args){
-	DaemonEndPoint* _this = (DaemonEndPoint*)args;
-	Message* message;
-	Message* tmpMessage;
-
-	while (_this->working){		
-		if (_this->outgoingQueue->peak(&message)){
-			printf("\nprocessingOutgoingMessage can peak: ");
-			printBuffer(message->data, message->len);
-			uint8_t infoByte = message->data[ENDPOINTID_LENGTH];			
-			if (infoByte & SVC_COMMAND_FRAME){
-				enum SVCCommand cmd = (enum SVCCommand) message->data[ENDPOINTID_LENGTH + 1];
-				switch (cmd){
-					case SVC_CMD_CONNECT_STEP1:
-						printf("\nprocessing SVC_CMD_CONNECT_STEP1");
-						//--	remove the address param (1)
-						message->len -= ((2 + 4)*1);
-						message->data[ENDPOINTID_LENGTH + 2]--;
-						//--	add version info
-						message->data[ENDPOINTID_LENGTH] = message->data[ENDPOINTID_LENGTH] | SVC_VERSION<<4;
-						
-						//--	TODO:	add key exchange step 1
-						_this->outQueue->enqueue(message);
-						_this->outgoingQueue->dequeue();
-						break;
-			
-					case SVC_CMD_CONNECT_STEP2:
-						//--	TODO:	add key exchange step 2
-						_this->outQueue->enqueue(message);
-						_this->outgoingQueue->dequeue();
-						break;
-					
-					case SVC_CMD_CONNECT_STEP3:
-						//--	TODO:	add key exchange step 3
-						tmpMessage = new Message(message->data, message->len);
-						_this->outQueue->enqueue(message);
-						_this->outgoingQueue->dequeue();
-						//--	server identity authenticated
-						_this->isAuthenticated = true;
-						//--TODO: init crypto variables
-						//--	return SVC_CMD_CONNECT_STEP3 to app
-						_this->inQueue->enqueue(tmpMessage);
-						break;
-				
-					case SVC_CMD_CONNECT_STEP4:
-						//--	this will be encrypted later
-						//--	add the sessionID at the end
-						//--TODO: sessionID to be changed
-						srand(time(NULL));
-						_this->daemonService->sessionID = (uint32_t)hasher(to_string(rand()));						
-						memcpy(message->data+message->len, (uint8_t*)&SESSIONID_LENGTH, 2);
-						memcpy(message->data+message->len + 2, (uint8_t*) &_this->daemonService->sessionID, SESSIONID_LENGTH);
-						message->len += SESSIONID_LENGTH + 2;
-						_this->outQueue->enqueue(message);
-						_this->outgoingQueue->dequeue();
-						
-					case SVC_CMD_CONNECT_OK:
-						_this->isAuthenticated = true;		
-						delete _this->outgoingQueue->dequeue();
-						
-					default:
-						break;
-				}
-			}
-			else{
-				_this->outQueue->enqueue(message);
-				_this->outgoingQueue->dequeue();
-			}
-		}
-	}
-}
-
-/*
-void DaemonEndPoint::sendCheckAlive(){
-	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	memcpy(buffer, (uint8_t*) &this->endPointID, ENDPOINTID_LENGTH);
-	uint8_t infoByte = 0;
-	infoByte = infoByte | SVC_COMMAND_FRAME | SVC_DAEMON_RESPONSE | SVC_URGENT_PRIORITY;
-	buffer[ENDPOINTID_LENGTH] = infoByte;
-	buffer[ENDPOINTID_LENGTH + 1] = SVC_CMD_CHECK_ALIVE;
-	buffer[ENDPOINTID_LENGTH + 2] = 0;
-	this->inQueue->enqueue(new Message(buffer, ENDPOINTID_LENGTH + 3));
-}
-*/
-
-void* DaemonEndPoint::sendPacketToApp(void* args){
-	DaemonEndPoint* _this = (DaemonEndPoint*)args;
-	Message* message;
+DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	
-	int sendrs;
-
-	while (_this->working){			
-		if (_this->inQueue->peak(&message)){
-			sendrs = send(_this->unSock, message->data, message->len, 0);
-			if (sendrs == -1){
-				printf("\napp endpoint disconnected. remove this daemon endpoint");
-				_this->daemonService->removeDaemonEndPoint(_this->endPointID);
-			}
-			else{
-				printf("\nto app: ");
-				printBuffer(message->data, message->len);
-			}
-			//--	remove the message from queue
-			delete _this->inQueue->dequeue();				
-		}
-	}
-}
-
-void* DaemonEndPoint::sendPacketOutside(void* args){
-	DaemonEndPoint* _this = (DaemonEndPoint*)args;	
-	Message* message;
-	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	size_t bufferLen;
-
-	uint8_t* encryptedBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	size_t encryptedLen;
+	this->endpointID = endpointID;
 	
-	while (_this->working){
-		
-		if (_this->outQueue->peak(&message)){
-			printf("\npeak inside outQueue: ");
-			printBuffer(message->data, message->len);
-			//--	append the sessionID and encrypt the message if required		
-			uint8_t infoByte = message->data[ENDPOINTID_LENGTH];
-			//printf("info byte: %02x\n", infoByte);
-			bool mustEncrypted = true;
-			if (infoByte & SVC_COMMAND_FRAME){
-				enum SVCCommand cmd = (enum SVCCommand)(message->data[ENDPOINTID_LENGTH + 1]);
-				mustEncrypted = isEncryptedCommand(cmd);
-				//printf("must encrypted: %d\n", mustEncrypted);
-			}
-			//--	else: data frame must always be encrypted
-			
-			if (mustEncrypted){				
-				_this->daemonService->encryptMessage(message->data + ENDPOINTID_LENGTH + 1, message->len - ENDPOINTID_LENGTH - 1, encryptedBuffer, &encryptedLen);
-				//printf("replace encrypted data\n");
-				memcpy(message->data + ENDPOINTID_LENGTH + 1, encryptedBuffer, encryptedLen);
-				message->len = 	ENDPOINTID_LENGTH + 1 + encryptedLen;
-			}
-			//--	not to be encrypted
-			bufferLen = SESSIONID_LENGTH + message->len;			
-			memcpy(buffer, (uint8_t*) &_this->daemonService->sessionID, SESSIONID_LENGTH);			
-			memcpy(buffer + SESSIONID_LENGTH, message->data, message->len);
-
-			_this->daemonService->sendData(buffer, bufferLen + SESSIONID_LENGTH);
-		
-			printf("\nto outside: ");
-			printBuffer(buffer, bufferLen);
-			//--	remove the message from queue
-			delete _this->outQueue->dequeue();
-		}
-		//--	else: queue is empty
-	}
-}
-
-DaemonEndPoint::DaemonEndPoint(DaemonService* daemonService, uint64_t endPointID, uint32_t appID){
-	this->daemonService = daemonService;
-	this->endPointID = endPointID;
-	this->appID = appID;
-	this->liveTime = SVC_ENDPOINT_LIVETIME;
 	this->isAuthenticated = false;
 	
-	//--	init queues
-	this->incomingQueue = new MutexedQueue<Message*>();
-	this->outgoingQueue = new MutexedQueue<Message*>();
-	this->inQueue = new MutexedQueue<Message*>();
-	this->outQueue = new MutexedQueue<Message*>();
+	//-- create dmn unix socket, bind 
+	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
+	struct sockaddr_un dmnSockAddr;
+	string dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + to_string(endpointID);
+	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
+	dmnSockAddr.sun_family = AF_LOCAL;
+	memcpy(dmnSockAddr.sun_path, dmnSockPath.c_str(), dmnSockPath.size());
+	bind(this->dmnSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr));
+	//-- then connect to app socket
+	struct sockaddr_un appSockAddr;
+	string appSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + to_string(endpointID);
+	memset(&appSockAddr, 0, sizeof(appSockAddr));
+	appSockAddr.sun_family = AF_LOCAL;
+	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
+	connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr));
 	
-	//--	create unix socket and connect to app
-	string clientPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
-	memset(&unSockAddr, 0, sizeof(unSockAddr));
-	unSockAddr.sun_family = AF_LOCAL;
-	memcpy(unSockAddr.sun_path, clientPath.c_str(), clientPath.size());
-	unSock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	connect(unSock, (struct sockaddr*) &unSockAddr, sizeof(unSockAddr));
+	//-- create a packet handler
+	this->packetHandler = new PacketHandler(this->dmnSocket);
 	
-	//--	start the threads
-	this->working = true;
-	pthread_attr_init(&threadAttr);
-	pthread_create(&processIncomingThread, &threadAttr, processingIncomingMessage, this);
-	pthread_create(&processOutgoingThread, &threadAttr, processingOutgoingMessage, this);
-	pthread_create(&sendInThread, &threadAttr, sendPacketToApp, this);
-	pthread_create(&sendOutThread, &threadAttr, sendPacketOutside, this);
-	
-	printf("\nendpoint "); printBuffer((uint8_t*)&endPointID, ENDPOINTID_LENGTH); printf("for appID %08x started", appID);
+	printf("\nendpoint "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); printf("started");
 }
 
-void DaemonEndPoint::stopWorking(){
-	working = false;
-	pthread_join(processIncomingThread, NULL);
-	pthread_join(processOutgoingThread, NULL);
-	pthread_join(sendInThread, NULL);
-	pthread_join(sendOutThread, NULL);
+DaemonEndpoint::~DaemonEndpoint(){
+	delete this->packetHandler;
 }
 
-DaemonEndPoint::~DaemonEndPoint(){
-
-	while (incomingQueue->notEmpty()) delete incomingQueue->dequeue();
-	while (outgoingQueue->notEmpty()) delete outgoingQueue->dequeue();
-	while (inQueue->notEmpty()) delete inQueue->dequeue();
-	while (outQueue->notEmpty()) delete outQueue->dequeue();
-	
-	delete incomingQueue;
-	delete outgoingQueue;
-	delete inQueue;
-	delete outQueue;
-	
-	printf("\nendpoint "); printBuffer((uint8_t*)&endPointID, ENDPOINTID_LENGTH); printf("for appID %08x destructed", appID);
-}		
-
-//--	HELPER FUNCTIONS	--//
-DaemonService* getServiceByAddress(uint32_t address){
-	serviceTableMutex->lock_shared();
-	for (DaemonService* service : serviceTable){		
-		if (service!=NULL){
-			printf("\nget service by address got address: %08x", service->address);
-			if (service->address == address){
-				serviceTableMutex->unlock_shared();
-				return service;
-			}
-		}
-	}
-	serviceTableMutex->unlock_shared();
-	return NULL;
+void DaemonEndpoint::sendPacketToApp(const uint8_t* packet, uint32_t packetLen){
+	this->packetHandler->sendPacket(packet, packetLen);
 }
 
-DaemonService* getServiceBySessionID(uint32_t sessionID){
-	serviceTableMutex->lock_shared();
-	for (DaemonService* service : serviceTable){
-		if (service!=NULL){
-			if (service->sessionID == sessionID){
-				serviceTableMutex->unlock_shared();
-				return service;
-			}
-		}
-	}
-	serviceTableMutex->unlock_shared();
-	return NULL;
-}
-
-DaemonService* getServiceByEndPointID(uint64_t endPointID){
-	
-	serviceTableMutex->lock_shared();
-	for (DaemonService* service : serviceTable){		
-		if (service!=NULL){
-			service->endPointsMutex->lock_shared();
-			for (DaemonEndPoint* endPoint : service->endPoints){
-				if (endPoint!=NULL){
-					if (endPoint->endPointID == endPointID){
-						service->endPointsMutex->unlock_shared();
-						serviceTableMutex->unlock_shared();
-						return service;
-					}
-				}
-			}
-			service->endPointsMutex->unlock_shared();
-		}
-	}
-	serviceTableMutex->unlock_shared();
-	return NULL;
-}
-
-void signal_handler(int sig){
-	if (sig == SIGINT){
-		printf("\nSIGINT caught, stopping daemon");
-		/*	stop main threads	*/
-		working = false;
-	}
-}
+//============================ SVC DAEMON IMPLEMENTATION ==============================
 //-----------------------------------//
-
+/*
 void* unixReadingLoop(void* args){
 	
 	int byteRead;
@@ -649,25 +192,69 @@ void* htpReadingLoop(void* args){
 	}
 	printf("\nExit htp reading loop");
 }
+*/
+
+//--	GLOBAL VARIABLES
+
+unordered_map<uint64_t, DaemonEndpoint*> endpoints;
+struct sockaddr_un daemonSockUnAddress;
+struct sockaddr_in daemonSockInAddress;
+int daemonUnSocket;
+int daemonInSocket;
+PacketHandler* unPacketHandler;
+PacketHandler* inPacketHandler;
+
+void signal_handler(int sig){
+	if (sig == SIGINT){
+		printf("\nSIGINT caught, stopping daemon");
+		//--	stop main thread
+		inPacketHandler->stopWorking();
+		unPacketHandler->stopWorking();
+		//--	do cleanup before exit
+		unlink(SVC_DAEMON_PATH.c_str());    	
+		printf("\nSVC daemon stopped.");
+	}	
+}
+
+/*
+ * daemon command handler
+ * */
+ 
+void daemonUnCommandHandler(const uint8_t* packet, uint32_t packetLen){
+	enum SVCCommand cmd = (enum SVCCommand)packet[SVC_PACKET_HEADER_LEN];
+	uint64_t endpointID = *((uint64_t*)packet);
+	switch (cmd){
+		case SVC_CMD_CREATE_ENDPOINT:
+			//-- check if the endpoint still exists
+			if (endpoints[endpointID]==NULL){
+				DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);
+				endpoints[endpointID] = endpoint;
+				//-- send back the same packet
+				endpoint->sendPacketToApp(packet, packetLen);
+			}
+			//--else: ignore this packet
+			break;
+		default:
+			break;
+	}
+}
 
 int main(int argc, char** argv){
-
-	htpReceiveBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	unixReceiveBuffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-	serviceTableMutex = new SharedMutex();
+	
+	string errorString;
 	
 	//--	check if the daemon is already existed
-	int rs = unlink(SVC_DAEMON_PATH.c_str());
-	if (!(rs==0 || (rs==-1 && errno==ENOENT))){	
+	unlink(SVC_DAEMON_PATH.c_str());				//-- try to remove the file in case of leftover by dead instance	
+	if (unlink(SVC_DAEMON_PATH.c_str())==0){ 		//-- then try again to make sure that the app is currently running
 		errorString = SVC_ERROR_NAME_EXISTED;
 		goto errorInit;
 	}
 
-	//--	create a daemon server unix socket and bind
+	//--	create a daemon unix socket and bind
+	daemonUnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	memset(&daemonSockUnAddress, 0, sizeof(daemonSockUnAddress));
 	daemonSockUnAddress.sun_family = AF_LOCAL;
-	memcpy(daemonSockUnAddress.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());		
-	daemonUnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);	
+	memcpy(daemonSockUnAddress.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());			
 	if (bind(daemonUnSocket, (struct sockaddr*) &daemonSockUnAddress, sizeof(daemonSockUnAddress)) == -1) {		
 		errorString = SVC_ERROR_BINDING;
         goto errorInit;
@@ -675,25 +262,21 @@ int main(int argc, char** argv){
     
     //--TODO:	TO BE CHANGED TO HTP
     //--	create htp socket and bind to localhost
+    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
     memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
     daemonSockInAddress.sin_family = AF_INET;
     daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
-	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);   
-    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
+	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
     if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){
     	errorString = SVC_ERROR_BINDING;
     	goto errorInit;
     }
     
     //--	set thread signal mask, block all kind of signals
-   /* sigset_t sigset;
+    sigset_t sigset;
     sigemptyset(&sigset);
-	sigaddset(&sigset, SVC_ACQUIRED_SIGNAL);
-	sigaddset(&sigset, SVC_SHARED_MUTEX_SIGNAL);
-	sigaddset(&sigset, SVC_PERIODIC_SIGNAL);
-	sigaddset(&sigset, SVC_TIMEOUT_SIGNAL);
+	sigfillset(&sigset);
     pthread_sigmask(SIG_BLOCK, &sigset, NULL);
-    */
     
     //--	handle SIGINT
 	struct sigaction act;
@@ -703,43 +286,28 @@ int main(int argc, char** argv){
 	sigaction(SIGINT, &act, NULL);
 	
     //--	create a thread to read from unix domain socket
-    working = true;
-    pthread_attr_init(&unixReadingThreadAttr);
-    pthread_create(&unixReadingThread, &unixReadingThreadAttr, unixReadingLoop, NULL);
-      
+    unPacketHandler = new PacketHandler(daemonUnSocket);
+    unPacketHandler->setDataHandler(NULL);
+    unPacketHandler->setCommandHandler(daemonUnCommandHandler);
+    
 	//--	create a thread to read from htp socket
-	pthread_attr_init(&htpReadingThreadAttr);	
-	pthread_create(&htpReadingThread, &htpReadingThreadAttr, htpReadingLoop, NULL);
-
+	inPacketHandler = new PacketHandler(daemonInSocket);
+	inPacketHandler->setDataHandler(NULL);
+	inPacketHandler->setCommandHandler(NULL);
+	
     goto initSuccess;
     
     errorInit:
-		delete unixReceiveBuffer;
-		delete htpReceiveBuffer;
-    	cout<<errorString<<endl;
+		delete inPacketHandler;
+		delete unPacketHandler;
+    	printf("\nError: %s: ", errorString.c_str());
     	throw errorString;
     	
     initSuccess:
 		//--	POST-SUCCESS JOBS	--//
     	printf("\nSVC daemon is running...");
-    	pthread_join(unixReadingThread, NULL);   
-    	pthread_join(htpReadingThread, NULL);
-    	
-    	//--	DO CLEANING UP BEFORE EXIT	--//
-    	//--	remove all DaemonService instances	
-		for (DaemonService* service : serviceTable){
-			if (service!=NULL){
-				//--	remove all reference of this service				
-				service->stopWorking();
-				delete service;
-			}
-		}
-		
-		delete serviceTableMutex;
-		delete unixReceiveBuffer;
-		delete htpReceiveBuffer;
-    	unlink(SVC_DAEMON_PATH.c_str());    	
-    	printf("\nSVC daemon stopped.");
+    	inPacketHandler->waitStop();
+    	unPacketHandler->waitStop();
 }
 
 

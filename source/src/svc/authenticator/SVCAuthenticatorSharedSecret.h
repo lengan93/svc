@@ -5,9 +5,8 @@
 	#include "../../crypto/crypto-utils.h"
 	#include "../../crypto/AESGCM.h"
 	#include "../../crypto/SHA256.h"
-	#include "../../crypto/crypto-utils.h"
 
-	class SVCAuthenticatorSharedSecret : SVCAuthenticator{
+	class SVCAuthenticatorSharedSecret : public SVCAuthenticator{
 			
 		static const int HASH_TIME = 10;
 				
@@ -24,11 +23,12 @@
 			SVCAuthenticatorSharedSecret(std::string secretPath);
 			virtual ~SVCAuthenticatorSharedSecret();
 			
-			//--	inherited interface
-			virtual std::string generateChallenge()=0;
-			virtual std::string resolveChallenge(std::string challenge)=0;
-			virtual std::string generateProof()=0;
-			virtual bool verify(std::string proof)=0;	
+			//--	inherited interface			
+			std::string generateChallenge();
+			std::string getChallengeSecret();
+			std::string resolveChallenge(std::string challenge);
+			std::string generateProof();
+			bool verify(std::string proof);
 	};
 
 #endif

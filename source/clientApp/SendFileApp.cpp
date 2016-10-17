@@ -1,9 +1,7 @@
 #include "../src/svc/SVC.h"
 #include "../src/svc/host/SVCHostIP.h"
-#include "../src/svc/authenticator/SVCAuthenticatorSimple.h"
+#include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
-//--TODO: to be remove debugging headers
-#include <iostream>
 
 using namespace std;
 
@@ -11,18 +9,20 @@ int main(int argc, char** argv){
 
 	string appID = string("SEND_FILE_APP");
 	SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
-	SVCAuthenticatorSharedSecret authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
+	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
-	SVC svc = new SVC(appID, authenticator);	
-	SVCEndPoint endPoint = svc->establishConnection(remoteHost);
+	SVC* svc = new SVC(appID, authenticator);	
+	SVCEndpoint* endpoint = svc->establishConnection(remoteHost);
 	
-	if (endPoint!=NULL){
+	if (endpoint!=NULL){
 		printf("\nConnection established!");
 	}
 	else{
 		printf("\nCannot establish connection!");
 	}
 	
-	delete endPoint;
-	delete svc;	
+	delete endpoint;
+	delete svc;
+	delete authenticator;
+		
 }

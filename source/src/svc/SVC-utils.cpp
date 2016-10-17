@@ -93,15 +93,21 @@ PeriodicWorker::~PeriodicWorker(){
 //--	PACKET HANDLER CLASS	--//
 PacketHandler::PacketHandler(int socket){
 	this->socket = socket;
-	
-	pthread_t readingThread;
+	this->working = true;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
-	pthread_create(&readingThread, &attr, readingLoop, this);
+	pthread_create(&this->readingThread, &attr, readingLoop, this);
 }
 
 PacketHandler::~PacketHandler(){
-	
+	if (this->working){
+		stopWorking();
+		waitStop();
+	}
+}
+
+void PacketHandler::waitStop(){
+	pthread_join(this->readingThread, NULL);
 }
 
 void PacketHandler::stopWorking(){
@@ -116,9 +122,13 @@ void PacketHandler::setCommandHandler(SVCPacketProcessing cmdHandler){
 	this->cmdHandler = cmdHandler;
 }
 
-bool PacketHandler::waitCommand(pthread_t waitingThread, enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout){
+void PacketHandler::sendPacket(const uint8_t* packet, uint32_t packetLen){
+	send(this->socket, packet, packetLen, 0);
+}
+
+bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout){
 	struct CommandHandler handler;
-	handler.waitingThread = waitingThread;
+	handler.waitingThread = pthread_self();
 	handler.cmd = cmd;
 	handler.endpointID = endpointID;
 	handler.packet = packet;

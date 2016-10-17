@@ -15,7 +15,7 @@
 	
 	uint8_t* createSVCPacket(uint32_t dataLen);
 	void setPacketCommand(uint8_t* packet, enum SVCCommand cmd);
-	void addPacketParam(uint8_t* param, uint16_t paramLen);
+	void addPacketParam(uint8_t* packet, const uint8_t* param, uint16_t paramLen);
 	
 	//-- utils classes
 	class PeriodicWorker{
@@ -54,6 +54,7 @@
 			vector<CommandHandler> commandHandlerRegistra;
 			int socket;
 			bool working;
+			pthread_t readingThread;
 			SVCPacketProcessing cmdHandler;
 			SVCPacketProcessing dataHandler;
 
@@ -65,8 +66,10 @@
 			//--	methods
 			void setCommandHandler(SVCPacketProcessing cmdHandler);
 			void setDataHandler(SVCPacketProcessing dataHandler);
-			bool waitCommand(pthread_t waitingThread, enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout);
-			void stopWorking();		
+			bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout);
+			void sendPacket(const uint8_t* packet, uint32_t packetLen);
+			void stopWorking();
+			void waitStop();
 	};
 	
 #endif
