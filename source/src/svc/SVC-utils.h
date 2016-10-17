@@ -8,43 +8,65 @@
 	
 	#include <cstring>
 	#include <vector>
-	#include <sys/time.h>
 	#include <sys/socket.h>
-
-	typedef void (*SVCDataReceiveHandler)(const Message* message, void* args);
-	
-	struct SVCDataReceiveNotificator{
-		SVCDataReceiveHandler handler;
-		void* args;
-		pthread_t thread;			
-	};
-	
-	class SignalNotificator;
 
 	//--	return if the command must be encrypted
 	bool isEncryptedCommand(enum SVCCommand command);
-
-	//--	clear all params in the vector and call their destructors
-	void clearParams(vector<Message*>* params);
-
-	//--	extract parameters from a buffer without header
-	void extractParams(const uint8_t* buffer, vector<Message*>* params);
-
-	//--	just make sure that there will be no wait for 2 same cmd on a single list
-	class SignalNotificator{
-		private:			
-			struct SVCDataReceiveNotificator* notificationArray[_SVC_CMD_COUNT];
-			SharedMutex notificationArrayMutex;			
-			static void waitCommandHandler(const Message* message, void* args);
+	
+	uint8_t* createSVCPacket(uint32_t dataLen);
+	void setPacketCommand(uint8_t* packet, enum SVCCommand cmd);
+	void addPacketParam(uint8_t* param, uint16_t paramLen);
+	
+	//-- utils classes
+	class PeriodicWorker{
+		private:
+			timer_t timer;
+			pthread_t worker;
+			volatile bool working;
+			void (*handler)(void*);
+			void* args;
+			int interval;
+			
+			static void* handling(void* args);
 			
 		public:
-			SignalNotificator();
-			~SignalNotificator(){}
+			PeriodicWorker(int interval, void (*handler)(void* args), void* args);
+			~PeriodicWorker();			
+			void stopWorking();
+	};
+	
+	class PacketHandler{
+	
+		class CommandHandler{
+			public:
+				uint64_t endpointID;
+				enum SVCCommand cmd;
+				pthread_t waitingThread;
+				uint8_t* packet;
+				uint32_t* packetLen;
+		};
+		
+		private:
+			//--	static methods
+			static void* readingLoop(void* args);
 			
-			SVCDataReceiveNotificator* getNotificator(enum SVCCommand cmd);			
-			void removeNotificator(enum SVCCommand cmd);
-			void addNotificator(enum SVCCommand cmd, SVCDataReceiveNotificator* notificator);			
-			bool waitCommand(enum SVCCommand cmd, vector<Message*>* params, int timeout);
-	};			
+			//--	members
+			vector<CommandHandler> commandHandlerRegistra;
+			int socket;
+			bool working;
+			SVCPacketProcessing cmdHandler;
+			SVCPacketProcessing dataHandler;
+
+		public:
+			//--	constructors/destructors
+			PacketHandler(int socket);
+			virtual ~PacketHandler();
+			
+			//--	methods
+			void setCommandHandler(SVCPacketProcessing cmdHandler);
+			void setDataHandler(SVCPacketProcessing dataHandler);
+			bool waitCommand(pthread_t waitingThread, enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout);
+			void stopWorking();		
+	};
 	
 #endif

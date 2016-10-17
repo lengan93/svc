@@ -1,101 +1,181 @@
 #include "SVC-utils.h"
 
 
-//--	SIGNAL NOTIFICATOR class
-
-SignalNotificator::SignalNotificator(){
-	//--	need to init this array to NULL, otherwise left memory will cause addNotificator to throw exception
-	for (uint8_t cmd = 0; cmd<_SVC_CMD_COUNT; cmd++){
-		this->notificationArray[cmd] = NULL;
-	}			
-}
-
-void SignalNotificator::waitCommandHandler(const Message* message, void* args){
-	struct SVCDataReceiveNotificator* notificator = (struct SVCDataReceiveNotificator*)args;	
-	vector<Message*>* params = (vector<Message*>*)notificator->args;
-
-	extractParams(message->data + ENDPOINTID_LENGTH + 2, params);
-	//--	signal the thread calling waitCommand
-	pthread_kill(notificator->thread, SVC_ACQUIRED_SIGNAL);
-}
-
-bool SignalNotificator::waitCommand(enum SVCCommand cmd, vector<Message*>* params, int timeout){
-	//--	create new notificator
-	clearParams(params);
-	struct SVCDataReceiveNotificator* notificator = new struct SVCDataReceiveNotificator();
-	notificator->args = params;
-	notificator->thread = pthread_self();
-	notificator->handler = waitCommandHandler;
-
-	/*
-		add this notificator to notificationList
-		NOTE: To use 'waitCommand', make sure that there is at least one active thread
-		which is processing the message and checking notificationList.
-		use mutex to synchonize multiple threads which may use the list at a same time
-	*/
-
-	this->addNotificator(cmd, notificator);		
-
-	//--	suspend the calling thread and wait for SVC_ACQUIRED_SIGNAL
-	return waitSignal(SVC_ACQUIRED_SIGNAL, SVC_TIMEOUT_SIGNAL, timeout);
-}
-
-void SignalNotificator::addNotificator(enum SVCCommand cmd, SVCDataReceiveNotificator* notificator){
-	notificationArrayMutex.lock();
-	if (notificationArray[cmd]!=NULL){
-		notificationArrayMutex.unlock();
-		throw SVC_ERROR_NOTIFICATOR_DUPLICATED;
-	}
-	else{
-		notificationArray[cmd] = notificator;
-		notificationArrayMutex.unlock();
-		//printf("noti added, cmd: %d\n", cmd);
-	}					
-}
-
-void SignalNotificator::removeNotificator(enum SVCCommand cmd){
-	notificationArrayMutex.lock();
-	if (notificationArray[cmd]!=NULL){
-		delete notificationArray[cmd];
-		notificationArray[cmd]=NULL;
-		//printf("noti removed, cmd: %d\n", cmd);
-	}
-	notificationArrayMutex.unlock();				
-}
-
-SVCDataReceiveNotificator* SignalNotificator::getNotificator(enum SVCCommand cmd){
-	SVCDataReceiveNotificator* rs;
-	notificationArrayMutex.lock_shared();
-	rs = notificationArray[cmd];
-	notificationArrayMutex.unlock_shared();
-	return rs;
-}
-
 //--	UTILS FUNCTION IMPLEMEMTATION	--//
 bool isEncryptedCommand(enum SVCCommand command){
-	return (command != SVC_CMD_CHECK_ALIVE 
-			&& command != SVC_CMD_CHECK_ALIVE
-			&& command != SVC_CMD_CONNECT_STEP1
-			&& command != SVC_CMD_CONNECT_STEP2
-			&& command != SVC_CMD_CONNECT_STEP3);
+	return (command == SVC_CMD_CONNECT_OUTER3);
 }
 
-void extractParams(const uint8_t* buffer, vector<Message*>* params){
+uint8_t* createSVCPacket(uint32_t dataLen){
+	//-- 8 bytes endpointID + 1 byte info + 4 bytes sequence + data
+	uint8_t* packet = (uint8_t*)malloc(SVC_PACKET_HEADER_LEN+dataLen);
+	return packet;
+}
+
+void setPacketCommand(uint8_t* packet, enum SVCCommand cmd){
+	//-- set info byte to be a command
+	packet[8] |= 0x80;
+	//-- set commandID
+	packet[13] = (uint8_t)cmd;
+	//-- reset number of param
+	packet[14] = 0x00;
+}
+
+void addPacketParam(uint8_t* packet, const uint8_t* param, uint16_t paramLen){
+	//-- find position of the new param
+	uint8_t* p = packet + 15;
+	for (uint8_t i=0; i<packet[14]; i++){
+		p += 2 + *((uint16_t*)p);
+	}
+	//-- copy new param to packet
+	memcpy(p, param, paramLen);
+	//-- copy param length to p-2
+	memcpy(p-2, (uint8_t*)&paramLen, 2);
+	//-- add 1 to number of param
+	packet[14] += 1;
+}
+
+//--	PERIODIC WORKER
+PeriodicWorker::PeriodicWorker(int interval, void (*handler)(void*), void* args){
+	this->interval = interval;
+	this->working = true;
+	this->handler = handler;
+	this->args = args;
 	
-	int argc = buffer[0];
-	int pointer = 1;
-	uint16_t len;
+	pthread_attr_t threadAttr;
+	pthread_attr_init(&threadAttr);
+	pthread_create(&this->worker, &threadAttr, handling, this);
+}
+void PeriodicWorker::stopWorking(){
+	//--	disarm automatic
+	working = false;
+	pthread_join(this->worker, NULL);
+	timer_delete(this->timer);
+	printf("\nperiodic worker stopped");
+}
+
+void* PeriodicWorker::handling(void* args){
+	PeriodicWorker* pw = (PeriodicWorker*)args;
 	
-	for (int i=0; i<argc; i++){		
-		len = *((uint16_t*)(buffer+pointer));
-		params->push_back(new Message(buffer + pointer + 2, len));
-		pointer += len+2;
+	struct sigevent evt;
+	evt.sigev_notify = SIGEV_SIGNAL;
+	evt.sigev_signo = SVC_PERIODIC_SIGNAL;
+	evt.sigev_notify_thread_id = pthread_self();
+	timer_create(CLOCK_REALTIME, &evt, &pw->timer);
+
+	struct itimerspec time;
+	time.it_interval.tv_sec=pw->interval/1000;
+	time.it_interval.tv_nsec=(pw->interval - time.it_interval.tv_sec*1000)*1000000;
+	time.it_value.tv_sec=pw->interval/1000;
+	time.it_value.tv_nsec=(pw->interval - time.it_value.tv_sec*1000)*1000000;
+	timer_settime(pw->timer, 0, &time, NULL);		
+	
+	bool waitrs;
+	while (pw->working){
+		//--	wait signal then perform handler
+		waitrs = waitSignal(SVC_PERIODIC_SIGNAL);
+		if (waitrs){
+			//--	perform handler
+			pw->handler(pw->args);
+		}
+		else{
+			//--	SIGINT caught
+			printf("\nperiodic worker got SIGINT, stop working");
+			pw->stopWorking();
+		}
 	}
 }
 
-void clearParams(vector<Message*>* params){
-	for (int i=0; i<params->size(); i++){
-		delete (*params)[i];
-	}
-	params->clear();
+PeriodicWorker::~PeriodicWorker(){
+	printf("\nperiod worker detructed");
 }
+
+//--	PACKET HANDLER CLASS	--//
+PacketHandler::PacketHandler(int socket){
+	this->socket = socket;
+	
+	pthread_t readingThread;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_create(&readingThread, &attr, readingLoop, this);
+}
+
+PacketHandler::~PacketHandler(){
+	
+}
+
+void PacketHandler::stopWorking(){
+	this->working = false;
+}
+
+void PacketHandler::setDataHandler(SVCPacketProcessing dataHandler){
+	this->dataHandler = dataHandler;
+}
+
+void PacketHandler::setCommandHandler(SVCPacketProcessing cmdHandler){
+	this->cmdHandler = cmdHandler;
+}
+
+bool PacketHandler::waitCommand(pthread_t waitingThread, enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout){
+	struct CommandHandler handler;
+	handler.waitingThread = waitingThread;
+	handler.cmd = cmd;
+	handler.endpointID = endpointID;
+	handler.packet = packet;
+	handler.packetLen = packetLen;
+	commandHandlerRegistra.push_back(handler);
+	
+	//-- suspend the calling thread until the correct command is received or the timer expires
+	if (timeout>0){
+		return waitSignal(SVC_ACQUIRED_SIGNAL, SVC_TIMEOUT_SIGNAL, timeout);
+	}
+	else{
+		return waitSignal(SVC_ACQUIRED_SIGNAL);
+	}
+}
+
+void* PacketHandler::readingLoop(void* args){
+	
+	PacketHandler* _this = (PacketHandler*)args;
+	
+	int byteRead;
+	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+		
+	while (_this->working){
+		do{
+			byteRead = recv(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
+		}
+		while((byteRead==-1) && _this->working);
+		
+		if (byteRead>0){
+			uint8_t infoByte = buffer[ENDPOINTID_LENGTH];
+			if (infoByte & SVC_COMMAND_FRAME){
+					if (infoByte & SVC_ENCRYPTED == 0x00){
+						//-- this command is not encrypted, get the commandID						
+						enum SVCCommand cmd = (enum SVCCommand)buffer[SVC_PACKET_HEADER_LEN];
+						uint64_t endpointID = *((uint64_t*)&buffer);
+						//-- check if the cmd is registered in the registra
+						for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
+							if (_this->commandHandlerRegistra[i].cmd == cmd && _this->commandHandlerRegistra[i].endpointID == endpointID){
+								//-- copy the packet content and notify the suspended thread
+								memcpy(_this->commandHandlerRegistra[i].packet, buffer, byteRead);
+								*(_this->commandHandlerRegistra[i].packetLen) = byteRead;
+								pthread_kill(_this->commandHandlerRegistra[i].waitingThread, SVC_ACQUIRED_SIGNAL);
+								//-- remove the handler
+								_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);							
+							}
+						}
+					}
+					//-- call handler routine for command
+					if (_this->cmdHandler!=NULL) _this->cmdHandler(buffer, byteRead);
+			}
+			else{
+					//-- call handler routine for data
+					if (_this->dataHandler!=NULL) _this->dataHandler(buffer, byteRead);
+			}			
+		}
+	}
+	
+	delete buffer;
+}
+
