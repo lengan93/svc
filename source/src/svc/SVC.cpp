@@ -21,15 +21,17 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	
 	//--	check if the app is running
 	string appIDHashed = this->sha256->hash(appID);
-	this->appID = *((uint32_t*)appIDHashed.c_str()); //-- extract first 32 bits of hash string
-	this->appSockPath = SVC_CLIENT_PATH_PREFIX + appIDHashed;
+	uint8_t* appIDBin;
+	stringToHex(appIDHashed.substr(0, 8), &appIDBin); //-- extract first 32 bits of hash string
+	this->appID = *((uint32_t*)appIDBin);
+	this->appSockPath = SVC_CLIENT_PATH_PREFIX + appIDHashed.substr(0,8);
 	unlink(this->appSockPath.c_str());				//-- try to remove the file in case of leftover by dead instance	
 	if (unlink(this->appSockPath.c_str())==0){ 		//-- then try again to make sure that the app is currently running
 		errorString = SVC_ERROR_NAME_EXISTED;
 		goto errorInit;
 	}
-	//printf("\nappIDHashed: %s", appIDHashed.c_str());
-	//printf("\nappID: %02x: ", this->appID);
+	printf("\nappIDHashed: %s", appIDHashed.c_str());
+	printf("\nappID: "); printBuffer(appIDBin, 4); fflush(stdout);
 	
 	//--	bind app socket
 	this->appSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -71,16 +73,17 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 		throw errorString;
 	success:
 		printf("\nsvc created");
+		fflush(stdout);
 	
 }
 
 void SVC::shutdown(){
 	
-	//unlink(this->appSockPath.c_str());
-	//delete this->packetHandler;
-	//delete this->sha256;
+	unlink(this->appSockPath.c_str());
+	delete this->packetHandler;
+	delete this->sha256;
 	
-	printf("\nsvc destructed");
+	printf("\nsvc destructed\n");
 }
 
 
@@ -98,14 +101,18 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 	this->endpoints[endpoint->endpointID] = endpoint;
 	
 	//-- send SVC_CMD_CREATE_ENDPOINT to daemon
-	uint8_t* packet = createSVCPacket(12); //-- 2 + (2 + 8)
-	packet[SVC_PACKET_HEADER_LEN] = SVC_CMD_CREATE_ENDPOINT;
-	addPacketParam(packet, (uint8_t*)&(endpoint->endpointID), ENDPOINTID_LENGTH);
-	this->packetHandler->sendPacket(packet, SVC_PACKET_HEADER_LEN + 12);
+	uint8_t* packet = createSVCPacket(SVC_PACKET_HEADER_LEN + 2); //-- 2 = cmd + argc
+	memcpy(packet, (uint8_t*)&endpoint->endpointID, ENDPOINTID_LENGTH);
+	packet[ENDPOINTID_LENGTH] |= SVC_COMMAND_FRAME; //-- set info byte
+	packet[ENDPOINTID_LENGTH] |= SVC_URGENT_PRIORITY; 
+	packet[SVC_PACKET_HEADER_LEN] = SVC_CMD_CREATE_ENDPOINT; //-- set command ID	
+	int sendrs = this->packetHandler->sendPacket(packet, SVC_PACKET_HEADER_LEN + 2);
 	
 	//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
 	uint32_t responseLen;
-	if (endpoint->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, endpoint->endpointID, packet, &responseLen, -1)){
+	printf("\nsendrs: %d, waiting for SVC_CREATE_ENDPOINT", sendrs);
+	fflush(stdout);
+	if (endpoint->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, endpoint->endpointID, packet, &responseLen, SVC_DEFAULT_TIMEOUT)){
 		endpoint->connectToDaemon();
 		return endpoint;
 	}
@@ -115,7 +122,6 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 		delete endpoint;
 		return NULL;
 	}
-	return NULL;
 }
 
 SVCEndpoint* SVC::listenConnection(int timeout, int* status){
@@ -128,18 +134,18 @@ SVCEndpoint::SVCEndpoint(uint32_t appID){
 	//--	generate endpointID
 	this->endpointID = 0;
 	this->endpointID |= appID;
-	this->endpointID <<=16;
-	this->endpointID |= SVC::endpointCounter;
-	this->endpointID <<=16;
+	this->endpointID |= SVC::endpointCounter<<16;	
+	
+	printf("\nnew endpoint create: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	
 	//--	create a socket for listening to data
 	//-- bind app endpoint socket
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	string endpointSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + to_string(this->endpointID);	
+	this->endpointSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + to_string(this->endpointID);	
 	struct sockaddr_un sockAddr;
 	memset(&sockAddr, 0, sizeof(sockAddr));
 	sockAddr.sun_family = AF_LOCAL;
-	memcpy(sockAddr.sun_path, endpointSockPath.c_str(), endpointSockPath.size());
+	memcpy(sockAddr.sun_path, this->endpointSockPath.c_str(), endpointSockPath.size());
 	bind(this->sock, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
 	//-- create a packet handler to process incoming packets
 	this->packetHandler = new PacketHandler(this->sock);
@@ -156,6 +162,7 @@ void SVCEndpoint::connectToDaemon(){
 
 SVCEndpoint::~SVCEndpoint(){
 	delete this->packetHandler;
+	unlink(this->endpointSockPath.c_str());
 }
 
 int SVCEndpoint::sendData(const uint8_t* data, size_t dalalen, uint8_t priority, bool tcp){

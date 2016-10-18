@@ -13,8 +13,10 @@
 	class DaemonEndpoint{
 		private:
 			//-- private members
-			bool isAuthenticated;
+			bool isAuth;
+			int initLiveTime;
 			int dmnSocket;
+			string dmnSockPath;
 			PacketHandler* packetHandler;
 			
 		public:
@@ -27,6 +29,8 @@
 						
 			//-- public methods
 			void sendPacketToApp(const uint8_t* packet, uint32_t packetLen);
+			bool checkInitLiveTime(int interval);
+			bool isAuthenticated();
 	};
 
 	//---------------------------//

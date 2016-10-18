@@ -30,13 +30,17 @@
 	//--	block and wait for the presence of a signal
 	//--	return FALSE if the waiting is interrupted by a SIGINT
 	static inline bool waitSignal(int waitingSignal){
+		//block the waiting signal		
 		sigset_t sig;
+		sigset_t oldset;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
-		sigaddset(&sig, SIGINT);	//--	interupt case
+		sigaddset(&sig, SIGINT);	//-- interupt case
+		pthread_sigmask(SIG_BLOCK, &sig, &oldset);
 		
 		int caughtSignal;
-		sigwait(&sig, &caughtSignal);	
+		sigwait(&sig, &caughtSignal);
+		pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
 		return waitingSignal == caughtSignal;
 	}
 

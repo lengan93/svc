@@ -11,6 +11,7 @@
 	#include "../utils/Message.h"
 	#include "../utils/MutexedQueue.h"
 	#include "../crypto/SHA256.h"
+	#include "../crypto/crypto-utils.h"
 	
 	#include <unistd.h>	//--	for unlink
 	#include <sys/un.h> //--	for unix socket
@@ -26,7 +27,8 @@
 		friend class SVC;	
 
 		private:	
-			int sock;			
+			int sock;
+			string endpointSockPath;
 			uint64_t endpointID;
 			PacketHandler* packetHandler;
 		

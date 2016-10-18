@@ -5,17 +5,17 @@ using namespace std;
 //--	class DaemonEndPoint
 DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	
-	this->endpointID = endpointID;
-	
-	this->isAuthenticated = false;
+	this->endpointID = endpointID;	
+	this->isAuth = false;
+	this->initLiveTime = SVC_ENDPOINT_LIVETIME;
 	
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	struct sockaddr_un dmnSockAddr;
-	string dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + to_string(endpointID);
+	this->dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + to_string(endpointID);
 	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
 	dmnSockAddr.sun_family = AF_LOCAL;
-	memcpy(dmnSockAddr.sun_path, dmnSockPath.c_str(), dmnSockPath.size());
+	memcpy(dmnSockAddr.sun_path, this->dmnSockPath.c_str(), dmnSockPath.size());
 	bind(this->dmnSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr));
 	//-- then connect to app socket
 	struct sockaddr_un appSockAddr;
@@ -28,15 +28,25 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	//-- create a packet handler
 	this->packetHandler = new PacketHandler(this->dmnSocket);
 	
-	printf("\nendpoint "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); printf("started");
+	printf("\nendpoint "); fflush(stdout); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout); printf("started"); fflush(stdout);
 }
 
-DaemonEndpoint::~DaemonEndpoint(){
+DaemonEndpoint::~DaemonEndpoint(){	
 	delete this->packetHandler;
+	unlink(this->dmnSockPath.c_str());
 }
 
 void DaemonEndpoint::sendPacketToApp(const uint8_t* packet, uint32_t packetLen){
 	this->packetHandler->sendPacket(packet, packetLen);
+}
+
+bool DaemonEndpoint::checkInitLiveTime(int interval){
+	this->initLiveTime -= interval;
+	return (this->initLiveTime<0);
+}
+
+bool DaemonEndpoint::isAuthenticated(){
+	return this->isAuth;
 }
 
 //============================ SVC DAEMON IMPLEMENTATION ==============================
@@ -203,16 +213,25 @@ int daemonUnSocket;
 int daemonInSocket;
 PacketHandler* unPacketHandler;
 PacketHandler* inPacketHandler;
+PeriodicWorker* endpointChecker;
 
 void signal_handler(int sig){
 	if (sig == SIGINT){
-		printf("\nSIGINT caught, stopping daemon");
+		printf("\nSIGINT caught, stopping daemon...");
+		//--	request all endpoint to stop working
+		for (auto& it : endpoints){
+			if (it.second != NULL){
+				DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
+				it.second = NULL;
+				delete ep;
+			}
+		}
 		//--	stop main thread
 		inPacketHandler->stopWorking();
-		unPacketHandler->stopWorking();
+		unPacketHandler->stopWorking();	
 		//--	do cleanup before exit
 		unlink(SVC_DAEMON_PATH.c_str());    	
-		printf("\nSVC daemon stopped.");
+		printf("\nSVC daemon terminated\n");
 	}	
 }
 
@@ -221,11 +240,12 @@ void signal_handler(int sig){
  * */
  
 void daemonUnCommandHandler(const uint8_t* packet, uint32_t packetLen){
+	printf("\ndaemon un received command: "); fflush(stdout); printBuffer(packet, packetLen);
 	enum SVCCommand cmd = (enum SVCCommand)packet[SVC_PACKET_HEADER_LEN];
 	uint64_t endpointID = *((uint64_t*)packet);
 	switch (cmd){
 		case SVC_CMD_CREATE_ENDPOINT:
-			//-- check if the endpoint still exists
+			//-- check if the endpoint already exists
 			if (endpoints[endpointID]==NULL){
 				DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);
 				endpoints[endpointID] = endpoint;
@@ -237,6 +257,19 @@ void daemonUnCommandHandler(const uint8_t* packet, uint32_t packetLen){
 		default:
 			break;
 	}
+}
+
+void checkEndpointLiveTime(void* args){
+	for (auto& it : endpoints){
+		if (it.second != NULL){
+			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
+			if (!(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
+				//remove this endpoint
+				it.second = NULL;
+				delete ep;
+			}
+		}
+	}	
 }
 
 int main(int argc, char** argv){
@@ -272,13 +305,7 @@ int main(int argc, char** argv){
     	goto errorInit;
     }
     
-    //--	set thread signal mask, block all kind of signals
-    sigset_t sigset;
-    sigemptyset(&sigset);
-	sigfillset(&sigset);
-    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
-    
-    //--	handle SIGINT
+    //-- handle SIGINT
 	struct sigaction act;
 	act.sa_handler = signal_handler;
 	sigfillset(&act.sa_mask);
@@ -295,6 +322,9 @@ int main(int argc, char** argv){
 	inPacketHandler->setDataHandler(NULL);
 	inPacketHandler->setCommandHandler(NULL);
 	
+	//--	create a thread to check for daemon endpoints' lives
+	endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
+	
     goto initSuccess;
     
     errorInit:
@@ -306,7 +336,8 @@ int main(int argc, char** argv){
     initSuccess:
 		//--	POST-SUCCESS JOBS	--//
     	printf("\nSVC daemon is running...");
-    	inPacketHandler->waitStop();
+    	fflush(stdout);
+        inPacketHandler->waitStop();
     	unPacketHandler->waitStop();
 }
 

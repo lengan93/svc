@@ -8,7 +8,7 @@ CDEBUG = -O0 -g
 
 full: daemon client server
 daemon:
-	$(CCOMPL) -o $(BINDIR)/daemon.exe $(SRCDIR)/svc/SVC-daemon.cpp $(SRCDIR)/svc/SVC-utils.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
+	$(CCOMPL) -o $(BINDIR)/daemon.exe $(SRCDIR)/svc/SVC-daemon.cpp $(SRCDIR)/svc/SVC-utils.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
 client:	
 	$(CCOMPL) -o $(BINDIR)/client.exe ./clientApp/SendFileApp.cpp $(SRCDIR)/svc/SVC.cpp $(SRCDIR)/svc/SVC-utils.cpp $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/svc/authenticator/SVCAuthenticatorSharedSecret.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
 server:	

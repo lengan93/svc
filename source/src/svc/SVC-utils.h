@@ -67,7 +67,7 @@
 			void setCommandHandler(SVCPacketProcessing cmdHandler);
 			void setDataHandler(SVCPacketProcessing dataHandler);
 			bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout);
-			void sendPacket(const uint8_t* packet, uint32_t packetLen);
+			int sendPacket(const uint8_t* packet, uint32_t packetLen);
 			void stopWorking();
 			void waitStop();
 	};
