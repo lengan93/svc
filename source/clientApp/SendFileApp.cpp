@@ -6,23 +6,33 @@
 using namespace std;
 
 int main(int argc, char** argv){
-
+	
 	string appID = string("SEND_FILE_APP");
 	SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
-	SVC* svc = new SVC(appID, authenticator);	
-	SVCEndpoint* endpoint = svc->establishConnection(remoteHost);
+	SVC* svc = NULL;
 	
-	if (endpoint!=NULL){
-		printf("\nConnection established!");
+	try{
+		svc = new SVC(appID, authenticator);
+		
+		SVCEndpoint* endpoint = svc->establishConnection(remoteHost);
+		if (endpoint!=NULL){
+			if (endpoint->negotiate()){
+				printf("\nConnection established!");
+			}
+			else{
+				printf("\nCannot establish connection!");
+			}
+			delete endpoint;
+		}		
+		delete svc;
 	}
-	else{
-		printf("\nCannot establish connection!");
+	catch (...){
+		printf("\nError: cannot create an instance of SVC\n");
 	}
 	
-	delete endpoint;
-	delete svc;
 	delete authenticator;
+	delete remoteHost;
 		
 }

@@ -9,17 +9,23 @@ int main(int argc, char** argv){
 	string appID = string("SEND_FILE_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
-	SVC* svc = new SVC(appID, authenticator);	
-	int status;
-	SVCEndpoint* endpoint = svc->listenConnection(3000, &status);
+	try{
+		SVC* svc = new SVC(appID, authenticator);	
+		int status;
+		SVCEndpoint* endpoint = svc->listenConnection(3000, &status);
 	
-	if (endpoint!=NULL){
-		printf("\nConnection established!");
+		if (endpoint!=NULL){
+			printf("\nConnection established!");
+			delete endpoint;
+		}
+		else{
+			printf("\nCannot establish connection!");
+		}
+		delete svc;
 	}
-	else{
-		printf("\nCannot establish connection!");
+	catch (...){
+		printf("\nError: cannot create an instance of SVC\n");
 	}
 	
-	delete endpoint;
-	delete svc;
+	delete authenticator;
 }

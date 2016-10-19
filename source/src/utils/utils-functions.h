@@ -48,10 +48,12 @@
 	//--	return TRUE if caught signal is correct, otherwise return FALSE
 	static inline bool waitSignal(int waitingSignal, int timeoutSignal, int timeout){
 		sigset_t sig;
+		sigset_t oldset;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
 		sigaddset(&sig, timeoutSignal);
-		sigaddset(&sig, SIGINT);	
+		sigaddset(&sig, SIGINT);
+		pthread_sigmask(SIG_BLOCK, &sig, &oldset);
 		
 		timer_t timer;
 		struct sigevent evt;
@@ -70,7 +72,7 @@
 		//--	wait for either timeoutSignal or watingSignal, or SIGINT
 		int caughtSignal;
 		sigwait(&sig, &caughtSignal);
-		
+		pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
 		return caughtSignal == waitingSignal;	
 	}
 	

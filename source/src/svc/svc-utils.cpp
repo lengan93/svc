@@ -1,38 +1,9 @@
-#include "SVC-utils.h"
+#include "svc-utils.h"
 
 
 //--	UTILS FUNCTION IMPLEMEMTATION	--//
 bool isEncryptedCommand(enum SVCCommand command){
 	return (command == SVC_CMD_CONNECT_OUTER3);
-}
-
-uint8_t* createSVCPacket(uint32_t packetLen){	
-	uint8_t* packet = (uint8_t*)malloc(packetLen);
-	memset(packet, 0, packetLen);
-	return packet;
-}
-
-void setPacketCommand(uint8_t* packet, enum SVCCommand cmd){
-	//-- set info byte to be a command
-	packet[8] |= 0x80;
-	//-- set commandID
-	packet[13] = (uint8_t)cmd;
-	//-- reset number of param
-	packet[14] = 0x00;
-}
-
-void addPacketParam(uint8_t* packet, const uint8_t* param, uint16_t paramLen){
-	//-- find position of the new param
-	uint8_t* p = packet + 15;
-	for (uint8_t i=0; i<packet[14]; i++){
-		p += 2 + *((uint16_t*)p);
-	}
-	//-- copy new param to packet
-	memcpy(p, param, paramLen);
-	//-- copy param length to p-2
-	memcpy(p-2, (uint8_t*)&paramLen, 2);
-	//-- add 1 to number of param
-	packet[14] += 1;
 }
 
 //--	PERIODIC WORKER
@@ -50,12 +21,11 @@ PeriodicWorker::PeriodicWorker(int interval, void (*handler)(void*), void* args)
 void PeriodicWorker::stopWorking(){
 	//--	disarm automatic
 	working = false;
-	pthread_join(this->worker, NULL);
 	timer_delete(this->timer);
-	printf("\nperiodic worker stopped");
 }
 
 void* PeriodicWorker::handling(void* args){
+	
 	PeriodicWorker* pw = (PeriodicWorker*)args;
 	
 	struct sigevent evt;
@@ -76,7 +46,7 @@ void* PeriodicWorker::handling(void* args){
 		//--	wait signal then perform handler
 		waitrs = waitSignal(SVC_PERIODIC_SIGNAL);
 		if (waitrs){
-			//--	perform handler
+			//--	perform handler		
 			pw->handler(pw->args);
 		}
 		else{
@@ -87,7 +57,17 @@ void* PeriodicWorker::handling(void* args){
 	}
 }
 
+void PeriodicWorker::waitStop(){
+	//-- can only be interrupted by SIGINT
+	pthread_kill(this->worker, SIGINT);
+	pthread_join(this->worker, NULL);
+}
+
 PeriodicWorker::~PeriodicWorker(){
+	if (this->working){
+		this->stopWorking();
+		this->waitStop();
+	}
 	printf("\nperiod worker detructed");
 }
 
@@ -106,7 +86,7 @@ PacketHandler::~PacketHandler(){
 		stopWorking();
 		waitStop();
 	}
-	printf("\npacket handler stoped"); fflush(stdout);
+	printf("\npacket handler %d stopped", this->socket); fflush(stdout);
 }
 
 void PacketHandler::waitStop(){
@@ -117,26 +97,27 @@ void PacketHandler::stopWorking(){
 	this->working = false;
 }
 
-void PacketHandler::setDataHandler(SVCPacketProcessing dataHandler){
+void PacketHandler::setDataHandler(SVCPacketProcessing dataHandler, void* args){
 	this->dataHandler = dataHandler;
+	this->dataHandlerArgs = args;
 }
 
-void PacketHandler::setCommandHandler(SVCPacketProcessing cmdHandler){
+void PacketHandler::setCommandHandler(SVCPacketProcessing cmdHandler, void* args){
 	this->cmdHandler = cmdHandler;
+	this->cmdHandlerArgs = args;
 }
 
-int PacketHandler::sendPacket(const uint8_t* packet, uint32_t packetLen){
-	printf("\npacket handler %d sending: ", this->socket); printBuffer(packet, packetLen); fflush(stdout);
-	return send(this->socket, packet, packetLen, 0);
+int PacketHandler::sendPacket(SVCPacket* packet){
+	//printf("\npacket handler %d sending: ", this->socket); printBuffer(packet, packetLen); fflush(stdout);
+	return send(this->socket, packet->packet, packet->dataLen, 0);
 }
 
-bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* packet, uint32_t* packetLen, int timeout){
+bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPacket* packet, int timeout){
 	struct CommandHandler handler;
 	handler.waitingThread = pthread_self();
 	handler.cmd = cmd;
 	handler.endpointID = endpointID;
 	handler.packet = packet;
-	handler.packetLen = packetLen;
 	this->commandHandlerRegistra.push_back(handler);
 	
 	//-- suspend the calling thread until the correct command is received or the timer expires
@@ -151,37 +132,30 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_
 void* PacketHandler::readingLoop(void* args){
 	
 	PacketHandler* _this = (PacketHandler*)args;
-	
-	int byteRead;
-	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+	SVCPacket* packet = new SVCPacket();
+	ssize_t readrs;
 	
 	while (_this->working){
 		do{
-			byteRead = recv(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
+			readrs = recv(_this->socket, packet->packet, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
 		}
-		while((byteRead==-1) && _this->working);
+		while((readrs==-1) && _this->working);
 		
-		if (byteRead>0){
-			printf("\npacket handler %d read: ", _this->socket); printBuffer(buffer, byteRead); fflush(stdout);
-			uint8_t infoByte = buffer[ENDPOINTID_LENGTH];
-			//printf("\ninfo byte: %02x", infoByte); fflush(stdout);
-			//printf("\ninfoByte & SVC_COMMAND_FRAME: %02x", infoByte & SVC_COMMAND_FRAME); fflush(stdout);
-			if ((infoByte & SVC_COMMAND_FRAME) != 0){
-				//printf("\ninfoByte & SVC_ENCRYPTED: %02x", infoByte & SVC_ENCRYPTED); fflush(stdout);
-				if ((infoByte & SVC_ENCRYPTED) == 0){
-					//printf("\nwhat the hell is this?"); fflush(stdout);
+		if (readrs>0){
+			packet->dataLen = (uint32_t)readrs;
+			printf("\npacket handler %d read: ", _this->socket); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			uint8_t infoByte = packet->packet[ENDPOINTID_LENGTH];
+			if ((infoByte & SVC_COMMAND_FRAME) != 0){				
+				if ((infoByte & SVC_ENCRYPTED) == 0){				
 					//-- this command is not encrypted, get the commandID					
-					enum SVCCommand cmd = (enum SVCCommand)buffer[SVC_PACKET_HEADER_LEN];
-					printf("\nreceived command: %02x", cmd); fflush(stdout);
-					uint64_t endpointID = *((uint64_t*)buffer);
-					printf("\nfor endpoint: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);
+					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];					
+					uint64_t endpointID = *((uint64_t*)packet->packet);					
 					//-- check if the cmd is registered in the registra
 					for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
-						if (_this->commandHandlerRegistra[i].cmd == cmd && _this->commandHandlerRegistra[i].endpointID == endpointID){
-							//printf("\nnotify the waiting thread"); fflush(stdout);
+						if (_this->commandHandlerRegistra[i].cmd == cmd && _this->commandHandlerRegistra[i].endpointID == endpointID){							
 							//-- copy the packet content and notify the suspended thread
-							memcpy(_this->commandHandlerRegistra[i].packet, buffer, byteRead);
-							*(_this->commandHandlerRegistra[i].packetLen) = byteRead;
+							memcpy(_this->commandHandlerRegistra[i].packet->packet, packet->packet, packet->dataLen);
+							_this->commandHandlerRegistra[i].packet->dataLen = packet->dataLen;
 							pthread_kill(_this->commandHandlerRegistra[i].waitingThread, SVC_ACQUIRED_SIGNAL);
 							//-- remove the handler
 							_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);							
@@ -189,15 +163,15 @@ void* PacketHandler::readingLoop(void* args){
 					}
 				}				
 				//-- call handler routine for command
-				if (_this->cmdHandler!=NULL) _this->cmdHandler(buffer, byteRead);
+				if (_this->cmdHandler!=NULL) _this->cmdHandler(packet, _this->cmdHandlerArgs);
 			}
 			else{
 				//-- call handler routine for data
-				if (_this->dataHandler!=NULL) _this->dataHandler(buffer, byteRead);
+				if (_this->dataHandler!=NULL) _this->dataHandler(packet, _this->dataHandlerArgs);
 			}			
 		}
 	}
 	
-	delete buffer;
+	delete packet;
 }
 

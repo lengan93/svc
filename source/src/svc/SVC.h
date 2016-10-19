@@ -3,8 +3,8 @@
 #ifndef __SVC__
 #define __SVC__
 
-	#include "SVC-header.h"
-	#include "SVC-utils.h"
+	#include "svc-header.h"
+	#include "svc-utils.h"
 	#include "host/SVCHost.h"
 	#include "authenticator/SVCAuthenticator.h"
 	
@@ -26,13 +26,16 @@
 	class SVCEndpoint{
 		friend class SVC;	
 
-		private:	
+		private:
+			SVC* svc;
 			int sock;
 			string endpointSockPath;
 			uint64_t endpointID;
+			uint32_t appID;
 			PacketHandler* packetHandler;
+			SVCHost* remoteHost;
 		
-			SVCEndpoint(uint32_t appID);	
+			SVCEndpoint(SVC* svc, SVCHost* remoteHost);	
 			
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data

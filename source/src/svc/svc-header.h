@@ -28,7 +28,6 @@
 	#define SVC_SHARED_MUTEX_SIGNAL				SIGUSR1
 	#define SVC_PERIODIC_SIGNAL					SIGUSR2
 	#define SVC_TIMEOUT_SIGNAL					SIGALRM
-	#define SVC_PERIODIC_SIGNAL					SIGUSR2
 
 	#define SVC_DEFAULT_TIMEOUT 				8000
 	#define SVC_SHORT_TIMEOUT					1000
@@ -37,10 +36,12 @@
 	#define SVC_ENDPOINT_LIVETIME				3000
 		
 	/*	SVC CONSTANTS' LENGTHS	*/
-
+	
+	#define 		HOST_ADDR_LENGTH			4
+	#define 		APPID_LENGTH				4
 	#define 		SEQUENCE_LENGTH				4
 	#define 		ENDPOINTID_LENGTH			8
-	#define 		SVC_PACKET_HEADER_LEN 		13 //-- SVC_PACKET_HEADER_LEN = ENDPOINTID_LENGTH + 1 (info byte) + SEQUENCE_LENGTH
+	#define 		SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = ENDPOINTID_LENGTH + 1 (info byte) + SEQUENCE_LENGTH
 
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80
@@ -77,7 +78,5 @@
 		_SVC_CMD_COUNT
 	};
 	/*	END OF ABI	*/
-	
-	typedef void (*SVCPacketProcessing)(const uint8_t* data, uint32_t dataLen);
 	
 #endif
