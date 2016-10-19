@@ -116,7 +116,10 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 }
 
 SVCEndpoint* SVC::listenConnection(int timeout, int* status){
-
+	Message* request;
+	if (this->connectionRequests->peak(&request)){
+		//-- there is connection request, read for endpointID 
+	}
 }
 //--	SVCENDPOINT class	//
 
@@ -126,9 +129,10 @@ SVCEndpoint::SVCEndpoint(SVC* svc, SVCHost* remoteHost){
 	this->remoteHost = remoteHost;
 	//--	generate endpointID	
 	
-	this->endpointID = 0;
+	this->endpointID = 0;	
+	this->endpointID |= SVC::endpointCounter;
+	this->edpointID<<=32;
 	this->endpointID |= svc->appID;
-	this->endpointID |= SVC::endpointCounter<<16;	
 	
 	printf("\nnew endpoint create: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	

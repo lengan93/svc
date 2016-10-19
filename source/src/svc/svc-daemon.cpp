@@ -24,6 +24,7 @@ int daemonInSocket;
 PacketHandler* unPacketHandler;
 PacketHandler* inPacketHandler;
 PeriodicWorker* endpointChecker;
+uint16_t daemonEndpointCounter = 0;
 
 
 class DaemonEndpoint{
@@ -46,7 +47,7 @@ class DaemonEndpoint{
 		uint64_t endpointID;
 					
 		//-- public methods
-		void sendPacketToApp(SVCPacket* packet);
+		void sendPacketIn(SVCPacket* packet);
 		void sendPacketOut(SVCPacket* packet);
 		bool checkInitLiveTime(int interval);
 		bool isAuthenticated();
@@ -96,7 +97,7 @@ void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
 	this->remoteAddr.sin_addr.s_addr = remoteAddress;
 }
 
-void DaemonEndpoint::sendPacketToApp(SVCPacket* packet){
+void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
 	this->packetHandler->sendPacket(packet);
 }
 
@@ -322,6 +323,10 @@ void signal_handler(int sig){
  * daemon command handler
  * */
  
+void sendPacketToApp(SVCPacket* packet){
+	send
+}
+ 
 void daemonUnCommandHandler(SVCPacket* packet, void* args){
 	//printf("\ndaemon un received command: "); fflush(stdout); printBuffer(packet, packetLen);
 	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
@@ -330,16 +335,47 @@ void daemonUnCommandHandler(SVCPacket* packet, void* args){
 		case SVC_CMD_CREATE_ENDPOINT:
 			//-- check if the endpoint already exists
 			if (endpoints[endpointID]==NULL){
-				DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);
+				DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);				
 				endpoints[endpointID] = endpoint;
 				//-- send back the packet
-				endpoint->sendPacketToApp(packet);
+				endpoint->sendPacketIn(packet);
 			}
 			//--else: ignore this packet
 			break;
 		default:
 			break;
 	}
+}
+
+void daemonInCommandHandler(SVCPacket* packet, void* args){
+	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
+	uint64_t endpointID = *((uint64_t*)packet->packet);
+	uint64_t newEndpointID = 0;
+	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+	uint16_t paramLen;
+	uint32_t appID;
+	
+	switch (cmd){
+		case SVC_CMD_CONNECT_OUTER1:
+			newEndpointID |= daemonEndpointCounter;
+			newEndpointID <<= 48;
+			newEndpointID |= endpointID;
+			//-- create new daemonEndpoint for this endpointID
+			DaemonEndpoint* dmnEndpoint = new DaemonEndpoint(newEndpointID);
+			endpoints[newEndpointID] = dmnEndpoint;
+			//-- forward this request to app
+			//-- extract DH-1
+			packet->popCommandParam(param, &paramLen);
+			//-- extract appID
+			packet->popCommandParam(param, &paramLen);
+			//-- send the packet to the corresponding app
+			appID = *((uint32_t*)param);
+			string appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
+			
+			break;
+		default:
+			break;
+	}	
 }
 
 void checkEndpointLiveTime(void* args){
@@ -405,7 +441,7 @@ int main(int argc, char** argv){
 	//--	create a thread to read from htp socket
 	inPacketHandler = new PacketHandler(daemonInSocket);
 	inPacketHandler->setDataHandler(NULL, NULL);
-	inPacketHandler->setCommandHandler(NULL, NULL);
+	inPacketHandler->setCommandHandler(daemonInCommandHandler, NULL);
 	
 	//--	create a thread to check for daemon endpoints' lives
 	endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
