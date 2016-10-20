@@ -18,6 +18,17 @@ void generateRandomData(uint32_t length, uint8_t* data){
 	close(urandom);
 }
 
+void generateRandomNumber(mpz_t* number, int securityParam){
+	mpz_init(*number);
+	int byteLen = securityParam/8;
+	uint8_t randomData[byteLen];	
+	generateRandomData(byteLen, randomData);
+	for (int i=0;i<byteLen;i++){
+		mpz_mul_ui(*number, *number, 256);		
+		mpz_add_ui(*number, *number, randomData[i]);
+	}
+}
+
 string hexToString(const uint8_t* data, uint32_t len){
 	string rs = "";
 	uint8_t b;

@@ -6,14 +6,18 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 
+#include "../crypto/crypto-utils.h"
+#include "../crypto/AES256.h"
+#include "../crypto/SHA256.h"
+#include "../crypto/ECCurve.h"
+
+
 #define SVC_VERSION 0x01
 
 using namespace std;
 
 //--	class forward declaration
 class DaemonEndpoint;
-//--	method forward declaration
-extern void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args);
 
 //--	GLOBAL VARIABLES
 unordered_map<uint64_t, DaemonEndpoint*> endpoints;
@@ -26,9 +30,11 @@ PacketHandler* inPacketHandler;
 PeriodicWorker* endpointChecker;
 uint16_t daemonEndpointCounter = 0;
 
-
 class DaemonEndpoint{
-	private:
+	public:
+		//-- static methods
+		static void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args);
+	
 		//-- private members
 		bool isAuth;
 		int initLiveTime;
@@ -37,8 +43,15 @@ class DaemonEndpoint{
 		struct sockaddr_in remoteAddr;
 		size_t remoteAddrLen;
 		PacketHandler* packetHandler;
+		//-- crypto protocol variables
+		string challengeSecret;
+		ECCurve* curve;
+		ECPoint* gx;
+		ECPoint* gy;
+		ECPoint* gxy;
+		AES256* aes256;
+		SHA256* sha256;
 		
-	public:
 		//-- constructors/destructors
 		DaemonEndpoint(uint64_t endpointID);
 		~DaemonEndpoint();
@@ -62,6 +75,8 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	this->endpointID = endpointID;	
 	this->isAuth = false;
 	this->initLiveTime = SVC_ENDPOINT_LIVETIME;
+	
+	this->sha256 = new SHA256();
 	
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -103,6 +118,7 @@ void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
 
 void DaemonEndpoint::sendPacketOut(SVCPacket* packet){
 	sendto(daemonInSocket, packet->packet,packet->dataLen, 0, (struct sockaddr*)&this->remoteAddr, this->remoteAddrLen);
+	printf("\nsend packet out: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 }
 
 bool DaemonEndpoint::checkInitLiveTime(int interval){
@@ -116,30 +132,64 @@ bool DaemonEndpoint::isAuthenticated(){
 
 //-- endpoint packet handling functions
 
-void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args){
-	DaemonEndpoint* dmnEndpoint = (DaemonEndpoint*)args;
+void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args){
+	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
 	
 	uint8_t* param = param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
+	string hashx;
+	uint8_t* aeskey;
+	int requested_security_strength;
+	mpz_t randomx;
+	char* gx_x;
+	uint16_t gx_x_hexlen;
+	char* gx_y;
+	uint16_t gx_y_hexlen;
+	
+	uint8_t* encrypted;
+	uint32_t encryptedLen;
+	
 	switch (cmd){
 		case SVC_CMD_CONNECT_INNER1:
 			printf("\nCONNECT_INNER1 received");			
 			//-- extract remote address
+			packet->popCommandParam(param, &paramLen);		
+			_this->connectToAddress(*((uint32_t*)param));			
+			//-- extract challengeSecret x
 			packet->popCommandParam(param, &paramLen);
-			printf("\naddress len: %d", paramLen);
-			dmnEndpoint->connectToAddress(*((uint32_t*)param));
-			printf("\nextracted remote address: "); printBuffer(param, paramLen);
-			//-- extract challengeSecret
-			packet->popCommandParam(param, &paramLen);
-			//-- use challengeSecret (x) as an AES key
-			//-- generate k1
-			//-- use created AES to encrypt k1
+			//-- use SHA256(x) as an AES256 key
+			hashx = _this->sha256->hash(hexToString(param, paramLen));
+			stringToHex(hashx, &aeskey); //AES key is guaranteed to be 256 bits length
+			_this->aes256 = new AES256(aeskey);
+			//-- generate STS-gx
+			_this->curve = new ECCurve();
+			requested_security_strength = _this->curve->getRequestSecurityLength();
+			mpz_init(randomx);
+			generateRandomNumber(&randomx, requested_security_strength);
+			_this->gx = _this->curve->mul(_this->curve->g, &randomx);
+			//-- use created AES to encrypt gx = Ex(gx), copy to param
+			gx_x = mpz_get_str(NULL, 16, _this->gx->x);
+			gx_x_hexlen = strlen(gx_x);
+			paramLen = 0;
+			memcpy(param + paramLen, &gx_x_hexlen, 2);
+			paramLen += 2;
+			memcpy(param + paramLen, gx_x, gx_x_hexlen);
+			paramLen += gx_x_hexlen;
+			gx_y = mpz_get_str(NULL, 16, _this->gx->y);
+			gx_y_hexlen = strlen(gx_y);
+			memcpy(param + paramLen, &gx_y_hexlen, 2);
+			paramLen += 2;
+			memcpy(param+paramLen, gx_y, gx_y_hexlen);
+			paramLen += gx_y_hexlen;
+			_this->aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);		
 			//-- attach Ex(k1) to packet
+			packet->pushCommandParam(encrypted, encryptedLen);
+			delete encrypted;
 			//-- switch commandID
 			packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
 			//-- sent the packet
-			dmnEndpoint->sendPacketOut(packet);
+			_this->sendPacketOut(packet);
 			break;
 		default:
 			break;
@@ -305,6 +355,8 @@ int main(int argc, char** argv){
 	
 	//--	create a thread to check for daemon endpoints' lives
 	endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
+	
+	//--	init some globals variables
 	
     goto initSuccess;
     

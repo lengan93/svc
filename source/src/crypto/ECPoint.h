@@ -1,20 +1,19 @@
-#ifndef EC_POINT
-#define EC_POINT
+#ifndef EC_POINT_H
+#define EC_POINT_H
 
-#include <gmp.h>
+	#include <gmp.h>
 
-	class EC_point{
-	public:
-		mpz_t x;
-		mpz_t y;
-		bool inf;
-		
-		EC_point();
-		EC_point(const mpz_t* xpos, const mpz_t* ypos);
-		EC_point(char* x_str, char* y_str);
-		~EC_point();
-
-	};
+		class ECPoint{
+		public:
+			mpz_t x;
+			mpz_t y;
+			bool inf;
+			
+			ECPoint();
+			ECPoint(const mpz_t* xpos, const mpz_t* ypos);
+			ECPoint(const char* x_str, const char* y_str);
+			~ECPoint();
+		};
 
 #endif
 

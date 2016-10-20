@@ -1,31 +1,26 @@
-#include "EC_curve.h"
+#include "ECCurve.h"
 
-EC_curve::EC_curve(){
-	
+ECCurve::ECCurve(){
+	mpz_init_set_str(this->p, w256_001_p, 10);
+	mpz_init_set_str(this->n, w256_001_n, 10);
+	mpz_init_set_str(this->a4, w256_001_a4, 10);
+	mpz_init_set_str(this->a6, w256_001_a6, 10);		
+	this->g = new ECPoint(w256_001_gx, w256_001_gy);
 }
 
-EC_curve::EC_curve(const char* p, const char* n, const char* a4, const char* a6, const EC_point* g)
-{
-	mpz_init_set_str(this->p, p, 10);
-	mpz_init_set_str(this->n, n, 10);
-	mpz_init_set_str(this->a4, a4, 10);
-	mpz_init_set_str(this->a6, a6, 10);
-	this->g = new EC_point(&g->x, &g->y);	
-}
-
-EC_point* EC_curve::add(const EC_point* P, const EC_point* Q){	
-	EC_point* result;
+ECPoint* ECCurve::add(const ECPoint* P, const ECPoint* Q){	
+	ECPoint* result;
 
 	if (P->inf || Q->inf){		
 		if (!P->inf){
 			//return p1
-			result = new EC_point(&P->x, &P->y);
+			result = new ECPoint(&P->x, &P->y);
 		}
 		else if (!Q->inf){
-			result = new EC_point(&Q->x, &Q->y);			
+			result = new ECPoint(&Q->x, &Q->y);			
 		}
 		else{
-			result = new EC_point();
+			result = new ECPoint();
 			result->inf = true;
 		}		
 		return result;
@@ -36,7 +31,7 @@ EC_point* EC_curve::add(const EC_point* P, const EC_point* Q){
 			return dbl(P);
 		}
 		else{
-			result = new EC_point();
+			result = new ECPoint();
 			result->inf = true;
 			return result;
 		}
@@ -73,14 +68,14 @@ EC_point* EC_curve::add(const EC_point* P, const EC_point* Q){
 		mpz_sub(yR, yR, P->y);
 		mpz_mod(yR, yR, this->p);
 		
-		result = new EC_point(&xR, &yR);
+		result = new ECPoint(&xR, &yR);
 		return result;
 	}	
 }
 
-EC_point* EC_curve::mul(const EC_point* P, const mpz_t* k){
+ECPoint* ECCurve::mul(const ECPoint* P, const mpz_t* k){
 	if (mpz_sgn(*k)==0){
-		EC_point* result = new EC_point();
+		ECPoint* result = new ECPoint();
 		result->inf=true;
 		return result;
 	}
@@ -103,7 +98,7 @@ EC_point* EC_curve::mul(const EC_point* P, const mpz_t* k){
 			mpz_fdiv_q_ui(tmp, tmp, 2);
 		}
 
-		EC_point* result = new EC_point();
+		ECPoint* result = new ECPoint();
 
 		while (mpz_sgn(b_inverse)>0 || bitlength){
 			bitlength--;		
@@ -117,11 +112,11 @@ EC_point* EC_curve::mul(const EC_point* P, const mpz_t* k){
 	}
 }
 
-EC_point* EC_curve::dbl(const EC_point* P){	
+ECPoint* ECCurve::dbl(const ECPoint* P){	
 	
-	EC_point* result;
+	ECPoint* result;
 	if (P->inf || mpz_sgn(P->y)==0){
-		result = new EC_point();
+		result = new ECPoint();
 		result->inf = true;
 		return result;
 	}
@@ -157,20 +152,20 @@ EC_point* EC_curve::dbl(const EC_point* P){
 		mpz_sub(yR, yR, P->y);
 		mpz_mod(yR, yR, this->p);
 		
-		return new EC_point(&xR, &yR);
+		return new ECPoint(&xR, &yR);
 	}
 }
 
-EC_point* EC_curve::opposite(const EC_point* P){
+ECPoint* ECCurve::opposite(const ECPoint* P){
 	mpz_t sum;
 	mpz_init_set(sum, P->x);
 	mpz_add(sum, sum, P->y);
 	mpz_mod(sum, sum, this->p);
 	
-	EC_point* result = new EC_point(&P->x, &sum);
+	ECPoint* result = new ECPoint(&P->x, &sum);
 }
 
-bool EC_curve::contains(const EC_point* p){
+bool ECCurve::contains(const ECPoint* p){
 	if (p->inf){		
 		return true;	
 	}
@@ -193,7 +188,7 @@ bool EC_curve::contains(const EC_point* p){
 	}
 }
 
-int EC_curve::getRequestSecurityLength(){
+int ECCurve::getRequestSecurityLength(){
 	int N = strlen(mpz_get_str(NULL,2,this->n));
 	if (N>=512){
 		return 256;			
@@ -216,6 +211,6 @@ int EC_curve::getRequestSecurityLength(){
 }
 
 
-EC_curve::~EC_curve(){
+ECCurve::~ECCurve(){
 }
 
