@@ -127,7 +127,9 @@ void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args){
 			printf("\nCONNECT_INNER1 received");			
 			//-- extract remote address
 			packet->popCommandParam(param, &paramLen);
+			printf("\naddress len: %d", paramLen);
 			dmnEndpoint->connectToAddress(*((uint32_t*)param));
+			printf("\nextracted remote address: "); printBuffer(param, paramLen);
 			//-- extract challengeSecret
 			packet->popCommandParam(param, &paramLen);
 			//-- use challengeSecret (x) as an AES key
@@ -135,7 +137,7 @@ void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args){
 			//-- use created AES to encrypt k1
 			//-- attach Ex(k1) to packet
 			//-- switch commandID
-			packet->switchCommandID(SVC_CMD_CONNECT_OUTER1);
+			packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
 			//-- sent the packet
 			dmnEndpoint->sendPacketOut(packet);
 			break;
@@ -143,160 +145,6 @@ void dmn_endpoint_inner_command_handler(SVCPacket* packet, void* args){
 			break;
 	}
 }
-//============================ SVC DAEMON IMPLEMENTATION ==============================
-//-----------------------------------//
-/*
-void* unixReadingLoop(void* args){
-	
-	int byteRead;
-	vector<Message*> params;
-
-	while (working){	
-		do{
-			byteRead = recv(daemonUnSocket, unixReceiveBuffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT);
-		}
-		while((byteRead==-1 && (errno==EAGAIN || errno==EWOULDBLOCK)) && working);		
-		
-		//--	process message. message is stored in unixReceiveBuffer
-		if (byteRead>0){			
-			
-			printf("\nread from unix: ");
-			printBuffer(unixReceiveBuffer, byteRead);
-			
-			//--	check if we have service for this endPointID
-			uint64_t endPointID = *((uint64_t*)unixReceiveBuffer);			
-			uint8_t infoByte = unixReceiveBuffer[ENDPOINTID_LENGTH];
-			
-			DaemonService* service;
-			service = getServiceByEndPointID(endPointID);
-			
-			if (service==NULL){
-				if (infoByte & SVC_COMMAND_FRAME){
-					enum SVCCommand cmd = (enum SVCCommand)unixReceiveBuffer[ENDPOINTID_LENGTH + 1];
-					if (cmd == SVC_CMD_CONNECT_STEP1){
-						extractParams(unixReceiveBuffer + ENDPOINTID_LENGTH + 2, &params);
-						//--	check for service if connect to the same address
-						DaemonService* service;
-						uint32_t address = *((uint32_t*)(params[2]->data));
-						if (address!=0){
-							service = getServiceByAddress(address);							
-							if (service == NULL){
-								printf("\nno service found for address: %08x, creating new.", address);
-								//--TODO:	to be changed to htp
-								struct sockaddr_in sockAddr;
-								size_t sockLen = sizeof(sockAddr);							
-								sockAddr.sin_family = AF_INET;
-								sockAddr.sin_port = htons(SVC_DAEPORT);
-								sockAddr.sin_addr.s_addr = address;
-								printBuffer((uint8_t*)&sockAddr, sockLen);
-								service = new DaemonService(&sockAddr, sockLen);
-								service->address = address;
-								
-								//--	add the service
-								serviceTableMutex->lock();
-								serviceTable.push_back(service);
-								serviceTableMutex->unlock();								
-							}
-							//--	else: use this service
-							DaemonEndPoint* endPoint = service->addDaemonEndPoint(endPointID, *((uint32_t*)(params[1]->data)));
-							endPoint->outgoingQueue->enqueue(new Message(unixReceiveBuffer, byteRead));						
-							clearParams(&params);
-						}
-						//--	else: incorrect address
-					}
-					//--	else: other commands not allows without service
-				}
-				//--	else: data frame not allowed without service
-			}		
-			else{
-				if (service->isWorking()){					
-					service->endPointsMutex->lock_shared();
-					service->endPoints[endPointID]->outgoingQueue->enqueue(new Message(unixReceiveBuffer, byteRead));
-					service->endPointsMutex->unlock_shared();
-				}
-				//--	else: current service is not working
-			}
-		}
-		//--	else: read error		
-	}
-	printf("\nExit unix reading loop");
-}
-
-void* htpReadingLoop(void* args){
-	
-	int byteRead;
-	struct sockaddr_in sockAddr;
-	socklen_t sockLen = sizeof(sockAddr);
-	vector<Message*> params;
-
-	while (working){	
-		do{
-			byteRead = recvfrom(daemonInSocket, htpReceiveBuffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT, (struct sockaddr*) &sockAddr, &sockLen);
-		}
-		while((byteRead==-1 && (errno==EAGAIN || errno==EWOULDBLOCK)) && working);		
-		
-		//--	process message. message is stored in unixReceiveBuffer
-		if (byteRead>0){			
-			
-			printf("\nread from htp: ");
-			printBuffer(htpReceiveBuffer, byteRead);
-			
-			//--	check if we have service for this endPointID
-			uint32_t sessionID = *((uint32_t*)htpReceiveBuffer);
-			uint64_t endPointID = *((uint64_t*)(htpReceiveBuffer+SESSIONID_LENGTH));		
-			uint8_t infoByte = htpReceiveBuffer[SESSIONID_LENGTH + ENDPOINTID_LENGTH];
-			
-			DaemonService* service;
-			service = getServiceByEndPointID(endPointID);
-			
-			if (service==NULL){
-				if (infoByte & SVC_COMMAND_FRAME){				
-					enum SVCCommand cmd = (enum SVCCommand)htpReceiveBuffer[SESSIONID_LENGTH + ENDPOINTID_LENGTH + 1];
-					if (cmd == SVC_CMD_CONNECT_STEP1){
-						if ((infoByte & 0x30)>>4 == SVC_VERSION){
-							extractParams(htpReceiveBuffer + SESSIONID_LENGTH + ENDPOINTID_LENGTH + 2, &params);
-							//--	check if we have service for this sessionID
-							if (sessionID!=SVC_DEFAULT_SESSIONID){
-								service = getServiceBySessionID(sessionID);
-							}
-							//--else: create new service
-							if (service==NULL){						
-								//--	create new DaemonService
-								service = new DaemonService(&sockAddr, sockLen);
-								//--	register this service with endPointID
-								serviceTableMutex->lock();
-								serviceTable[endPointID] = service;
-								serviceTableMutex->unlock();
-							}
-							//--else: use this service
-							DaemonEndPoint* endPoint = service->addDaemonEndPoint(endPointID, *((uint32_t*)(params[1]->data)));
-							endPoint->incomingQueue->enqueue(new Message(htpReceiveBuffer + SESSIONID_LENGTH, byteRead-SESSIONID_LENGTH));
-							clearParams(&params);
-						}
-						else{
-							printf("\nversion mismatch, CONNECT_STEP1 reject");
-						}
-						//--else: version mismatched
-					}
-					//--else: other commands not allowed without service
-				}
-				//--else: data frame not allowed without service
-			}
-			else{
-				//--	service existed with endPointID, remove sessionID before forward
-				if (service->isWorking()){
-					service->endPointsMutex->lock_shared();
-					service->endPoints[endPointID]->incomingQueue->enqueue(new Message(htpReceiveBuffer + SESSIONID_LENGTH, byteRead-SESSIONID_LENGTH));
-					service->endPointsMutex->unlock_shared();	
-				}
-				//--	else: current service is not working
-			}
-		}
-		//--	else: read error
-	}
-	printf("\nExit htp reading loop");
-}
-*/
 
 void signal_handler(int sig){
 	//printf("\ncaptured signal: %d", sig);
@@ -324,7 +172,7 @@ void signal_handler(int sig){
  * */
  
 void sendPacketToApp(SVCPacket* packet){
-	send
+	//send
 }
  
 void daemonUnCommandHandler(SVCPacket* packet, void* args){
@@ -348,12 +196,19 @@ void daemonUnCommandHandler(SVCPacket* packet, void* args){
 }
 
 void daemonInCommandHandler(SVCPacket* packet, void* args){
+	printf("\ndaemonInCommandHandler receives some thing");
 	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
 	uint64_t endpointID = *((uint64_t*)packet->packet);
 	uint64_t newEndpointID = 0;
 	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
 	uint32_t appID;
+	string appSockPath;
+	DaemonEndpoint* dmnEndpoint;
+	
+	struct sockaddr_un appSockAddr;
+	memset(&appSockAddr, 0, sizeof(appSockAddr));
+	appSockAddr.sun_family = AF_LOCAL;
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_OUTER1:
@@ -361,21 +216,26 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			newEndpointID <<= 48;
 			newEndpointID |= endpointID;
 			//-- create new daemonEndpoint for this endpointID
-			DaemonEndpoint* dmnEndpoint = new DaemonEndpoint(newEndpointID);
+			dmnEndpoint = new DaemonEndpoint(newEndpointID);
 			endpoints[newEndpointID] = dmnEndpoint;
-			//-- forward this request to app
 			//-- extract DH-1
 			packet->popCommandParam(param, &paramLen);
 			//-- extract appID
 			packet->popCommandParam(param, &paramLen);
 			//-- send the packet to the corresponding app
+			packet->switchCommand(SVC_CMD_CONNECT_INNER2);
 			appID = *((uint32_t*)param);
-			string appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
-			
+			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
+			memcpy(&appSockAddr, appSockPath.c_str(), appSockPath.size());
+			sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));
+			delete packet;
 			break;
 		default:
+			delete packet;
 			break;
-	}	
+	}
+	
+	delete param;
 }
 
 void checkEndpointLiveTime(void* args){

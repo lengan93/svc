@@ -10,9 +10,8 @@ int main(int argc, char** argv){
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	try{
-		SVC* svc = new SVC(appID, authenticator);	
-		int status;
-		SVCEndpoint* endpoint = svc->listenConnection(3000, &status);
+		SVC* svc = new SVC(appID, authenticator);		
+		SVCEndpoint* endpoint = svc->listenConnection(3000);
 	
 		if (endpoint!=NULL){
 			printf("\nConnection established!");

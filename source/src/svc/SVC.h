@@ -28,19 +28,33 @@
 
 		private:
 			SVC* svc;
+			bool isInitiator;
 			int sock;
 			string endpointSockPath;
 			uint64_t endpointID;
 			uint32_t appID;
 			PacketHandler* packetHandler;
 			SVCHost* remoteHost;
+			SVCPacket* request;
 		
-			SVCEndpoint(SVC* svc, SVCHost* remoteHost);	
+			SVCEndpoint(SVC* svc, bool isInitiator);	
 			
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data
+			 * */		
+			void connectToDaemon();	
+						
+			/*
 			 * */
-			void connectToDaemon();
+			void setRemoteHost(SVCHost* remoteHost);
+			
+			/*
+			 * */
+			void changeEndpointID(uint64_t endpointID);
+			
+			/*
+			 * */
+			void bindToEndpointID(uint64_t endpointID);
 
 		public:
 			~SVCEndpoint();
@@ -72,6 +86,7 @@
 		private:
 			//-- static members
 			static uint16_t endpointCounter;
+			static void svc_command_packet_handler(SVCPacket* packet, void* args);
 			
 			//-- private members
 			SHA256* sha256;
@@ -79,7 +94,7 @@
 			string appSockPath;
 			
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
-			MutexedQueue<Message*>* connectionRequests;
+			MutexedQueue<SVCPacket*>* connectionRequests;
 			PacketHandler* packetHandler;
 			
 			uint32_t appID;
@@ -105,13 +120,11 @@
 			
 			/*
 			 * 'listenConnection' reads in the connection request queue and returns immediately if a request is found
-			 * If there is no connection request, 'listenConnection' will wait for 'timeout' milisecond before return NULL and set status to -1
-			 * If 'timeout' is 0 or under, listenConnetion will be blocked until there is connection request or interrupted by SIGINT
-			 * If the SIGINT is caught when waiting, status will be set to -2 and NULL is returned
-			 * On success, a pointer to SVCEndpoint is returned and status is set to 0
-			 * Like 'establishConnection', the negotiation should be process in a seperated thread
+			 * If there is no connection request, 'listenConnection' will wait for 'timeout' milisecond before return NULL		
+			 * On success, a pointer to SVCEndpoint is returned
+			 * Like 'establishConnection', the negotiation should be processed in a seperated thread
 			 * */
-			SVCEndpoint* listenConnection(int timeout, int* status);
+			SVCEndpoint* listenConnection(int timeout);
 	};
 	
 #endif

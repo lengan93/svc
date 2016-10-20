@@ -21,6 +21,7 @@
 	//-- utils classes
 	class SVCPacket{
 		public:
+			//-- public members
 			uint8_t* packet;
 			uint32_t dataLen;
 			
@@ -65,9 +66,11 @@
 				//-- reset number of param
 				packet[SVC_PACKET_HEADER_LEN + 1] = 0x00;	
 			}
-			void switchCommandID(enum SVCCommand cmd){
+			
+			void switchCommand(enum SVCCommand cmd){
 				this->packet[SVC_PACKET_HEADER_LEN] = (uint8_t)cmd;
 			}
+			
 			void pushCommandParam(const uint8_t* param, uint16_t paramLen){					
 				//-- copy new param to packet
 				memcpy(this->packet+this->dataLen, (uint8_t*)&paramLen, 2);
@@ -75,23 +78,26 @@
 				//-- add 1 to number of param
 				this->packet[SVC_PACKET_HEADER_LEN + 1] += 1;
 				this->dataLen += 2 + paramLen;
-				//printf("\nadd param: "); printBuffer(param, paramLen); fflush(stdout);		
+				//printf("\nadd param len %d: ", paramLen); printBuffer(param, paramLen); fflush(stdout);
 			}
+			
 			void popCommandParam(uint8_t* param, uint16_t* paramLen){
 				uint8_t argc = this->packet[SVC_PACKET_HEADER_LEN + 1];
-				if (argc>0){
-					argc -= 1;
-					uint8_t* p = this->packet + SVC_PACKET_HEADER_LEN + 1;
-					for (int i=0; i<argc; i++){
+				if (argc>0){						
+					uint8_t* p = this->packet + SVC_PACKET_HEADER_LEN + 2;
+					for (int i=0; i<argc-1; i++){
 						p += 2 + *((uint16_t*)p);
 					}
 					*paramLen = *((uint16_t*)p);
-					memcpy(param, p, *paramLen);
+					memcpy(param, p+2, *paramLen);
+					//-- reduce the packet len
+					this->packet[SVC_PACKET_HEADER_LEN + 1] -= 1;
+					this->dataLen -= 2 + *paramLen;
 				}
 				else{
-					paramLen = 0;
-					param = this->packet + SVC_PACKET_HEADER_LEN + 2;
-				}
+					*paramLen = 0;					
+				}				
+				printf("\npop param Len %d: ", *paramLen); printBuffer(param, *paramLen); fflush(stdout);
 			}
 	};
 	

@@ -132,17 +132,17 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPac
 void* PacketHandler::readingLoop(void* args){
 	
 	PacketHandler* _this = (PacketHandler*)args;
-	SVCPacket* packet = new SVCPacket();
+	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	ssize_t readrs;
 	
 	while (_this->working){
 		do{
-			readrs = recv(_this->socket, packet->packet, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
+			readrs = recv(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
 		}
 		while((readrs==-1) && _this->working);
 		
 		if (readrs>0){
-			packet->dataLen = (uint32_t)readrs;
+			SVCPacket* packet = new SVCPacket(buffer, readrs);			
 			printf("\npacket handler %d read: ", _this->socket); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			uint8_t infoByte = packet->packet[ENDPOINTID_LENGTH];
 			if ((infoByte & SVC_COMMAND_FRAME) != 0){				
@@ -172,6 +172,6 @@ void* PacketHandler::readingLoop(void* args){
 		}
 	}
 	
-	delete packet;
+	delete buffer;
 }
 
