@@ -256,8 +256,10 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 	DaemonEndpoint* dmnEndpoint;
 	
 	struct sockaddr_un appSockAddr;
+	socklen_t appSockLen = sizeof(appSockAddr);
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
+	int sendrs; 
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_OUTER1:
@@ -273,12 +275,13 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			packet->popCommandParam(param, &paramLen);
 			//-- send the packet to the corresponding app
 			packet->switchCommand(SVC_CMD_CONNECT_INNER2);
-			printf("\CMD_CONNECT_INNER2 to send: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			printf("\nCMD_CONNECT_INNER2 to send: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			appID = *((uint32_t*)param);
 			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
 			printf("\ntry sending packet to: %s", appSockPath.c_str()); fflush(stdout);
 			memcpy(&appSockAddr, appSockPath.c_str(), appSockPath.size());
-			sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));
+			sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, appSockLen);
+			printf("\nsendto result: %d, errno: %d", sendrs, errno);
 			delete packet;
 			break;
 		default:
