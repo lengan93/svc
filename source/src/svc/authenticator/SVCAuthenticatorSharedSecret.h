@@ -2,7 +2,6 @@
 #define __SVC_AUTHENTICATOR_PKI__
 
 	#include "SVCAuthenticator.h"
-	#include "../../crypto/crypto-utils.h"
 	#include "../../crypto/AESGCM.h"
 	#include "../../crypto/SHA256.h"
 
@@ -12,10 +11,6 @@
 				
 		AESGCM* aesGCM;
 		SHA256* sha256;
-		
-		private:
-			std::string challenge;
-			std::string solution;
 
 		public:
 			static const std::string NULL_STRING;
@@ -23,12 +18,11 @@
 			SVCAuthenticatorSharedSecret(std::string secretPath);
 			virtual ~SVCAuthenticatorSharedSecret();
 			
-			//--	inherited interface			
-			std::string generateChallenge();
-			std::string getChallengeSecret();
-			std::string resolveChallenge(std::string challenge);
-			std::string generateProof();
-			bool verify(std::string proof);
+			//--	inherited interface
+			std::string generateChallenge(const std::string& challengeSecret);			
+			std::string resolveChallenge(const std::string& challenge);
+			std::string generateProof(const std::string& challengeSecret);
+			bool verifyProof(const std::string& challengeSecret, const std::string& proof);
 	};
 
 #endif

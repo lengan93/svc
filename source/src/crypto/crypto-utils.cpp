@@ -35,7 +35,7 @@ string hexToString(const uint8_t* data, uint32_t len){
 	for (int i=0;i<len;i++){
 		b = data[i];
 		rs += ((b&0xF0)>>4)<10? ((b&0xF0)>>4) + 48 : ((b&0xF0)>>4) + 55;
-		rs += (b&0x0F)<10? b&0xF0 + 48 : b&0x0F + 55;
+		rs += (b&0x0F)<10? b&0x0F + 48 : b&0x0F + 55;
 	}
 	return rs;
 }

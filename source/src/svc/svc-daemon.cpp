@@ -118,7 +118,6 @@ void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
 
 void DaemonEndpoint::sendPacketOut(SVCPacket* packet){
 	sendto(daemonInSocket, packet->packet,packet->dataLen, 0, (struct sockaddr*)&this->remoteAddr, this->remoteAddrLen);
-	//printf("\nsend packet out: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 }
 
 bool DaemonEndpoint::checkInitLiveTime(int interval){
@@ -211,7 +210,7 @@ void signal_handler(int sig){
 		//--	stop main threads
 		inPacketHandler->stopWorking();
 		unPacketHandler->stopWorking();	
-		//endpointChecker->stopWorking();
+		endpointChecker->stopWorking();
 		//--	do cleanup before exit
 		unlink(SVC_DAEMON_PATH.c_str());
 	}	
@@ -273,11 +272,9 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			//-- extract appID
 			packet->popCommandParam(param, &paramLen);
 			//-- send the packet to the corresponding app
-			packet->switchCommand(SVC_CMD_CONNECT_INNER2);
-			printf("\nCMD_CONNECT_INNER2 to send: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			packet->switchCommand(SVC_CMD_CONNECT_INNER2);			
 			appID = *((uint32_t*)param);
-			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
-			printf("\ntry sending packet to: %s", appSockPath.c_str()); fflush(stdout);
+			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);			
 			memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
 			sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));			
 			delete packet;
