@@ -11,14 +11,16 @@ int main(int argc, char** argv){
 	
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
-		SVCEndpoint* endpoint = svc->listenConnection(3000);
+		SVCEndpoint* endpoint = svc->listenConnection(-1);
 	
 		if (endpoint!=NULL){
-			printf("\nConnection established!");
+			if (endpoint->negotiate()){
+				printf("\nConnection established!");
+			}
+			else{
+				printf("\nCannot establish connection!");
+			}
 			delete endpoint;
-		}
-		else{
-			printf("\nCannot establish connection!");
 		}
 		delete svc;
 	}

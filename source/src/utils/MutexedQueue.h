@@ -99,8 +99,7 @@
 			T dequeueWait(int timeout){
 				bool haveData = true;
 				this->firstMutex->lock();
-				if (!this->notEmpty()){
-					printf("\nno data, standby to wait");					
+				if (!this->notEmpty()){							
 					haveData = waitData(timeout);
 					//--	after waitData there must be data in queue, 'cause no other can perform dequeue
 				}

@@ -246,7 +246,6 @@ void daemonUnCommandHandler(SVCPacket* packet, void* args){
 }
 
 void daemonInCommandHandler(SVCPacket* packet, void* args){
-	printf("\ndaemonInCommandHandler receives some thing");
 	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
 	uint64_t endpointID = *((uint64_t*)packet->packet);
 	uint64_t newEndpointID = 0;
@@ -298,7 +297,7 @@ void checkEndpointLiveTime(void* args){
 				delete ep;
 			}
 		}
-	}	
+	}
 }
 
 int main(int argc, char** argv){

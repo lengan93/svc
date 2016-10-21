@@ -93,6 +93,7 @@ void SVC::svc_command_packet_handler(SVCPacket* packet, void* args){
 	switch(cmd){
 		case SVC_CMD_CONNECT_INNER2:
 			_this->connectionRequests->enqueue(packet);
+			printf("\nconnection request received");
 			break;
 		default:
 			//-- remove the packet

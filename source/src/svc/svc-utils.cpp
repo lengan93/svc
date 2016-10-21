@@ -143,7 +143,7 @@ void* PacketHandler::readingLoop(void* args){
 		
 		if (readrs>0){
 			SVCPacket* packet = new SVCPacket(buffer, readrs);			
-			printf("\npacket handler %d read: ", _this->socket); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//printf("\npacket handler %d read: ", _this->socket); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			uint8_t infoByte = packet->packet[ENDPOINTID_LENGTH];
 			if ((infoByte & SVC_COMMAND_FRAME) != 0){				
 				if ((infoByte & SVC_ENCRYPTED) == 0){				
