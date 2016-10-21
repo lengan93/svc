@@ -261,7 +261,7 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_OUTER1:
-			newEndpointID |= daemonEndpointCounter;
+			newEndpointID |= ++daemonEndpointCounter;
 			newEndpointID <<= 48;
 			newEndpointID |= endpointID;
 			//-- create new daemonEndpoint for this endpointID

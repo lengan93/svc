@@ -24,7 +24,7 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	uint8_t* appIDBin;
 	stringToHex(appIDHashed.substr(0, 8), &appIDBin); //-- extract first 32 bits of hash string
 	this->appID = *((uint32_t*)appIDBin);
-	this->appSockPath = SVC_CLIENT_PATH_PREFIX + appIDHashed.substr(0,8);
+	this->appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(this->appID);
 	
 	//--	bind app socket
 	this->appSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -109,7 +109,7 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 	//-- create new endpoint to handle further packets
 	SVCEndpoint* endpoint = new SVCEndpoint(this, true);
 	uint64_t endpointID = 0;	
-	endpointID |= SVC::endpointCounter;
+	endpointID |= ++SVC::endpointCounter;
 	endpointID<<=32;
 	endpointID |= this->appID;
 	endpoint->bindToEndpointID(endpointID);
