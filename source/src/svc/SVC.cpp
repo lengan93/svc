@@ -88,7 +88,7 @@ SVC::~SVC(){
 
 void SVC::svc_command_packet_handler(SVCPacket* packet, void* args){
 	SVC* _this = (SVC*)args;
-	
+	printf("\nsvc app receive packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
 	switch(cmd){
 		case SVC_CMD_CONNECT_INNER2:

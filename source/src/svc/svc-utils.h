@@ -97,7 +97,7 @@
 				else{
 					*paramLen = 0;					
 				}				
-				printf("\npop param Len %d: ", *paramLen); printBuffer(param, *paramLen); fflush(stdout);
+				//printf("\npop param Len %d: ", *paramLen); printBuffer(param, *paramLen); fflush(stdout);
 			}
 	};
 	

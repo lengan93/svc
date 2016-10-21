@@ -118,7 +118,7 @@ void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
 
 void DaemonEndpoint::sendPacketOut(SVCPacket* packet){
 	sendto(daemonInSocket, packet->packet,packet->dataLen, 0, (struct sockaddr*)&this->remoteAddr, this->remoteAddrLen);
-	printf("\nsend packet out: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+	//printf("\nsend packet out: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 }
 
 bool DaemonEndpoint::checkInitLiveTime(int interval){
@@ -152,7 +152,7 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_INNER1:
-			printf("\nCONNECT_INNER1 received");			
+			//printf("\nCONNECT_INNER1 received");			
 			//-- extract remote address
 			packet->popCommandParam(param, &paramLen);		
 			_this->connectToAddress(*((uint32_t*)param));			
