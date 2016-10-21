@@ -255,8 +255,7 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 	string appSockPath;
 	DaemonEndpoint* dmnEndpoint;
 	
-	struct sockaddr_un appSockAddr;
-	socklen_t appSockLen = sizeof(appSockAddr);
+	struct sockaddr_un appSockAddr;	
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
 	int sendrs; 
@@ -279,9 +278,8 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			appID = *((uint32_t*)param);
 			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);
 			printf("\ntry sending packet to: %s", appSockPath.c_str()); fflush(stdout);
-			memcpy(&appSockAddr, appSockPath.c_str(), appSockPath.size());
-			sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, appSockLen);
-			printf("\nsendto result: %d, errno: %d", sendrs, errno);
+			memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
+			sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));			
 			delete packet;
 			break;
 		default:
