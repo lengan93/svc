@@ -37,8 +37,7 @@ string hexToString(const uint8_t* data, uint32_t len){
 	for (int i=0;i<len;i++){
 		b = data[i];
 		c1 = (b&0xF0)>>4;
-		c2 = (b&0x0F);
-		printf("b=%02x\n", b);
+		c2 = (b&0x0F);		
 		rs += c1<10? (c1 + 48) : (c1 + 55);
 		rs += c2<10? (c2 + 48) : (c2 + 55);
 	}
