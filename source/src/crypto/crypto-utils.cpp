@@ -32,10 +32,15 @@ void generateRandomNumber(mpz_t* number, int securityParam){
 string hexToString(const uint8_t* data, uint32_t len){
 	string rs = "";
 	uint8_t b;
+	uint8_t c1;
+	uint8_t c2;
 	for (int i=0;i<len;i++){
 		b = data[i];
-		rs += ((b&0xF0)>>4)<10? ((b&0xF0)>>4) + 48 : ((b&0xF0)>>4) + 55;
-		rs += (b&0x0F)<10? b&0x0F + 48 : b&0x0F + 55;
+		c1 = (b&0xF0)>>4;
+		c2 = (b&0x0F);
+		printf("b=%02x\n", b);
+		rs += c1<10? (c1 + 48) : (c1 + 55);
+		rs += c2<10? (c2 + 48) : (c2 + 55);
 	}
 	return rs;
 }
