@@ -151,6 +151,7 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_INNER1:
+			printf("\nreceived packet: "); printBuffer(packet->packet, packet->dataLen);
 			//printf("\nCONNECT_INNER1 received");			
 			//-- extract remote address
 			packet->popCommandParam(param, &paramLen);		

@@ -159,7 +159,8 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 
 SVCEndpoint::SVCEndpoint(SVC* svc, bool isInitiator){
 	this->svc = svc;
-	this->isInitiator = isInitiator;	
+	this->isInitiator = isInitiator;
+	this->packetHandler = NULL;
 };
 
 void SVCEndpoint::setRemoteHost(SVCHost* remoteHost){
@@ -203,7 +204,9 @@ bool SVCEndpoint::negotiate(){
 		packet->setCommand(SVC_CMD_CONNECT_INNER1);
 		//-- get challenge secret and challenge		
 		string challengeSecret = this->svc->authenticator->generateChallengeSecret();
+		printf("challenge secret generated: %s", challengeSecret.c_str());
 		string challenge = this->svc->authenticator->generateChallenge(challengeSecret);
+		printf("challenge generated: %s", challenge.c_str());
 		packet->pushCommandParam((uint8_t*)challenge.c_str(), challenge.size());
 		packet->pushCommandParam((uint8_t*)&this->svc->appID, APPID_LENGTH);
 		packet->pushCommandParam((uint8_t*)challengeSecret.c_str(), challengeSecret.size());
@@ -220,12 +223,12 @@ bool SVCEndpoint::negotiate(){
 		uint16_t paramLen;
 		this->request->popCommandParam(param, &paramLen);
 		string challengeReceived = hexToString(param, paramLen);
-		printf("\nChallenge received hexToString test: %s", challengeReceived.c_str());
-		printf("\nChallenge received: "); printBuffer(param, paramLen); fflush(stdout);
+		//printf("\nChallenge (scp) received: %s", challengeReceived.c_str());
+		
 		//-- resolve this challenge to get challenge secret
-		string challengeSecret = this->svc->authenticator->resolveChallenge(challengeReceived);
+		//string challengeSecret = this->svc->authenticator->resolveChallenge(challengeReceived);
 		//-- generate proof
-		string proof = this->svc->authenticator->generateProof(challengeSecret);
+		//string proof = this->svc->authenticator->generateProof(challengeSecret);
 		return false;
 	}
 }
