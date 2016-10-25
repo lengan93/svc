@@ -134,10 +134,12 @@ void* PacketHandler::readingLoop(void* args){
 	PacketHandler* _this = (PacketHandler*)args;
 	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	ssize_t readrs;
+	struct sockaddr_in srcAddr;
+	socklen_t srcAddrLen = sizeof(srcAddr);
 	
 	while (_this->working){
 		do{
-			readrs = recv(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
+			readrs = recvfrom(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT, (struct sockaddr*)&srcAddr, &srcAddrLen); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
 		}
 		while((readrs==-1) && _this->working);
 		
@@ -148,7 +150,11 @@ void* PacketHandler::readingLoop(void* args){
 			if ((infoByte & SVC_COMMAND_FRAME) != 0){				
 				if ((infoByte & SVC_ENCRYPTED) == 0){				
 					//-- this command is not encrypted, get the commandID					
-					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];					
+					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
+					if (cmd == SVC_CMD_CONNECT_OUTER1){
+						//-- insert source address
+						packet->pushCommandParam((uint8_t*)&srcAddr, srcAddrLen);
+					}			
 					uint64_t endpointID = *((uint64_t*)packet->packet);					
 					//-- check if the cmd is registered in the registra
 					for (int i=0;i<_this->commandHandlerRegistra.size(); i++){

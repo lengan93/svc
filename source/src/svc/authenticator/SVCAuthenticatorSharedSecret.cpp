@@ -93,7 +93,7 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 		uint32_t tagLen = *((uint32_t*)p);
 				
 		if (this->aesGCM->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &challengeSecret, &challengeSecretLen)){
-			rs = hexToString(challengeSecret, challengeSecretLen);
+			rs = string((char*)challengeSecret, challengeSecretLen);
 			delete challengeSecret;			
 		}
 		else{			

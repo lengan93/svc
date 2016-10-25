@@ -44,7 +44,7 @@ class DaemonEndpoint{
 		size_t remoteAddrLen;
 		PacketHandler* packetHandler;
 		//-- crypto protocol variables
-		string challengeSecret;
+		string encryptedK1;
 		ECCurve* curve;
 		ECPoint* gx;
 		ECPoint* gy;
@@ -68,6 +68,7 @@ class DaemonEndpoint{
 		void encryptPacket(SVCPacket* packet);
 		void decryptpacket(SVCPacket* packet);
 		void connectToAddress(uint32_t remoteAddress);
+		void connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen);
 };
 
 DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
@@ -81,19 +82,20 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	struct sockaddr_un dmnSockAddr;
-	this->dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + to_string(endpointID);
+	this->dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
 	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
 	dmnSockAddr.sun_family = AF_LOCAL;
 	memcpy(dmnSockAddr.sun_path, this->dmnSockPath.c_str(), dmnSockPath.size());
 	bind(this->dmnSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr));
+	printf("\ndaemon endpoint binded to: %s", dmnSockPath.c_str()); 
 	//-- then connect to app socket
 	struct sockaddr_un appSockAddr;
-	string appSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + to_string(endpointID);
+	string appSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + hexToString((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
 	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
 	connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr));
-	
+	printf("\ndaemon endpoint connected to: %s", appSockPath.c_str()); 
 	//-- create a packet handler
 	this->packetHandler = new PacketHandler(this->dmnSocket);
 	this->packetHandler->setCommandHandler(dmn_endpoint_inner_command_handler, this);
@@ -110,6 +112,11 @@ void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
 	this->remoteAddr.sin_family = AF_INET;
 	this->remoteAddr.sin_port = htons(SVC_DAEPORT);
 	this->remoteAddr.sin_addr.s_addr = remoteAddress;
+}
+
+void DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen){
+	memcpy(&this->remoteAddr, sockAddr, sockLen);
+	this->remoteAddrLen = sockLen;
 }
 
 void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
@@ -137,21 +144,29 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 	
 	uint8_t* param = param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
-	string hashx;
+	string hashValue;
 	uint8_t* aeskey;
 	int requested_security_strength;
-	mpz_t randomx;
+	mpz_t randomNumber;
 	char* gx_x;
 	uint16_t gx_x_hexlen;
 	char* gx_y;
 	uint16_t gx_y_hexlen;
 	
+	char* gy_x;
+	uint16_t gy_x_hexlen;
+	char* gy_y;
+	uint16_t gy_y_hexlen;
+	
+	
 	uint8_t* encrypted;
 	uint32_t encryptedLen;
+	uint8_t* data;
+	uint32_t dataLen;
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_INNER1:
-			printf("\nreceived packet: "); printBuffer(packet->packet, packet->dataLen);
+			//printf("\nreceived packet: "); printBuffer(packet->packet, packet->dataLen);
 			//printf("\nCONNECT_INNER1 received");			
 			//-- extract remote address
 			packet->popCommandParam(param, &paramLen);		
@@ -159,18 +174,19 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 			//-- extract challengeSecret x
 			packet->popCommandParam(param, &paramLen);
 			//-- use SHA256(x) as an AES256 key
-			hashx = _this->sha256->hash(hexToString(param, paramLen));
-			stringToHex(hashx, &aeskey); //AES key is guaranteed to be 256 bits length
+			hashValue = _this->sha256->hash(string((char*)param, paramLen));
+			stringToHex(hashValue, &aeskey); //AES key is guaranteed to be 256 bits length
 			_this->aes256 = new AES256(aeskey);
 			//-- generate STS-gx
 			_this->curve = new ECCurve();
 			requested_security_strength = _this->curve->getRequestSecurityLength();
-			mpz_init(randomx);
-			generateRandomNumber(&randomx, requested_security_strength);
-			_this->gx = _this->curve->mul(_this->curve->g, &randomx);
+			mpz_init(randomNumber);
+			generateRandomNumber(&randomNumber, requested_security_strength);
+			_this->gx = _this->curve->mul(_this->curve->g, &randomNumber);
 			//-- use created AES to encrypt gx = Ex(gx), copy to param
 			gx_x = mpz_get_str(NULL, 16, _this->gx->x);
 			gx_x_hexlen = strlen(gx_x);
+			printf("\nsent gx_x: %s", gx_x);
 			paramLen = 0;
 			memcpy(param + paramLen, &gx_x_hexlen, 2);
 			paramLen += 2;
@@ -178,6 +194,7 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 			paramLen += gx_x_hexlen;
 			gx_y = mpz_get_str(NULL, 16, _this->gx->y);
 			gx_y_hexlen = strlen(gx_y);
+			printf("\nsent gx_y: %s", gx_y);
 			memcpy(param + paramLen, &gx_y_hexlen, 2);
 			paramLen += 2;
 			memcpy(param+paramLen, gx_y, gx_y_hexlen);
@@ -191,6 +208,64 @@ void DaemonEndpoint::dmn_endpoint_inner_command_handler(SVCPacket* packet, void*
 			//-- sent the packet
 			_this->sendPacketOut(packet);
 			break;
+			
+		case SVC_CMD_CONNECT_INNER3:
+			packet->popCommandParam(param, &paramLen);
+			//-- use SHA256(x) as an AES256 key
+			hashValue = _this->sha256->hash(string((char*)param, paramLen));
+			stringToHex(hashValue, &aeskey); //-- aes key used to decrypt k1
+			_this->aes256 = new AES256(aeskey);
+			_this->aes256->decrypt((uint8_t*)_this->encryptedK1.c_str(), _this->encryptedK1.size(), &data, &dataLen);
+			//-- construct gx from decrypted K1
+			gx_x_hexlen = *((uint16_t*)data);
+			gx_x  = (char*)malloc(gx_x_hexlen);
+			memcpy(gx_x, data + 2, gx_x_hexlen);
+			printf("\nreceived gx_x: %d, %s", gx_x_hexlen, gx_x);
+			gx_y_hexlen = *((uint16_t*)(data + 2 +  gx_x_hexlen));
+			gx_y = (char*)malloc(gx_y_hexlen);
+			memcpy(gx_y, data + 4 + gx_x_hexlen, gx_y_hexlen);
+			printf("\nreceived gx_y:%d, %s", gx_y_hexlen, gx_y); fflush(stdout);
+			_this->gx = new ECPoint(gx_x, gx_y);
+			
+			//-- extract challengeSecret y
+			packet->popCommandParam(param, &paramLen);
+			//-- use SHA256(y) as an AES256 key
+			hashValue = _this->sha256->hash(string((char*)param, paramLen));
+			//-- remove the old key used to decrypt
+			delete aesKey;
+			delete _this->aes256;
+			//-- create new aes key to encrypt
+			stringToHex(hashValue, &aeskey);
+			_this->aes256 = new AES256(aeskey);
+			//-- generate STS-gy
+			_this->curve = new ECCurve();
+			requested_security_strength = _this->curve->getRequestSecurityLength();
+			mpz_init(randomNumber);
+			generateRandomNumber(&randomNumber, requested_security_strength);
+			_this->gy = _this->curve->mul(_this->curve->g, &randomNumber);
+			//-- use created AES to encrypt gy = Ey(gy), copy to param
+			gy_x = mpz_get_str(NULL, 16, _this->gy->x);
+			gy_x_hexlen = strlen(gy_x);
+			printf("\nsent gy_x: %s", gy_x);
+			paramLen = 0;
+			memcpy(param + paramLen, &gy_x_hexlen, 2);
+			paramLen += 2;
+			memcpy(param + paramLen, gy_x, gy_x_hexlen);
+			paramLen += gy_x_hexlen;
+			gy_y = mpz_get_str(NULL, 16, _this->gy->y);
+			gy_y_hexlen = strlen(gy_y);
+			printf("\nsent gy_y: %s", gy_y);
+			memcpy(param + paramLen, &gy_y_hexlen, 2);
+			paramLen += 2;
+			memcpy(param+paramLen, gx_y, gx_y_hexlen);
+			paramLen += gx_y_hexlen;
+			_this->aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);		
+			//-- switch command
+			packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
+			//-- attach Ey(gy) to packet
+			packet->pushCommandParam(encrypted, encryptedLen);
+			break;
+			
 		default:
 			break;
 	}
@@ -255,10 +330,12 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 	string appSockPath;
 	DaemonEndpoint* dmnEndpoint;
 	
+	struct sockaddr_in sourceAddr;
+	socklen_t sourceAddrLen;
 	struct sockaddr_un appSockAddr;	
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
-	int sendrs; 
+	int sendrs;
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_OUTER1:
@@ -267,9 +344,16 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			newEndpointID |= endpointID;
 			//-- create new daemonEndpoint for this endpointID
 			dmnEndpoint = new DaemonEndpoint(newEndpointID);
+			printf("\nendpoint created with iD: "); printBuffer((uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
 			endpoints[newEndpointID] = dmnEndpoint;
+			//-- extract source address
+			packet->popCommandParam(param, &paramLen);
+			memcpy(&sourceAddr, param, paramLen);
+			sourceAddrLen = paramLen;
+			dmnEndpoint->connectToAddress(&sourceAddr, sourceAddrLen);
 			//-- extract DH-1
 			packet->popCommandParam(param, &paramLen);
+			dmnEndpoint->encryptedK1 = string((char*)param, paramLen);
 			//-- extract appID
 			packet->popCommandParam(param, &paramLen);
 			//-- send the packet to the corresponding app
@@ -277,6 +361,8 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			appID = *((uint32_t*)param);
 			appSockPath = SVC_CLIENT_PATH_PREFIX + to_string(appID);			
 			memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
+			//-- replace the oldEndpointID by the newEndpointID
+			memcpy(packet->packet, (uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
 			sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));			
 			delete packet;
 			break;

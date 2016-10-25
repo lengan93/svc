@@ -141,10 +141,12 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 	request=this->connectionRequests->dequeueWait(timeout);
 	if (request!=NULL){
 		//-- there is connection request, read for endpointID
-		uint64_t endpointID = *((uint64_t*)&request->packet);
+		uint64_t endpointID = *((uint64_t*)request->packet);
+		printf("\nconnection request from: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
 		SVCEndpoint* ep = new SVCEndpoint(this, false);
 		ep->request = request;
 		//-- set the endpointID and bind to unix socket
+		printf("\nendpointID right before calling to bind: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 		ep->bindToEndpointID(endpointID);
 		//-- then connect to the "already created daemon socket"
 		ep->connectToDaemon();
@@ -174,42 +176,51 @@ void SVCEndpoint::changeEndpointID(uint64_t endpointID){
 void SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 	this->endpointID = endpointID;
 	//--	create a socket for listening to data
+	printf("\nendpointID inside bind: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	//-- bind app endpoint socket
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	this->endpointSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + to_string(endpointID);	
+	this->endpointSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
 	struct sockaddr_un sockAddr;
 	memset(&sockAddr, 0, sizeof(sockAddr));
 	sockAddr.sun_family = AF_LOCAL;
 	memcpy(sockAddr.sun_path, this->endpointSockPath.c_str(), endpointSockPath.size());
 	bind(this->sock, (struct sockaddr*)&sockAddr, sizeof(sockAddr));
+	printf("\nsvc endpoint binded to: %s", this->endpointSockPath.c_str());
 	//-- create a packet handler to process incoming packets
 	if (this->packetHandler!=NULL) delete this->packetHandler;
 	this->packetHandler = new PacketHandler(this->sock);
 }
 
 void SVCEndpoint::connectToDaemon(){
-	string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + to_string(this->endpointID);
+	string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);
 	struct sockaddr_un dmnEndpointAddr;
 	memset(&dmnEndpointAddr, 0, sizeof(dmnEndpointAddr));
 	dmnEndpointAddr.sun_family = AF_LOCAL;
 	memcpy(dmnEndpointAddr.sun_path, endpointDmnSockPath.c_str(), endpointDmnSockPath.size());
 	connect(this->sock, (struct sockaddr*)&dmnEndpointAddr, sizeof(dmnEndpointAddr));
+	printf("\nsvc endpoint connected to: %s", endpointDmnSockPath.c_str());
 }
 
 bool SVCEndpoint::negotiate(){
+	
+	string challengeSecretSent;
+	string challengeSecretReceived;
+	string challengeSent;
+	string challengeReceived;
+	string proof;
 	
 	if (this->isInitiator){
 		//--	send SVC_CMD_CONNECT_INNER1
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setCommand(SVC_CMD_CONNECT_INNER1);
 		//-- get challenge secret and challenge		
-		string challengeSecret = this->svc->authenticator->generateChallengeSecret();
-		printf("challenge secret generated: %s", challengeSecret.c_str());
-		string challenge = this->svc->authenticator->generateChallenge(challengeSecret);
-		printf("challenge generated: %s", challenge.c_str());
-		packet->pushCommandParam((uint8_t*)challenge.c_str(), challenge.size());
+		challengeSecretSent = this->svc->authenticator->generateChallengeSecret();
+		//printf("\nchallenge secret generated: %s", challengeSecret.c_str());
+		challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);
+		//printf("\nchallenge generated: %s", challenge.c_str());
+		packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
 		packet->pushCommandParam((uint8_t*)&this->svc->appID, APPID_LENGTH);
-		packet->pushCommandParam((uint8_t*)challengeSecret.c_str(), challengeSecret.size());
+		packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
 		uint32_t remoteAddr = this->remoteHost->getHostAddress();
 		packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
 		int sendrs = this->packetHandler->sendPacket(packet);
@@ -222,14 +233,31 @@ bool SVCEndpoint::negotiate(){
 		uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 		uint16_t paramLen;
 		this->request->popCommandParam(param, &paramLen);
-		string challengeReceived = hexToString(param, paramLen);
-		//printf("\nChallenge (scp) received: %s", challengeReceived.c_str());
+		string challengeReceived = string((char*)param, paramLen);
+		//printf("\nChallenge (scp) received: %s", challengeReceived.c_str()); fflush(stdout);
 		
 		//-- resolve this challenge to get challenge secret
-		//string challengeSecret = this->svc->authenticator->resolveChallenge(challengeReceived);
+		string challengeSecretReceived = this->svc->authenticator->resolveChallenge(challengeReceived);
+		///printf("\nChallenge secret resolved: %s", challengeSecret.c_str()); fflush(stdout);
 		//-- generate proof
-		//string proof = this->svc->authenticator->generateProof(challengeSecret);
-		return false;
+		string proof = this->svc->authenticator->generateProof(challengeSecretReceived);
+		//printf("\nProof generated: %s", proof.c_str()); fflush(stdout);
+		
+		//-- generate challenge
+		challengeSecretSent = this->svc->authenticator->generateChallengeSecret();
+		challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);
+		SVCPacket* packet = new SVCPacket(this->endpointID);
+		
+		packet->setCommand(SVC_CMD_CONNECT_INNER3);
+		packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
+		packet->pushCommandParam((uint8_t*)proof.c_str(), proof.size());
+		packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
+		packet->pushCommandParam((uint8_t*)challengeSecretReceived.c_str(),  challengeSecretReceived.size());
+		int sendrs = this->packetHandler->sendPacket(packet);
+		
+		//--	wait for SVC_CMD_CONNECT_INNER8
+		printf("\nWAIT FOR CONNECT_INNER8"); fflush(stdout);
+		return this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, packet, SVC_DEFAULT_TIMEOUT);		
 	}
 }
 

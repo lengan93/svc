@@ -28,11 +28,11 @@ SVC frame format for daemon
 		° SVC_CMD_CONNECT_OUTER1:
 		  +  daemon1 to daemon2: challenge || appID || Ex(gx)
 		° SVC_CMD_CONNECT_INNER2:
-		  +  daemon2 to ep2: challenge		  
+		  +  daemon2 to ep2: challenge
 		° SVC_CMD_CONNECT_INNER3:
 		  +  ep2 to daemon2: challenge || solution proof ||  challengeSecret || solution
 		° SVC_CMD_CONNECT_OUTER2:
-		  +  daemon2 to daemon1:
+		  +  daemon2 to daemon1: challenge || Ey(gY) || EK(P(x))
 		° SVC_CMD_CONNECT_INNER4:
 		° SVC_CMD_CONNECT_INNER5:
 		° SVC_CMD_CONNECT_INNER6:
