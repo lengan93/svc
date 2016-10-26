@@ -22,7 +22,7 @@ SVC frame format for daemon
 	[encrypted]
 	+ command id: 1 byte
 		° SVC_CMD_CREATE_ENDPOINT:
-		  +  app to daemon: 		
+		  +  ep to daemon: 		
 		° SVC_CMD_CONNECT_INNER1: 
 		  +  ep1 to daemon1: challenge || appID || challengeSecret || remote address
 		° SVC_CMD_CONNECT_OUTER1:
@@ -34,7 +34,9 @@ SVC frame format for daemon
 		° SVC_CMD_CONNECT_OUTER2:
 		  +  daemon2 to daemon1: challenge || Ey(gY) || EK(P(x))
 		° SVC_CMD_CONNECT_INNER4:
+		  +  daemon1 to ep1: challenge
 		° SVC_CMD_CONNECT_INNER5:
+		  +  ep1 to daemon1: solution
 		° SVC_CMD_CONNECT_INNER6:
 		° SVC_CMD_CONNECT_INNER7:
 		° SVC_CMD_CONNECT_OUTER3:
