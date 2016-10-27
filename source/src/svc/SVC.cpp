@@ -212,10 +212,12 @@ bool SVCEndpoint::negotiate(){
 	
 	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
+	SVCPacket* packet = new SVCPacket(this->endpointID);
 	
-	if (this->isInitiator){
-		//--	send SVC_CMD_CONNECT_INNER1
-		SVCPacket* packet = new SVCPacket(this->endpointID);
+	bool rs = false;
+	
+/*if (this->isInitiator){
+		//--	send SVC_CMD_CONNECT_INNER1		
 		packet->setCommand(SVC_CMD_CONNECT_INNER1);
 		//-- get challenge secret and challenge		
 		challengeSecretSent = this->svc->authenticator->generateChallengeSecret();
@@ -233,27 +235,34 @@ bool SVCEndpoint::negotiate(){
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, packet, SVC_DEFAULT_TIMEOUT)){
 			printf("\nCONNECT_INNER4 received");
 			//--	get challenge
-			printf("\npacket received:");  printBuffer(packet->packet, packet->dataLen);
+			//printf("\npacket received:");  printBuffer(packet->packet, packet->dataLen);
+			//--	new endpointID
+			packet->popCommandParam(param, &paramLen);
+			this->changeEndpointID(*((uint64_t*)param));
 			packet->popCommandParam(param, &paramLen);
 			challengeReceived = string((char*)param, paramLen);
-			printf("\nreceived challenge by printBuffer:"); printBuffer(param, paramLen); fflush(stdout);
+			printf("\nchallenge received: %s", challengeReceived.c_str()); fflush(stdout);
 			//printf("\nreceived challenge: %s", challengeReceived.c_str()); fflush(stdout);
-			/*
+			
 			//--	resolve challenge then send back to daemon
 			challengeSecretReceived = this->svc->authenticator->resolveChallenge(challengeReceived);
 			packet->switchCommand(SVC_CMD_CONNECT_INNER5);
 			packet->pushCommandParam((uint8_t*)challengeSecretReceived.c_str(), challengeSecretReceived.size());
 			this->packetHandler->sendPacket(packet);
-			//--	wait for CONNECT_INNER6*/
-			return this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->endpointID, packet, SVC_DEFAULT_TIMEOUT);
-			printf("\nCONNECT_INNER6 received");
+			//--	wait for CONNECT_INNER6
+			if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->endpointID, packet, SVC_DEFAULT_TIMEOUT)){
+				rs = true;
+			}
+			else{
+				rs = false;
+			}
 		}
-		return false;
+		else{			
+			rs = false;
+		}
 	}
 	else{
 		//-- read challenge from request packet
-		uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-		uint16_t paramLen;
 		this->request->popCommandParam(param, &paramLen);
 		string challengeReceived = string((char*)param, paramLen);
 		//printf("\nChallenge (scp) received: %s", challengeReceived.c_str()); fflush(stdout);
@@ -269,7 +278,6 @@ bool SVCEndpoint::negotiate(){
 		challengeSecretSent = this->svc->authenticator->generateChallengeSecret();
 		challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);
 		printf("\nchallengeSent: %s", challengeSent.c_str());
-		SVCPacket* packet = new SVCPacket(this->endpointID);
 		
 		packet->setCommand(SVC_CMD_CONNECT_INNER3);
 		packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
@@ -280,10 +288,12 @@ bool SVCEndpoint::negotiate(){
 		
 		//--	wait for SVC_CMD_CONNECT_INNER8
 		printf("\nWAIT FOR CONNECT_INNER8"); fflush(stdout);
-		return this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, packet, SVC_DEFAULT_TIMEOUT);		
+		//rs = this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, packet, SVC_DEFAULT_TIMEOUT);
 	}
-	
+	*/
 	delete param;
+	delete packet;
+	return rs;
 }
 
 SVCEndpoint::~SVCEndpoint(){

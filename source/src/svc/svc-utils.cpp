@@ -151,7 +151,7 @@ void* PacketHandler::readingLoop(void* args){
 				if ((infoByte & SVC_ENCRYPTED) == 0){				
 					//-- this command is not encrypted, get the commandID					
 					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
-					printf("\ngot command %d", cmd);
+					//printf("\ngot command %d", cmd);
 					if (cmd == SVC_CMD_CONNECT_OUTER1){
 						//-- insert source address
 						packet->pushCommandParam((uint8_t*)&srcAddr, srcAddrLen);
@@ -164,7 +164,7 @@ void* PacketHandler::readingLoop(void* args){
 					for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
 						if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){						
 							//-- copy the packet content and notify the suspended thread
-							printf("\ncommand match %d, copying data", cmd); printBuffer(packet->packet, packet->dataLen);
+							//printf("\ncommand match %d, copying data", cmd); printBuffer(packet->packet, packet->dataLen);
 							memcpy(_this->commandHandlerRegistra[i].packet->packet, packet->packet, packet->dataLen);
 							_this->commandHandlerRegistra[i].packet->dataLen = packet->dataLen;
 							pthread_kill(_this->commandHandlerRegistra[i].waitingThread, SVC_ACQUIRED_SIGNAL);

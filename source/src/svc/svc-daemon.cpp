@@ -182,6 +182,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 	uint8_t* data;
 	uint32_t dataLen;
 	
+	
 	switch (cmd){
 		case SVC_CMD_CONNECT_INNER1:
 			if (!_this->isAuth){
@@ -236,7 +237,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 				//-- sent the packet
 				_this->sendPacketOut(packet);
 			}
-			delete packet;
+			//delete packet;
 			break;
 			
 		case SVC_CMD_CONNECT_INNER3:
@@ -343,7 +344,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			
 			//-- send out this packet
 			_this->sendPacketOut(packet);
-			delete packet;
+			//delete packet;
 			break;
 			
 		case SVC_CMD_CONNECT_OUTER2:
@@ -356,12 +357,17 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			packet->popCommandParam(param, &paramLen);
 			_this->encryptedECPoint = string((char*)param, paramLen);
 			//printf("\npacket: "); printBuffer(packet->packet, packet->dataLen); 
-			//-- change command to INNER_4 then forward to app
+			//-- change command to INNER_4
 			packet->switchCommand(SVC_CMD_CONNECT_INNER4);
+			//-- app svc is still waiting for the 'old' endpointID, push the current endpointID as new param
+			packet->pushCommandParam(packet->packet, ENDPOINTID_LENGTH);
+			//-- clear the 6&7 byte of endpointID
+			packet->packet[6]=0x00;
+			packet->packet[7]=0x00;
 			_this->sendPacketIn(packet);
 			//printf("\npacket: "); printBuffer(packet->packet, packet->dataLen); 
 			fflush(stdout);
-			//delete packet; -- ERROR here!!!
+			//delete packet; //-- ERROR here!!!
 			break;
 			
 		case SVC_CMD_CONNECT_INNER5:
@@ -370,7 +376,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 		default:
 			break;
 	}
-	
+	//delete packet;
 	delete param;
 }
 
@@ -508,8 +514,8 @@ void checkEndpointLiveTime(void* args){
 		if (it.second != NULL){
 			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
 			if (!(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
-				//remove this endpoint
-				it.second = NULL;
+				//remove this endpoint, also remove it from endpoints
+				endpoints[ep->endpointID] = NULL;
 				delete ep;
 			}
 		}

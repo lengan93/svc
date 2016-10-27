@@ -3,7 +3,7 @@ SRCDIR = ./src
 CCOMPL = g++
 CINCLU = -I./src/utils -I./src/crypto
 CFLAGS = -std=c++11 -pthread -lrt -lgmp
-CDEBUG = -O0 -g
+#CDEBUG = -O0 -g
 
 
 full: daemon client server
