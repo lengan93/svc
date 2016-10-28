@@ -31,7 +31,7 @@
 
 	#define SVC_DEFAULT_TIMEOUT 				5000
 	#define SVC_SHORT_TIMEOUT					1000
-	#define SVC_DEFAULT_BUFSIZ 					65536
+	#define SVC_DEFAULT_BUFSIZ 					65535
 	#define	SVC_DAEPORT							1221
 	#define SVC_ENDPOINT_LIVETIME				3000
 		

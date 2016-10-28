@@ -22,6 +22,8 @@ void PeriodicWorker::stopWorking(){
 	//--	disarm automatic
 	working = false;
 	timer_delete(this->timer);
+	//-- can only be interrupted by SIGINT
+	pthread_kill(this->worker, SIGINT);
 }
 
 void* PeriodicWorker::handling(void* args){
@@ -57,18 +59,12 @@ void* PeriodicWorker::handling(void* args){
 	}
 }
 
-void PeriodicWorker::waitStop(){
-	//-- can only be interrupted by SIGINT
-	pthread_kill(this->worker, SIGINT);
+void PeriodicWorker::waitStop(){	
 	pthread_join(this->worker, NULL);
 }
 
 PeriodicWorker::~PeriodicWorker(){
-	if (this->working){
-		this->stopWorking();
-		this->waitStop();
-	}
-	printf("\nperiod worker detructed");
+	printf("\nperiodic worker stopped"); fflush(stdout);
 }
 
 //--	PACKET HANDLER CLASS	--//
@@ -82,19 +78,15 @@ PacketHandler::PacketHandler(int socket){
 }
 
 PacketHandler::~PacketHandler(){
-	if (this->working){
-		stopWorking();
-		waitStop();
-	}
 	printf("\npacket handler %d stopped", this->socket); fflush(stdout);
 }
 
-void PacketHandler::waitStop(){
-	pthread_join(this->readingThread, NULL);
+void PacketHandler::waitStop(){	
+	pthread_join(this->readingThread, NULL);	
 }
 
 void PacketHandler::stopWorking(){
-	this->working = false;
+	this->working = false;	
 }
 
 void PacketHandler::setDataHandler(SVCPacketProcessing dataHandler, void* args){
@@ -108,7 +100,6 @@ void PacketHandler::setCommandHandler(SVCPacketProcessing cmdHandler, void* args
 }
 
 int PacketHandler::sendPacket(SVCPacket* packet){
-	//printf("\npacket handler %d sending: ", this->socket); printBuffer(packet, packetLen); fflush(stdout);
 	return send(this->socket, packet->packet, packet->dataLen, 0);
 }
 
@@ -131,20 +122,22 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPac
 
 void* PacketHandler::readingLoop(void* args){
 	
-	PacketHandler* _this = (PacketHandler*)args;
-	uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+	PacketHandler* _this = (PacketHandler*)args;	
+	uint8_t* const buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	ssize_t readrs;
 	struct sockaddr_in srcAddr;
-	socklen_t srcAddrLen = sizeof(srcAddr);
+	socklen_t srcAddrLen;
 	
 	while (_this->working){
+		//--  !! bringing this following line out of while loop will cause 'stack smashing detected', it has to be initialized before each read to srcAddr
+		srcAddrLen = sizeof(srcAddr);
 		do{
 			readrs = recvfrom(_this->socket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT, (struct sockaddr*)&srcAddr, &srcAddrLen); // in case interrupted by SIGINT, MSG_DONTWAIT helps exit the loop
 		}
 		while((readrs==-1) && _this->working);
 		
-		if (readrs>0){
-			SVCPacket* packet = new SVCPacket(buffer, readrs);	
+		if (readrs>0){			
+			SVCPacket* packet = new SVCPacket(buffer, readrs);
 			
 			uint8_t infoByte = packet->packet[ENDPOINTID_LENGTH];
 			if ((infoByte & SVC_COMMAND_FRAME) != 0){				
@@ -157,32 +150,37 @@ void* PacketHandler::readingLoop(void* args){
 						packet->pushCommandParam((uint8_t*)&srcAddr, srcAddrLen);
 					}			
 					uint64_t endpointID = *((uint64_t*)packet->packet);					
-					//-- check if the cmd is registered in the registra
-					/*if (cmd == SVC_CMD_CONNECT_OUTER2){
-						printf("\npacket SVC_CMD_CONNECT_OUTER2 read: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
-					}*/
+
 					for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
-						if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){						
-							//-- copy the packet content and notify the suspended thread
-							//printf("\ncommand match %d, copying data", cmd); printBuffer(packet->packet, packet->dataLen);
+						if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){							
 							memcpy(_this->commandHandlerRegistra[i].packet->packet, packet->packet, packet->dataLen);
 							_this->commandHandlerRegistra[i].packet->dataLen = packet->dataLen;
 							pthread_kill(_this->commandHandlerRegistra[i].waitingThread, SVC_ACQUIRED_SIGNAL);
 							//-- remove the handler
-							_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);							
+							_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);
+							break;
 						}
 					}
 				}				
-				//-- call handler routine for command
-				if (_this->cmdHandler!=NULL) _this->cmdHandler(packet, _this->cmdHandlerArgs);
+				if (_this->cmdHandler!=NULL){
+					_this->cmdHandler(packet, _this->cmdHandlerArgs);
+				}
+				else{
+					//-- no handler for this packet, remove it
+					delete packet;				
+				}
 			}
-			else{
-				//-- call handler routine for data
-				if (_this->dataHandler!=NULL) _this->dataHandler(packet, _this->dataHandlerArgs);
+			else{				
+				if (_this->dataHandler!=NULL){
+					_this->dataHandler(packet, _this->dataHandlerArgs);
+				}
+				else{
+					//-- no handler for this packet, remove it
+					delete packet;					
+				}
 			}			
 		}
-	}
-	
-	delete buffer;
+	}	
+	delete buffer;	
 }
 

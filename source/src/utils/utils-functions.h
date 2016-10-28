@@ -25,7 +25,7 @@
 				printf("%d", ((b&(0x01<<j))>>j));				
 			}
 		}
-	}
+	}	
 
 	//--	block and wait for the presence of a signal
 	//--	return FALSE if the waiting is interrupted by a SIGINT

@@ -23,31 +23,28 @@
 	class SVCPacket{
 		public:
 			//-- public members
-			uint8_t* packet;
+			uint8_t* const packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 			uint32_t dataLen;
 			
 			//-- constructors/destructors
 			
-			SVCPacket(){
-				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+			SVCPacket(){				
 				this->dataLen = 0;
 			}
 			
-			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){
-				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){				
 				this->dataLen = bufferLen;
-				memcpy(this->packet, buffer, bufferLen);
+				memcpy(this->packet, buffer, this->dataLen);
 			}
 			
 			SVCPacket(uint64_t endpointID){
-				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);			
 				this->dataLen = SVC_PACKET_HEADER_LEN;
 				memset(this->packet, 0, this->dataLen);
-				memcpy(this->packet, (uint8_t*)&endpointID, ENDPOINTID_LENGTH);
+				memcpy(this->packet, &endpointID, ENDPOINTID_LENGTH);
 			}
 			
 			~SVCPacket(){
-				delete this->packet;
+				delete this->packet;			
 			}
 			
 			bool isCommand(){
@@ -74,12 +71,11 @@
 			
 			void pushCommandParam(const uint8_t* param, uint16_t paramLen){					
 				//-- copy new param to packet
-				memcpy(this->packet+this->dataLen, (uint8_t*)&paramLen, 2);
+				memcpy(this->packet+this->dataLen, &paramLen, 2);
 				memcpy(this->packet+this->dataLen+2, param, paramLen);				
 				//-- add 1 to number of param
 				this->packet[SVC_PACKET_HEADER_LEN + 1] += 1;
 				this->dataLen += 2 + paramLen;
-				//printf("\nadd param len %d: ", paramLen); printBuffer(param, paramLen); fflush(stdout);
 			}
 			
 			void popCommandParam(uint8_t* param, uint16_t* paramLen){
