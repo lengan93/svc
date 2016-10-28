@@ -144,11 +144,11 @@ void* PacketHandler::readingLoop(void* args){
 				if ((infoByte & SVC_ENCRYPTED) == 0){				
 					//-- this command is not encrypted, get the commandID					
 					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
-					//printf("\ngot command %d", cmd);
+					printf("\ngot command %d", cmd);
 					if (cmd == SVC_CMD_CONNECT_OUTER1){
 						//-- insert source address
 						packet->pushCommandParam((uint8_t*)&srcAddr, srcAddrLen);
-					}			
+					}
 					uint64_t endpointID = *((uint64_t*)packet->packet);					
 
 					for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
