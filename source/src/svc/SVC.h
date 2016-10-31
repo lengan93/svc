@@ -23,12 +23,17 @@
 	//--	FORWARD DECLARATION		--//
 	class SVC;
 		
-	class SVCEndpoint{
-		friend class SVC;	
+	class SVCEndpoint{				
+		friend class SVC;
+		
+		static void endpoint_data_handler(SVCPacket* packet, void* args);
 
 		private:
+			MutexedQueue<SVCPacket*>* dataQueue;
+		
 			SVC* svc;
 			bool isInitiator;
+			bool isAuth;
 			volatile bool working;
 			
 			int sock;

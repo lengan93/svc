@@ -16,6 +16,12 @@ int main(int argc, char** argv){
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
+				//-- try to read some data
+				uint8_t* buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+				uint32_t dataLen;
+				endpoint->readData(buffer, &dataLen);
+				string receivedData = string((char*)buffer, dataLen);
+				printf("\nreceived some data: %s", receivedData.c_str());
 			}
 			else{
 				printf("\nCannot establish connection!");

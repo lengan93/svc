@@ -177,6 +177,11 @@ SVCEndpoint::SVCEndpoint(SVC* svc, bool isInitiator){
 	this->packetHandler = NULL;	
 };
 
+void SVCEndpoint::endpoint_data_handler(SVCPacket* packet, void* args){
+	SVCEndpoint* _this = (SVCEndpoint*)args;
+	_this->dataQueue->enqueue(packet);
+}
+
 void SVCEndpoint::setRemoteHost(SVCHost* remoteHost){
 	this->remoteHost = remoteHost;
 }
@@ -205,6 +210,8 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 		//-- create a packet handler to process incoming packets
 		if (this->packetHandler!=NULL) delete this->packetHandler;
 		this->packetHandler = new PacketHandler(this->sock);
+		this->dataQueue = new MutexedQueue<SVCPacket*>();
+		this->packetHandler->setDataHandler(endpoint_data_handler, this);
 		return 0;
 	}
 }
@@ -229,8 +236,6 @@ bool SVCEndpoint::negotiate(){
 	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
 	SVCPacket* packet = new SVCPacket(this->endpointID);
-	
-	bool rs = false;
 	
 	if (this->isInitiator){
 		//--	send SVC_CMD_CONNECT_INNER1		
@@ -280,20 +285,20 @@ bool SVCEndpoint::negotiate(){
 					packet->pushCommandParam((uint8_t*)proof.c_str(), proof.size());
 					this->packetHandler->sendPacket(packet);
 					//-- ok, connection established
-					rs = true;
+					this->isAuth = true;
 				}
 				else{
 					printf("\nproof verification failed");
 					//-- proof verification failed
-					rs = false;
+					this->isAuth = false;
 				}
 			}
 			else{
-				rs = false;
+				this->isAuth = false;
 			}
 		}
 		else{			
-			rs = false;
+			this->isAuth = false;
 		}
 	}
 	else{
@@ -333,21 +338,21 @@ bool SVCEndpoint::negotiate(){
 				//-- send confirm to daemon
 				packet->switchCommand(SVC_CMD_CONNECT_INNER9);
 				this->packetHandler->sendPacket(packet);
-				rs = true;				
+				this->isAuth = true;
 			}
 			else{
 				//-- proof verification failed
-				rs = false;
+				this->isAuth = false;
 			}
 		}
 		else{
-			rs = false;
+			this->isAuth = false;
 		}
 	}
 	
 	delete param;
 	delete packet;
-	return rs;
+	return this->isAuth;
 }
 
 void SVCEndpoint::shutdown(){
@@ -374,11 +379,28 @@ SVCEndpoint::~SVCEndpoint(){
 	shutdown();
 }
 
-int SVCEndpoint::sendData(const uint8_t* data, uint32_t dalalen, uint8_t priority, bool tcp){
-	return 0;
+int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen, uint8_t priority, bool tcp){
+	if (this->isAuth){
+		//-- try to send
+		SVCPacket* packet = new SVCPacket(this->endpointID);
+		packet->setData(data, dataLen);
+		this->packetHandler->sendPacket(packet);
+		delete packet;
+		return 0;
+	}
+	else{
+		return -1;
+	}
 }
 
 int SVCEndpoint::readData(uint8_t* data, uint32_t* len){
-	return 0;
+	if (this->isAuth){
+		SVCPacket* packet = this->dataQueue->dequeueWait(-1);
+		memcpy(data, packet->packet, packet->dataLen);
+		*len = packet->dataLen;
+	}
+	else{
+		return -1;
+	}
 }
 

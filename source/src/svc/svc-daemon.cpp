@@ -36,6 +36,7 @@ class DaemonEndpoint{
 	public:
 		//-- static methods
 		static void dmn_endpoint_command_handler(SVCPacket* packet, void* args);
+		static void dmn_endpoint_data_handler(SVCPacket* packet, void* args);
 		
 		//-- private members
 		volatile bool working;
@@ -183,6 +184,11 @@ bool DaemonEndpoint::isAuthenticated(){
 }
 
 //-- endpoint packet handling functions
+
+void DaemonEndpoint::dmn_endpoint_data_handler(SVCPacket* packet, void* args){
+	//-- check and decrypt data packet
+	
+}
 
 void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args){
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;

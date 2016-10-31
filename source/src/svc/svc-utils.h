@@ -52,12 +52,18 @@
 				return ((this->packet[ENDPOINTID_LENGTH] & SVC_COMMAND_FRAME) != 0);
 			}
 			
+			void setData(const uint8_t* data, uint32_t dataLen){
+				memcpy(this->packet + SVC_PACKET_HEADER_LEN, &dataLen, 4);
+				memcpy(this->packet + SVC_PACKET_HEADER_LEN + 4, data, dataLen);				
+				this->dataLen = SVC_PACKET_HEADER_LEN + 4 + dataLen; //-- 4 byte datalen
+				this->packet[ENDPOINTID_LENGTH] &= 0x7F; //-- set 7th bit to 0: data
+			}
+			
 			//-- public methods
 			void setCommand(enum SVCCommand cmd){
 				//-- reset length
 				this->dataLen = SVC_PACKET_HEADER_LEN + 2;
-				//-- set info byte
-				packet[ENDPOINTID_LENGTH] |= 0x80;
+				//-- set info byte				
 				packet[ENDPOINTID_LENGTH] |= SVC_COMMAND_FRAME; //-- set info byte
 				packet[ENDPOINTID_LENGTH] |= SVC_URGENT_PRIORITY; 	
 				//-- set commandID

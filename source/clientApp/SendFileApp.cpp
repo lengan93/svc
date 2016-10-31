@@ -20,6 +20,9 @@ int main(int argc, char** argv){
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
+				//-- try to send some data
+				string someData = string("hello server!!!!");
+				endpoint->sendData((uint8_t*)someData.c_str(), someData.size(), SVC_URGENT_PRIORITY, false);
 			}
 			else{
 				printf("\nCannot establish connection!");
