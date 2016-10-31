@@ -29,6 +29,8 @@
 		private:
 			SVC* svc;
 			bool isInitiator;
+			volatile bool working;
+			
 			int sock;
 			string endpointSockPath;
 			uint64_t endpointID;
@@ -42,7 +44,7 @@
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data
 			 * */		
-			void connectToDaemon();	
+			int connectToDaemon();	
 						
 			/*
 			 * */
@@ -54,7 +56,7 @@
 			
 			/*
 			 * */
-			void bindToEndpointID(uint64_t endpointID);
+			int bindToEndpointID(uint64_t endpointID);
 
 		public:
 			~SVCEndpoint();
@@ -75,9 +77,9 @@
 			int readData(uint8_t* data, size_t* len);
 			
 			/*
-			 * Close the communication endpoint and (possibly) send terminate signals to underlayer
+			 * Close the communication endpoint and send terminate signals to underlayer
 			 * */
-			void close();
+			void shutdown();
 	};
 	
 	class SVC{
@@ -96,12 +98,10 @@
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
 			MutexedQueue<SVCPacket*>* connectionRequests;
 			PacketHandler* packetHandler;
+			volatile bool working;
 			
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
-			
-			//-- private methods
-			void shutdown();
 			
 		public:
 			
@@ -125,6 +125,11 @@
 			 * Like 'establishConnection', the negotiation should be processed in a seperated thread
 			 * */
 			SVCEndpoint* listenConnection(int timeout);
+			
+			/*
+			 * try to shutdown all created instances of SVCEndpoint then shutdown itself
+			 * */
+			void shutdown();
 	};
 	
 #endif

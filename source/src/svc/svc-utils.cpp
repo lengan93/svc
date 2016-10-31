@@ -78,7 +78,9 @@ PacketHandler::PacketHandler(int socket){
 }
 
 PacketHandler::~PacketHandler(){
-	printf("\npacket handler %d stopped", this->socket); fflush(stdout);
+	if (this->working){
+		stopWorking();
+	}
 }
 
 void PacketHandler::waitStop(){	
@@ -86,7 +88,7 @@ void PacketHandler::waitStop(){
 }
 
 void PacketHandler::stopWorking(){
-	this->working = false;	
+	this->working = false;
 }
 
 void PacketHandler::setDataHandler(SVCPacketProcessing dataHandler, void* args){
@@ -144,7 +146,7 @@ void* PacketHandler::readingLoop(void* args){
 				if ((infoByte & SVC_ENCRYPTED) == 0){				
 					//-- this command is not encrypted, get the commandID					
 					enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
-					printf("\ngot command %d", cmd);
+					//printf("\ngot command %d", cmd);
 					if (cmd == SVC_CMD_CONNECT_OUTER1){
 						//-- insert source address
 						packet->pushCommandParam((uint8_t*)&srcAddr, srcAddrLen);
@@ -180,7 +182,9 @@ void* PacketHandler::readingLoop(void* args){
 				}
 			}			
 		}
-	}	
+	}
+	
+	close(_this->socket);
 	delete buffer;	
 }
 

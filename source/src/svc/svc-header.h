@@ -20,6 +20,7 @@
 	#define SVC_ERROR_AUTHENTICATION_FAILED		"Authentication failed"
 	#define SVC_ERROR_CRITICAL					"Critical error"
 	#define SVC_ERROR_BINDING					"Error binding socket"
+	#define SVC_ERROR_CONNECTING				"Error connecting socket"
 	#define SVC_ERROR_NOTIFICATOR_DUPLICATED	"Notificator duplicated"	
 	#define SVC_ERROR_SIGNAL_INTERRUPTED		"Execution interrupted by SIGINT"
 
@@ -33,7 +34,7 @@
 	#define SVC_SHORT_TIMEOUT					1000
 	#define SVC_DEFAULT_BUFSIZ 					65535
 	#define	SVC_DAEPORT							1221
-	#define SVC_ENDPOINT_LIVETIME				3000
+	#define SVC_ENDPOINT_LIVETIME				SVC_DEFAULT_TIMEOUT
 		
 	/*	SVC CONSTANTS' LENGTHS	*/
 	
@@ -75,6 +76,7 @@
 		SVC_CMD_CONNECT_OUTER3,
 		SVC_CMD_CONNECT_INNER8,
 		SVC_CMD_CONNECT_INNER9,
+		SVC_CMD_SHUTDOWN_ENDPOINT,
 		_SVC_CMD_COUNT
 	};
 	/*	END OF ABI	*/

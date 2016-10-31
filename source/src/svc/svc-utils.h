@@ -10,6 +10,7 @@
 	#include <vector>
 	#include <sys/socket.h>
 	#include <netinet/in.h>
+	#include <unistd.h>
 
 	//--	class pre-declaration
 	class SVCPacket;
@@ -94,7 +95,6 @@
 				else{
 					*paramLen = 0;					
 				}				
-				//printf("\npop param Len %d: ", *paramLen); printBuffer(param, *paramLen); fflush(stdout);
 			}
 	};
 	
@@ -139,7 +139,7 @@
 			void* cmdHandlerArgs;
 			SVCPacketProcessing dataHandler;
 			void* dataHandlerArgs;
-
+			
 		public:
 			//--	constructors/destructors
 			PacketHandler(int socket);

@@ -38,6 +38,7 @@ class DaemonEndpoint{
 		static void dmn_endpoint_command_handler(SVCPacket* packet, void* args);
 		
 		//-- private members
+		volatile bool working;
 		bool isAuth;
 		int initLiveTime;
 		int dmnSocket;
@@ -73,15 +74,18 @@ class DaemonEndpoint{
 		bool checkInitLiveTime(int interval);
 		bool isAuthenticated();
 		
-		void connectToAppSocket();
+		int connectToAppSocket();
 		void encryptPacket(SVCPacket* packet);
 		void decryptpacket(SVCPacket* packet);
 		void connectToAddress(uint32_t remoteAddress);
 		void connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen);
+		
+		void shutdown();
 };
 
 DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	
+	this->working = false;
 	this->endpointID = endpointID;	
 	this->isAuth = false;
 	this->initLiveTime = SVC_ENDPOINT_LIVETIME;
@@ -99,27 +103,48 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
 	dmnSockAddr.sun_family = AF_LOCAL;
 	memcpy(dmnSockAddr.sun_path, this->dmnSockPath.c_str(), dmnSockPath.size());
-	bind(this->dmnSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr));	
+	
+	if (bind(this->dmnSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr)) == -1){
+		delete this->sha256;
+		delete sendSequenceMutex;
+		delete recvSequenceMutex;
+		throw SVC_ERROR_BINDING;
+	}
+	else{
+		//-- create a packet handler
+		this->working = true;
+		this->packetHandler = new PacketHandler(this->dmnSocket);
+		this->packetHandler->setCommandHandler(dmn_endpoint_command_handler, this);
+	}
+}
 
-	//-- create a packet handler
-	this->packetHandler = new PacketHandler(this->dmnSocket);
-	this->packetHandler->setCommandHandler(dmn_endpoint_command_handler, this);
-
+void DaemonEndpoint::shutdown(){
+	printf("\nendpoint shutdown called with this = NULL?: %d ", this == NULL); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);fflush(stdout);
+	if (this->working){
+		printf("\ninside this->working check"); fflush(stdout);
+		this->working = false;
+		
+		//-- clean up
+		delete sendSequenceMutex;
+		delete recvSequenceMutex;
+		delete this->sha256;
+		delete this->packetHandler;
+		unlink(this->dmnSockPath.c_str());
+	}	
 }
 
 DaemonEndpoint::~DaemonEndpoint(){	
-	delete this->packetHandler;
-	unlink(this->dmnSockPath.c_str());
+	shutdown();
 }
 
-void DaemonEndpoint::connectToAppSocket(){
+int DaemonEndpoint::connectToAppSocket(){
 	//-- then connect to app socket
 	struct sockaddr_un appSockAddr;
 	string appSockPath = SVC_ENDPOINT_APP_PATH_PREFIX + hexToString((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
 	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
-	connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr));
+	return connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr));
 }
 
 void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
@@ -192,6 +217,11 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 	
 	
 	switch (cmd){
+		case SVC_CMD_SHUTDOWN_ENDPOINT:
+			//printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH);
+			_this->shutdown();
+			break;
+			
 		case SVC_CMD_CONNECT_INNER1:
 			if (!_this->isAuth){
 				//printf("\nreceived packet: "); printBuffer(packet->packet, packet->dataLen);
@@ -561,32 +591,28 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 	delete param;
 }
 
-void stopWorking(){
-	working = false;
-	for (auto& it : endpoints){
-		if (it.second != NULL){
-			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;			
-			endpoints[ep->endpointID] = NULL;
-			delete ep;
+void shutdown(){
+	if (working){
+		working = false;
+		for (auto& it : endpoints){
+			if (it.second != NULL){
+				DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
+				endpoints.erase(ep->endpointID);
+				delete ep; //-- destructor calls shutdown
+			}
 		}
+		//--	stop main threads
+		inPacketHandler->stopWorking();
+		unPacketHandler->stopWorking();
+		endpointChecker->stopWorking();
+		//--	do cleanup before exit
+		unlink(SVC_DAEMON_PATH.c_str());		
 	}
-	//--	stop main threads
-	inPacketHandler->stopWorking();
-	unPacketHandler->stopWorking();
-	endpointChecker->stopWorking();
-	//--	do cleanup before exit
-	unlink(SVC_DAEMON_PATH.c_str());
-	printf("\nunlink succeeded"); fflush(stdout);
 }
 
 void signal_handler(int sig){
 	if (sig == SIGINT){
-		//printf("\nsignal handler in: %d", (int)pthread_self());
-		printf("\nSIGINT caught, stopping daemon...");
-		//--	request all endpoint to stop working
-		if (working){
-			stopWorking();
-		}
+		shutdown();
 	}	
 }
 
@@ -664,7 +690,8 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			endpointID = newEndpointID & 0x0000FFFFFFFFFFFF;			
 			if (endpoints[endpointID] != NULL){
 				endpoints[newEndpointID] = endpoints[endpointID];
-				endpoints[endpointID] = NULL;
+				//-- remove old record
+				endpoints.erase(endpointID);
 				//--	update endpointID
 				endpoints[newEndpointID]->endpointID = newEndpointID;
 				//-- forward packet
@@ -688,13 +715,21 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 }
 
 void checkEndpointLiveTime(void* args){
-	for (auto& it : endpoints){
-		if (it.second != NULL){
-			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
-			if (!(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
-				//remove this endpoint, also remove it from endpoints
-				endpoints[ep->endpointID] = NULL;
+	//uint64_t id;
+	//unordered_map<uint64_t, DaemonEndpoint*>::iterator const it = endpoints.begin();
+	for (auto it = endpoints.begin(); it!= endpoints.end();){
+		//id = it->first;
+		//printf("\ncheck live time call destructor for: "); printBuffer((uint8_t*)&id, ENDPOINTID_LENGTH); fflush(stdout);
+		if (it->second != NULL){
+			DaemonEndpoint* ep = (DaemonEndpoint*)it->second;
+			if ((!ep->working) || !(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
+				//-- remove this endpoint, also remove it from endpoints
+				//printf("\nendpoints remove id: "); printBuffer((uint8_t*)&ep->endpointID, ENDPOINTID_LENGTH);
+				it = endpoints.erase(it);				
 				delete ep;
+			}
+			else{
+				it++;
 			}
 		}
 	}
@@ -702,7 +737,6 @@ void checkEndpointLiveTime(void* args){
 
 int main(int argc, char** argv){
 	
-	//printf("\nthis main thread is : %d", (int)pthread_self());
 	string errorString;
 
 	//--	create a daemon unix socket and bind
@@ -767,14 +801,13 @@ int main(int argc, char** argv){
     initSuccess:
 		//--	POST-SUCCESS JOBS	--//
 		working = true;
+		endpoints.clear();
     	printf("\nSVC daemon is running...");
     	fflush(stdout);
+    	
         inPacketHandler->waitStop();
-        //printf("\nin packethandler waitstop succeeded");
-    	unPacketHandler->waitStop();
-    	//printf("\nun packethandler waitstop succeeded");
-    	endpointChecker->waitStop();
-    	//printf("\nendpoint checker waitstop succeeded");
+    	unPacketHandler->waitStop();    	
+    	endpointChecker->waitStop();    	
     	
     	delete inPacketHandler;
     	delete unPacketHandler;
