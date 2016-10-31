@@ -374,11 +374,11 @@ SVCEndpoint::~SVCEndpoint(){
 	shutdown();
 }
 
-int SVCEndpoint::sendData(const uint8_t* data, size_t dalalen, uint8_t priority, bool tcp){
+int SVCEndpoint::sendData(const uint8_t* data, uint32_t dalalen, uint8_t priority, bool tcp){
 	return 0;
 }
 
-int SVCEndpoint::readData(uint8_t* data, size_t* len){
+int SVCEndpoint::readData(uint8_t* data, uint32_t* len){
 	return 0;
 }
 

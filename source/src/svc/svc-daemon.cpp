@@ -94,6 +94,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	this->sendSequenceMutex = new SharedMutex();
 	this->recvSequenceMutex = new SharedMutex();
 	
+	this->aesgcm = NULL;
 	this->sha256 = new SHA256();
 	
 	//-- create dmn unix socket, bind 
@@ -119,9 +120,9 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 }
 
 void DaemonEndpoint::shutdown(){
-	printf("\nendpoint shutdown called with this = NULL?: %d ", this == NULL); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);fflush(stdout);
+	//printf("\nendpoint shutdown called with this = NULL?: %d ", this == NULL); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);fflush(stdout);
 	if (this->working){
-		printf("\ninside this->working check"); fflush(stdout);
+		//printf("\ninside this->working check"); fflush(stdout);
 		this->working = false;
 		
 		//-- clean up
@@ -218,14 +219,14 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 	
 	switch (cmd){
 		case SVC_CMD_SHUTDOWN_ENDPOINT:
-			//printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH);
+			printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 			_this->shutdown();
 			break;
 			
 		case SVC_CMD_CONNECT_INNER1:
 			if (!_this->isAuth){
 				//printf("\nreceived packet: "); printBuffer(packet->packet, packet->dataLen);
-				printf("\nCONNECT_INNER1 received");			
+				printf("\nSVC_CMD_CONNECT_INNER1 received");			
 				//-- extract remote address
 				packet->popCommandParam(param, &paramLen);		
 				_this->connectToAddress(*((uint32_t*)param));			
@@ -280,7 +281,9 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			break;
 			
 		case SVC_CMD_CONNECT_INNER3:
+			printf("\nSVC_CMD_CONNECT_INNER3 received"); fflush(stdout);
 			//-- app responded with CONNECT_INNER3, now can connect to app socket
+			
 			_this->connectToAppSocket();
 			packet->popCommandParam(param, &paramLen);
 			//-- use SHA256(x) as an AES256 key
@@ -435,7 +438,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			
 		case SVC_CMD_CONNECT_INNER5:
 			printf("\nSVC_CMD_CONNECT_INNER5 received");
-			//print("\npacket: "); printBuffer(packet->packet, packet->dataLen);
+			printf("\npacket: "); printBuffer(packet->packet, packet->dataLen);
 			packet->popCommandParam(param, &paramLen);
 			//solution = string((char*)param, paramLen);
 			//printf("\ndmn Endpoint received solution: %s", solution.c_str()); fflush(stdout);
@@ -452,9 +455,9 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			//-- construct gy from decrypted k2
 			
 			paramLen = *((uint16_t*)data);
-			//printf("\nreceived gy_x: %s", data + 2);
+			printf("\nreceived gy_x: %s", data + 2);
 			//printf("\ngx_y by printBuffer: "); printBuffer(data + 4 + paramLen, dataLen - 4 - paramLen); fflush(stdout);
-			//printf("\nreceived gy_y: %s", data + 4 + paramLen); fflush(stdout);
+			printf("\nreceived gy_y: %s", data + 4 + paramLen); fflush(stdout);
 			//-- !! check these gy_x and gy_y
 			if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
 				ecpoint = new ECPoint((char*)(data + 2) , (char*)(data + 4 + paramLen));
@@ -501,21 +504,23 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 						packet->switchCommand(SVC_CMD_CONNECT_INNER6);
 						packet->pushCommandParam(data, dataLen);
 						//printf("\nsend this INNER6 to app: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
-						_this->sendPacketIn(packet);
+						//printf("\nsend inner6 result: %d ", _this->sendPacketIn(packet));
 						delete data;
 					}
 					else{
 						printf("\naesgcm decrypt failed");
 					}					
 				}
+				//--	else: _this->aesgcm is not null			
 			}
-			else{
-				//-- decrypted gy damaged, delete data
+			else{				
+				//printf("\ndecrypted gy damaged, delete data");
 				delete data;
 			}
 			break;
 			
 		case SVC_CMD_CONNECT_INNER7:
+			printf("\nSVC_CMD_CONNECT_INNER7 received"); fflush(stdout);
 			//-- authenticated
 			_this->isAuth = true;			
 			//-- encrypt solution proof then attach to packet
@@ -581,6 +586,7 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 			
 		case SVC_CMD_CONNECT_INNER9:
 			//-- connection established
+			printf("\nSVC_CMD_CONNECT_INNER9 received"); fflush(stdout);
 			_this->isAuth = true;
 			break;
 			
@@ -621,8 +627,9 @@ void daemonUnCommandHandler(SVCPacket* packet, void* args){
 	uint64_t endpointID = *((uint64_t*)packet->packet);
 	switch (cmd){
 		case SVC_CMD_CREATE_ENDPOINT:
-			//-- check if the endpoint already exists			
-			if (endpoints[endpointID]==NULL){			
+			//-- check if the endpoint already exists
+			printf("\nSVC_CMD_CREATE_ENDPOINT received for: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);		
+			if (endpoints[endpointID]==NULL){		
 				DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);				
 				endpoint->connectToAppSocket();
 				endpoints[endpointID] = endpoint;
@@ -656,6 +663,7 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 	
 	switch (cmd){
 		case SVC_CMD_CONNECT_OUTER1:
+			printf("\nSVC_CMD_CONNECT_OUTER1 received"); fflush(stdout);
 			newEndpointID |= ++daemonEndpointCounter;
 			newEndpointID <<= 48;
 			newEndpointID |= endpointID;
@@ -684,7 +692,8 @@ void daemonInCommandHandler(SVCPacket* packet, void* args){
 			delete packet;
 			break;
 			
-		case SVC_CMD_CONNECT_OUTER2:			
+		case SVC_CMD_CONNECT_OUTER2:
+			printf("\nSVC_CMD_CONNECT_OUTER2 received"); fflush(stdout);
 			//-- newEndpointID contains old ID			
 			newEndpointID = endpointID;
 			endpointID = newEndpointID & 0x0000FFFFFFFFFFFF;			

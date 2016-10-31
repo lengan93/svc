@@ -69,12 +69,12 @@
 			 * Send data over the connector to the other endpoint of communication.
 			 * The data will be automatically encrypted by the under layer
 			 * */
-			int sendData(const uint8_t* data, size_t dalalen, uint8_t priority, bool tcp);
+			int sendData(const uint8_t* data, uint32_t dalalen, uint8_t priority, bool tcp);
 			
 			/*
 			 * Read data from the buffer. The data had already been decrypted.
 			 * */
-			int readData(uint8_t* data, size_t* len);
+			int readData(uint8_t* data, uint32_t* len);
 			
 			/*
 			 * Close the communication endpoint and send terminate signals to underlayer
