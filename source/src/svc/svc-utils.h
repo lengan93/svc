@@ -1,9 +1,8 @@
 #ifndef	__SVC_UTILS__
 #define __SVC_UTILS__
 
-	#include "../utils/SharedMutex.h"
+	#include "../utils/MutexedQueue.h"
 	#include "../utils/Message.h"
-	#include "../utils/utils-functions.h"
 	#include "svc-header.h"
 	
 	#include <cstring>
@@ -135,17 +134,27 @@
 		private:
 			//--	static methods
 			static void* readingLoop(void* args);
+			static void* writingLoop(void* args);
+			static void* processingLoop(void* args);
+
+			MutexedQueue<SVCPacket*>* readingQueue;
+			MutexedQueue<SVCPacket*>* postReadQueue;
+			MutexedQueue<SVCPacket*>* preWriteQueue;
+			MutexedQueue<SVCPacket*>* writingQueue;
 			
 			//--	members
-			vector<CommandHandler> commandHandlerRegistra;
 			int socket;
 			bool working;
 			pthread_t readingThread;
-			SVCPacketProcessing cmdHandler;
-			void* cmdHandlerArgs;
-			SVCPacketProcessing dataHandler;
-			void* dataHandlerArgs;
+			pthread_t writingThread;
+			pthread_t processingThread;			
 			
+			void* dataHandlerArgs;
+			void* cmdHandlerArgs;		
+			SVCPacketProcessing dataHandler;
+			SVCPacketProcessing cmdHandler;
+			vector<CommandHandler> commandHandlerRegistra;
+						
 		public:
 			//--	constructors/destructors
 			PacketHandler(int socket);
@@ -155,7 +164,10 @@
 			void setCommandHandler(SVCPacketProcessing cmdHandler, void* args);
 			void setDataHandler(SVCPacketProcessing dataHandler, void* args);
 			bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPacket* packet, int timeout);
-			int sendPacket(SVCPacket* packet);
+			
+			SVCPacket* readPacket(int timeout);
+			void sendPacket(SVCPacket* packet);
+			void recvPacket(SVCPacket* packet);
 			void stopWorking();
 			void waitStop();
 	};

@@ -29,7 +29,8 @@
 			Queue<pthread_t>* waitDataThreads;
 						
 			//--	waitData used in mutex lock, not need to lock again
-			bool waitData(int timeout){			
+			bool waitData(int timeout){
+				//printf("\n wait data called with timeout = %d", timeout);
 				this->waitDataThreads->enqueue(pthread_self());
 				if (timeout<0)
 					return waitSignal(QUEUE_DATA_SIGNAL);
@@ -97,11 +98,13 @@
 			}
 			
 			T dequeueWait(int timeout){
-				bool haveData = true;
+				bool haveData = false;
 				this->firstMutex->lock();
-				if (!this->notEmpty()){							
+				if (!this->notEmpty()){
+					//printf("\nnodata in queue, calling waitData"); fflush(stdout);
 					haveData = waitData(timeout);
 					//--	after waitData there must be data in queue, 'cause no other can perform dequeue
+					//printf("\nafter calling waitdata, havedata = %d", haveData); fflush(stdout);
 				}
 				//--	not empty, have not to wait				
 				if (haveData){

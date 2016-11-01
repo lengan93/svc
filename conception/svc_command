@@ -3,12 +3,13 @@ SVC frame format for daemon
 -------------------------SVC level---------------------
 - endpointID : 8 bytes
 - 1 byte info
-    data/command: 7th bit
-    responded from daemon: 6th bit
-    version: 5&4th bit
-	encrypted: 3th bit
-	using tcp: 2th bit	 //used by htp layer
-	priority: 1&0 th bit //used by htp layer
+    7th bit: data/command
+    6th bit: to be removed
+    5th bit: sending packet
+    4th bit: [no use]
+	3th bit: encrypted
+	2th bit: using tcp	 //used by htp layer
+	1&0 th bit: priority //used by htp layer
 - 4 bytes sequence
 -------------------------------------------------------
 

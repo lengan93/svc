@@ -102,16 +102,22 @@ SVC::~SVC(){
 
 void SVC::svc_command_packet_handler(SVCPacket* packet, void* args){
 	SVC* _this = (SVC*)args;
-	enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
-	switch(cmd){
-		case SVC_CMD_CONNECT_INNER2:
-			_this->connectionRequests->enqueue(packet);		
-			break;
-		default:
-			//-- remove the packet
-			delete packet;
-			break;
+	
+	//-- only handle incoming command
+	uint8_t infoByte = packet->packet[INFO_BYTE];
+	if ((infoByte & SVC_SENDING_PACKET) == 0x00){		
+		enum SVCCommand cmd = (enum SVCCommand)packet->packet[SVC_PACKET_HEADER_LEN];
+		switch(cmd){
+			case SVC_CMD_CONNECT_INNER2:
+				_this->connectionRequests->enqueue(new SVCPacket(packet->packet, packet->dataLen));
+				break;
+			default:			
+				break;
+		}
+		//-- mark to not forward the packet by editing infoByte	
+		packet->packet[INFO_BYTE] |= SVC_TO_BE_REMOVED;
 	}
+	//else: let go outgoing packet
 }
 
 //--	SVC PUBLIC FUNCTION IMPLEMENTATION		--//
@@ -131,9 +137,10 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 	this->endpoints[endpoint->endpointID] = endpoint;
 	
 	//-- send SVC_CMD_CREATE_ENDPOINT to daemon
-	SVCPacket* packet = new SVCPacket(endpoint->endpointID); //-- 2 = cmd + argc
+	SVCPacket* packet = new SVCPacket(endpoint->endpointID);
 	packet->setCommand(SVC_CMD_CREATE_ENDPOINT);
-	int sendrs = this->packetHandler->sendPacket(packet);
+	//int sendrs = 
+	this->packetHandler->sendPacket(packet);
 	
 	//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
 	uint32_t responseLen;	
@@ -195,6 +202,7 @@ void SVCEndpoint::changeEndpointID(uint64_t endpointID){
 }
 
 int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
+	
 	this->endpointID = endpointID;
 	//-- bind app endpoint socket
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -212,6 +220,7 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 		this->packetHandler = new PacketHandler(this->sock);
 		this->dataQueue = new MutexedQueue<SVCPacket*>();
 		this->packetHandler->setDataHandler(endpoint_data_handler, this);
+		this->working = true;
 		return 0;
 	}
 }
@@ -225,7 +234,7 @@ int SVCEndpoint::connectToDaemon(){
 	return connect(this->sock, (struct sockaddr*)&dmnEndpointAddr, sizeof(dmnEndpointAddr));
 }
 
-bool SVCEndpoint::negotiate(){
+bool SVCEndpoint::negotiate(){	
 	
 	string challengeSecretSent;
 	string challengeSecretReceived;
@@ -250,7 +259,8 @@ bool SVCEndpoint::negotiate(){
 		packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
 		uint32_t remoteAddr = this->remoteHost->getHostAddress();
 		packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
-		int sendrs = this->packetHandler->sendPacket(packet);
+		//int sendrs = 
+		this->packetHandler->sendPacket(packet);
 		//--	wait for SVC_CMD_CONNECT_INNER4
 		printf("\nwait for CONNECT_INNER4");
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, packet, SVC_DEFAULT_TIMEOUT)){
@@ -325,7 +335,8 @@ bool SVCEndpoint::negotiate(){
 		packet->pushCommandParam((uint8_t*)proof.c_str(), proof.size());
 		packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
 		packet->pushCommandParam((uint8_t*)challengeSecretReceived.c_str(),  challengeSecretReceived.size());
-		int sendrs = this->packetHandler->sendPacket(packet);
+		//int sendrs = 
+		this->packetHandler->sendPacket(packet);
 		
 		//--	wait for SVC_CMD_CONNECT_INNER8
 		printf("\nWAIT FOR CONNECT_INNER8 with endpointID: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
@@ -369,6 +380,7 @@ void SVCEndpoint::shutdown(){
 		this->svc->endpoints[this->endpointID]= NULL;
 		
 		//-- clean up
+		//print("\nendpoint running cleanup, unlink %s", this->endpointSockPath.c_str());
 		delete packet;
 		delete this->packetHandler;
 		unlink(this->endpointSockPath.c_str());
