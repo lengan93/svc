@@ -124,29 +124,33 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 	endpointID |= ++SVC::endpointCounter;
 	endpointID<<=32;
 	endpointID |= this->appID;
-	endpoint->bindToEndpointID(endpointID);
-	
-	endpoint->setRemoteHost(remoteHost);
-	//-- add this endpoint to be handled
-	this->endpoints[endpoint->endpointID] = endpoint;
-	
-	//-- send SVC_CMD_CREATE_ENDPOINT to daemon
-	SVCPacket* packet = new SVCPacket(endpoint->endpointID); //-- 2 = cmd + argc
-	packet->setCommand(SVC_CMD_CREATE_ENDPOINT);
-	int sendrs = this->packetHandler->sendPacket(packet);
-	
-	//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
-	uint32_t responseLen;	
-	fflush(stdout);
-	if (endpoint->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, endpoint->endpointID, packet, SVC_DEFAULT_TIMEOUT)){
-		endpoint->connectToDaemon();
-		return endpoint;
-	}
-	else{
-		//-- remove endpoint from the map
-		this->endpoints.erase(endpoint->endpointID);
+	if (endpoint->bindToEndpointID(endpointID) == -1){
 		delete endpoint;
 		return NULL;
+	}
+	else{	
+		endpoint->setRemoteHost(remoteHost);
+		//-- add this endpoint to be handled
+		this->endpoints[endpoint->endpointID] = endpoint;
+		
+		//-- send SVC_CMD_CREATE_ENDPOINT to daemon
+		SVCPacket* packet = new SVCPacket(endpoint->endpointID); //-- 2 = cmd + argc
+		packet->setCommand(SVC_CMD_CREATE_ENDPOINT);
+		int sendrs = this->packetHandler->sendPacket(packet);
+		
+		//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
+		uint32_t responseLen;	
+		fflush(stdout);
+		if (endpoint->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, endpoint->endpointID, packet, SVC_DEFAULT_TIMEOUT)){
+			endpoint->connectToDaemon();
+			return endpoint;
+		}
+		else{
+			//-- remove endpoint from the map
+			this->endpoints.erase(endpoint->endpointID);
+			delete endpoint;
+			return NULL;
+		}
 	}
 }
 
@@ -212,6 +216,7 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 		this->packetHandler = new PacketHandler(this->sock);
 		this->dataQueue = new MutexedQueue<SVCPacket*>();
 		this->packetHandler->setDataHandler(endpoint_data_handler, this);
+		this->working = true;
 		return 0;
 	}
 }
@@ -396,8 +401,15 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen, uint8_t priorit
 int SVCEndpoint::readData(uint8_t* data, uint32_t* len){
 	if (this->isAuth){
 		SVCPacket* packet = this->dataQueue->dequeueWait(-1);
-		memcpy(data, packet->packet, packet->dataLen);
-		*len = packet->dataLen;
+		if (packet!=NULL){
+			memcpy(data, packet->packet, packet->dataLen);
+			*len = packet->dataLen;
+			delete packet;
+			return 0;
+		}
+		else{
+			return -1;
+		}
 	}
 	else{
 		return -1;

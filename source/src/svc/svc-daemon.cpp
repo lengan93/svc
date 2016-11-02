@@ -510,7 +510,8 @@ void DaemonEndpoint::dmn_endpoint_command_handler(SVCPacket* packet, void* args)
 						packet->switchCommand(SVC_CMD_CONNECT_INNER6);
 						packet->pushCommandParam(data, dataLen);
 						//printf("\nsend this INNER6 to app: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
-						//printf("\nsend inner6 result: %d ", _this->sendPacketIn(packet));
+						//printf("\nsend inner6 result: %d ", 
+						_this->sendPacketIn(packet);
 						delete data;
 					}
 					else{
