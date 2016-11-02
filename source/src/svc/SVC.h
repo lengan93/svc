@@ -26,7 +26,7 @@
 	class SVCEndpoint{				
 		friend class SVC;
 		
-		static void endpoint_data_handler(SVCPacket* packet, void* args);
+		static void endpoint_packet_handler(SVCPacket* packet, void* args);
 
 		private:
 			MutexedQueue<SVCPacket*>* dataQueue;
@@ -93,7 +93,7 @@
 		private:
 			//-- static members
 			static uint16_t endpointCounter;
-			static void svc_command_packet_handler(SVCPacket* packet, void* args);
+			static void svc_packet_handler(SVCPacket* packet, void* args);
 			
 			//-- private members
 			SHA256* sha256;

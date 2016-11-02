@@ -116,8 +116,9 @@
 					this->firstMutex->unlock();
 					return tmp->getData();
 				}
-				//--	else: waitData interrupted by other signals
-				return NULL;
+				else{//else: waitData interrupted by other signals
+					return NULL;
+				}
 			}
 			
 			T dequeue(){
@@ -133,8 +134,10 @@
 					this->firstMutex->unlock();
 					return tmp->getData();										
 				}
-				this->firstMutex->unlock();
-				return NULL;
+				else{
+					this->firstMutex->unlock();
+					return NULL;
+				}
 			}
 			
 			bool peak(T* data){
@@ -144,7 +147,9 @@
 					this->firstMutex->unlock_shared();
 					return true;
 				}
-				return false;
+				else{
+					return false;
+				}
 			}
 	};
 

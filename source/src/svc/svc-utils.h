@@ -32,6 +32,16 @@
 				this->dataLen = 0;
 			}
 			
+			SVCPacket(SVCPacket* packet){		
+				if (packet!=NULL){
+					this->dataLen = packet->dataLen;
+					memcpy(this->packet, packet->packet, this->dataLen);
+				}
+				else{
+					this->dataLen = 0;
+				}
+			}
+			
 			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){				
 				this->dataLen = bufferLen;
 				memcpy(this->packet, buffer, this->dataLen);
@@ -138,21 +148,21 @@
 			static void* processingLoop(void* args);
 
 			MutexedQueue<SVCPacket*>* readingQueue;
-			MutexedQueue<SVCPacket*>* postReadQueue;
-			MutexedQueue<SVCPacket*>* preWriteQueue;
+			MutexedQueue<SVCPacket*>* keepingQueue;
 			MutexedQueue<SVCPacket*>* writingQueue;
 			
 			//--	members
 			int socket;
-			bool working;
+			volatile bool working;
+			volatile bool reading;
+			volatile bool writing;
+			
 			pthread_t readingThread;
 			pthread_t writingThread;
 			pthread_t processingThread;			
 			
-			void* dataHandlerArgs;
-			void* cmdHandlerArgs;		
-			SVCPacketProcessing dataHandler;
-			SVCPacketProcessing cmdHandler;
+			void* packetHandlerArgs;
+			SVCPacketProcessing packetHandler;
 			vector<CommandHandler> commandHandlerRegistra;
 						
 		public:
@@ -161,13 +171,18 @@
 			virtual ~PacketHandler();
 			
 			//--	methods
-			void setCommandHandler(SVCPacketProcessing cmdHandler, void* args);
-			void setDataHandler(SVCPacketProcessing dataHandler, void* args);
+			void setPacketHandler(SVCPacketProcessing handler, void* args);		
 			bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPacket* packet, int timeout);
 			
+			//-- read a packet from keepingQueue
 			SVCPacket* readPacket(int timeout);
-			void sendPacket(SVCPacket* packet);
+			
+			//-- enqueue a packet to the readingQueue
 			void recvPacket(SVCPacket* packet);
+			
+			void startReading();
+			void startWriting();
+			
 			void stopWorking();
 			void waitStop();
 	};
