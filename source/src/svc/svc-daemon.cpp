@@ -26,16 +26,50 @@ struct sockaddr_un daemonSockUnAddress;
 struct sockaddr_in daemonSockInAddress;
 int daemonUnSocket;
 int daemonInSocket;
-PacketHandler* unPacketHandler;
-PacketHandler* inPacketHandler;
+PacketHandler* daemonUnixIncomingPacketHandler;
+PacketHandler* daemonUnixOutgoingPacketHandler;
+PacketHandler* daemonInetIncomingPacketHandler;
+//PacketHandler* daemonInetOutgoingPacketHandler;
 PeriodicWorker* endpointChecker;
 uint16_t daemonEndpointCounter = 0;
-bool working;
+volatile bool working;
+
+//-- queues
+MutexedQueue<SVCPacket*>* daemonUnixIncomingQueue;
+MutexedQueue<SVCPacket*>* daemonUnixOutgoingQueue;
+//MutexedQueue<SVCPacket*>* inetIncomingQueue;
+//MutexedQueue<SVCPacket*>* inetOutgoingQueue;
+
+//-- reading loops and threads
+pthread_t daemonUnixReadingThread;
+pthread_t daemonUnixWritingThread;
+pthread_t daemonInetReadingThread;
+extern void* daemon_unix_reading_loop(void* args);
+extern void* daemon_unix_writing_loop(void* args);
+extern void* daemon_inet_reading_loop(void* args);
 
 class DaemonEndpoint{
 	public:
 		//-- static methods
-		static void dmn_packet_handler(SVCPacket* packet, void* args);		
+		static void daemon_endpoint_unix_incoming_packet_handler(SVCPacket* packet, void* args);
+		static void daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* packet, void* args);		
+		static void daemon_endpoint_inet_incoming_packet_handler(SVCPacket* packet, void* args);
+		static void daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* packet, void* args);
+		
+		static void* daemon_endpoint_unix_reading_loop(void* args);
+		static void* daemon_endpoint_unix_writing_loop(void* args);
+		//static void* daemon_endpoint_inet_reading_loop(void* args);
+		static void* daemon_endpoint_inet_writing_loop(void* args);
+		
+		MutexedQueue<SVCPacket*>* unixIncomingQueue;
+		MutexedQueue<SVCPacket*>* unixOutgoingQueue;
+		MutexedQueue<SVCPacket*>* inetIncomingQueue;
+		MutexedQueue<SVCPacket*>* inetOutgoingQueue;
+		
+		PacketHandler* unixIncomingPacketHandler;
+		PacketHandler* unixOutgoingPacketHandler;
+		PacketHandler* inetIncomingPacketHandler;
+		PacketHandler* inetOutgoingPacketHandler;
 		
 		//-- private members
 		volatile bool working;
@@ -45,8 +79,7 @@ class DaemonEndpoint{
 		string dmnSockPath;
 		struct sockaddr_in remoteAddr;
 		size_t remoteAddrLen;
-		PacketHandler* packetHandler;
-		
+
 		//-- crypto protocol variables	
 		SVCPacket* encryptedECPoint;
 		SVCPacket* encryptedProof;
@@ -69,9 +102,6 @@ class DaemonEndpoint{
 		SharedMutex* recvSequenceMutex;
 					
 		//-- public methods
-		void sendPacketUn(SVCPacket* packet);
-		void sendPacketIn(SVCPacket* packet);
-		void recvPacket(SVCPacket* packet);
 		bool checkInitLiveTime(int interval);
 		bool isAuthenticated();
 		
@@ -115,8 +145,8 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	else{
 		//-- create a packet handler
 		this->working = true;
-		this->packetHandler = new PacketHandler(this->dmnSocket);
-		this->packetHandler->setPacketHandler(dmn_packet_handler, this);
+		this->unixIncomingPacketHandler = new PacketHandler(this->unixIncomingQueue, daemon_endpoint_unix_incoming_packet_handler, this);
+		
 	}
 }
 
@@ -130,7 +160,10 @@ void DaemonEndpoint::shutdown(){
 		delete sendSequenceMutex;
 		delete recvSequenceMutex;
 		delete this->sha256;
-		delete this->packetHandler;
+		if (this->unixIncomingPacketHandler!=NULL) delete this->unixIncomingPacketHandler;
+		if (this->unixOutgoingPacketHandler!=NULL) delete this->unixOutgoingPacketHandler;
+		if (this->inetIncomingPacketHandler!=NULL) delete this->inetIncomingPacketHandler;
+		if (this->inetOutgoingPacketHandler!=NULL) delete this->inetOutgoingPacketHandler;
 		unlink(this->dmnSockPath.c_str());
 	}	
 }
@@ -146,7 +179,13 @@ int DaemonEndpoint::connectToAppSocket(){
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
 	appSockAddr.sun_family = AF_LOCAL;
 	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
-	return connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr));
+	if (connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr)) != -1){
+		this->packetHandler->startWriting();
+		return 0;
+	}
+	else{
+		return -1;
+	}
 }
 
 void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
@@ -161,22 +200,6 @@ void DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, sockle
 	this->remoteAddrLen = sockLen;
 }
 
-void DaemonEndpoint::recvPacket(SVCPacket* packet){
-	this->packetHandler->recvPacket(packet);
-}
-
-void DaemonEndpoint::sendPacketUn(SVCPacket* packet){
-	this->packetHandler->recvPacket(packet);
-}
-
-void DaemonEndpoint::sendPacketIn(SVCPacket* packet){
-	//add sequence number to packet
-	this->sendSequenceMutex->lock();
-	this->sendSequence += 1;
-	memcpy(packet->packet + ENDPOINTID_LENGTH + 1, (uint8_t*)&this->sendSequence, SEQUENCE_LENGTH);
-	this->sendSequenceMutex->unlock();
-	sendto(daemonInSocket, packet->packet,packet->dataLen, 0, (struct sockaddr*)&this->remoteAddr, this->remoteAddrLen);	
-}
 
 bool DaemonEndpoint::checkInitLiveTime(int interval){
 	this->initLiveTime -= interval;
@@ -192,14 +215,14 @@ bool DaemonEndpoint::isAuthenticated(){
 
 void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 	
+	static uint8_t param[SVC_DEFAULT_BUFSIZ];
+	static uint16_t paramLen;
+	
 	uint8_t infoByte = packet->packet[INFO_BYTE];
-	if ((infoByte & SVC_SOCKET_PACKET) != 0x00){
+	if ((infoByte & SVC_INCOMING_PACKET) != 0x00){
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 			DaemonEndpoint* _this = (DaemonEndpoint*)args;
-			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		
-			uint8_t* param = param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
-			uint16_t paramLen;
+			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];		
 		
 			string hashValue;
 			uint8_t* aeskey;
@@ -225,9 +248,9 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 		
 			ECPoint* ecpoint;
 			int sendrs;
-		
-		
-			switch (cmd){
+				
+			switch (cmd){			
+			
 				case SVC_CMD_SHUTDOWN_ENDPOINT:
 					printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 					_this->shutdown();
@@ -286,7 +309,7 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 						//-- switch commandID
 						packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
 						//-- send the packet to internet
-						_this->sendPacketIn(new SVCPacket(packet->packet, packet->dataLen));
+						_this->sendPacketIn(new SVCPacket(packet));
 					}		
 					break;
 				
@@ -417,8 +440,8 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 						delete encrypted;
 						delete tag;
 					
-						//-- send this packet to in socket
-						_this->sendPacketIn(packet);
+						//-- send this packet to internet
+						_this->sendPacketIn(new SVCPacket(packet));
 					}
 					else{
 						//-- decryted gx is damaged, delete data
@@ -443,12 +466,11 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 					//-- clear the 6&7 byte of endpointID
 					packet->packet[6]=0x00;
 					packet->packet[7]=0x00;
-					_this->sendPacketUn(packet);			
+					_this->sendPacketUn(packet);
 					break;
 				
 				case SVC_CMD_CONNECT_INNER5:
-					printf("\nSVC_CMD_CONNECT_INNER5 received");
-					printf("\npacket: "); printBuffer(packet->packet, packet->dataLen);
+					printf("\nSVC_CMD_CONNECT_INNER5 received");					
 					packet->popCommandParam(param, &paramLen);
 					//solution = string((char*)param, paramLen);
 					//printf("\ndmn Endpoint received solution: %s", solution.c_str()); fflush(stdout);
@@ -515,7 +537,7 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 								packet->pushCommandParam(data, dataLen);
 								//printf("\nsend this INNER6 to app: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 								//printf("\nsend inner6 result: %d ", 
-								_this->sendPacketUn(new SVCPacket(packet->packet, packet->dataLen));
+								_this->sendPacketUn(new SVCPacket(packet));
 								delete data;
 							}
 							else{
@@ -560,7 +582,7 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 					//printf("\ntag: "); printBuffer(tag, tagLen);
 					packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
 					packet->pushCommandParam(param, paramLen);			
-					_this->sendPacketIn(new SVCPacket(packet->packet, packet->dataLen));
+					_this->sendPacketIn(new SVCPacket(packet));
 					delete encrypted;
 					delete tag;
 					break;
@@ -586,7 +608,7 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 						//-- forward CONNECT_INNER8 to app
 						packet->switchCommand(SVC_CMD_CONNECT_INNER8);
 						packet->pushCommandParam(data, dataLen);
-						_this->sendPacketUn(new SVCPacket(packet->packet, packet->dataLen));
+						_this->sendPacketUn(new SVCPacket(packet));
 						//printf("\nsend this CONNECT_INNER8 to app %d %d: ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 						delete data;
 					}
@@ -603,11 +625,50 @@ void DaemonEndpoint::dmn_packet_handler(SVCPacket* packet, void* args){
 				
 				default:
 					break;
-			}			
-			delete param;
+			}
+			//-- incoming command packet are processed then removed
+			packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;
+		}
+		else{
+			//-- incoming data, need decryption before forwarding
 		}
 	}
-	//else: not yet handle outgoing command packet
+	else{
+		//-- outgoing packet
+		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+			//-- forward outgoing command			
+		}
+		else{
+			//-- outgoing data, need encrypt before forwardings
+		}
+	}
+}
+
+
+//================================	DAEMON CODE ==============================
+
+void* daemon_unix_reading_loop(void* args){	
+	//-- read from unix socket then enqueue to incoming queue
+	uint8_t* const buffer = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+	ssize_t readrs;
+		
+	while (working){
+		do{
+			readrs = recv(daemonUnSocket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT);
+		}
+		while((readrs==-1) && _this->working);
+		
+		if (readrs>0){
+			daemonUnixIncomingQueue->enqueue(new SVCPacket(buffer, readrs));
+		}
+		//else: read received nothing
+	}
+	
+	delete buffer;
+}
+
+void* daemon_unix_writing_loop(void* args){
+	while (working);	
 }
 
 void shutdown(){
@@ -635,41 +696,49 @@ void signal_handler(int sig){
 	}	
 }
 
-void daemonUnPacketHandler(SVCPacket* packet, void* args){
+void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 	uint8_t infoByte = packet->packet[INFO_BYTE];
-	//-- for now only process incoming command packet
-	if ((infoByte & SVC_SOCKET_PACKET) != 0x00){
-		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
-			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-			uint64_t endpointID = *((uint64_t*)packet->packet);
-			switch (cmd){
-				case SVC_CMD_CREATE_ENDPOINT:
-					//-- check if the endpoint already exists
-					printf("\nSVC_CMD_CREATE_ENDPOINT received for: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);		
-					if (endpoints[endpointID]==NULL){		
-						DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);				
-						endpoint->connectToAppSocket();
-						endpoints[endpointID] = endpoint;
-						//-- send back the packet
-						endpoint->sendPacketUn(new SVCPacket(packet->packet, packet->dataLen));
-					}
-					break;
-				
-				default:				
-					break;
-			}
+	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
+		uint64_t endpointID = *((uint64_t*)packet->packet);
+		switch (cmd){
+			case SVC_CMD_CREATE_ENDPOINT:
+				//-- check if the endpoint already exists
+				printf("\nSVC_CMD_CREATE_ENDPOINT received for: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);		
+				if (endpoints[endpointID]==NULL){		
+					DaemonEndpoint* endpoint = new DaemonEndpoint(endpointID);				
+					endpoint->connectToAppSocket();
+					endpoints[endpointID] = endpoint;
+					//-- send back the packet
+					endpoint->unixOutgoingQueue(packet);
+				}
+				break;
+			
+			default:
+				packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;
+				break;
 		}
+	}
+	else{
+		//-- ingore data frame
+		packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;
 	}
 }
 
-void daemonInPacketHandler(SVCPacket* packet, void* args){
+void daemon_unix_outgoing_packet_handler(SVCPacket* packet, void* args){
+	
+}
+
+void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 
 	uint8_t infoByte = packet->packet[INFO_BYTE];
-	//-- for now only process incoming command packet
-	if ((infoByte & SVC_SOCKET_PACKET) != 0x00){
+
+	if ((infoByte & SVC_INCOMING_PACKET) != 0x00){
+		uint64_t endpointID = *((uint64_t*)packet->packet);
+		
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
-			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-			uint64_t endpointID = *((uint64_t*)packet->packet);
+			//-- incoming command			
+			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];			
 			uint64_t newEndpointID = 0;
 			uint8_t* const param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 			uint16_t paramLen;
@@ -726,20 +795,30 @@ void daemonInPacketHandler(SVCPacket* packet, void* args){
 						//--	update endpointID
 						endpoints[newEndpointID]->endpointID = newEndpointID;
 						//-- forward packet
-						endpoints[newEndpointID]->recvPacket(new SVCPacket(packet->packet, packet->dataLen));
+						endpoints[newEndpointID]->recvPacket(new SVCPacket(packet));
 					}
 					break;
 				
 				default:			
 					if (endpoints[endpointID] != NULL){
 						//-- forward packet if endpoint found
-						endpoints[endpointID]->recvPacket(new SVCPacket(packet->packet, packet->dataLen));
+						endpoints[endpointID]->recvPacket(new SVCPacket(packet));
 					}
 			}			
 			delete param;
 		}
+		else{
+			//-- incoming data
+			if (endpoints[endpointID] == NULL){
+				//-- xremove packet if endpoint not found
+				packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;
+			}
+		}
 	}
-	//else: let go outgoing command (may need to encrypt in some case)
+	else{
+		//-- let go outgoing command (may need to encrypt in some case)
+		
+	}
 }
 
 void checkEndpointLiveTime(void* args){
@@ -766,7 +845,12 @@ void checkEndpointLiveTime(void* args){
 int main(int argc, char** argv){
 	
 	string errorString;
-
+	
+	daemonUnixIncomingQueue = new MutexedQueue<SVCPacket*>();
+	daemonUnixOutgoingQueue = new MutexedQueue<SVCPacket*>();
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	
 	//--	create a daemon unix socket and bind
 	daemonUnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	memset(&daemonSockUnAddress, 0, sizeof(daemonSockUnAddress));
@@ -775,7 +859,14 @@ int main(int argc, char** argv){
 	if (bind(daemonUnSocket, (struct sockaddr*) &daemonSockUnAddress, sizeof(daemonSockUnAddress)) == -1) {		
 		errorString = SVC_ERROR_BINDING;
         goto errorInit;
-    }    
+    }
+    //-- then create a reading thread
+	if (pthread_create(&daemonUnixReadingThread, daemon_unix_reading_loop, NULL) != 0){
+		errorString = SVC_ERROR_CRITICAL;
+		goto error;
+	}
+	daemonUnixIncomingPacketHandler = new PacketHandler(daemonUnixIncomingQueue, daemon_unix_incoming_packet_handler, NULL);
+	
     
     //--TODO:	TO BE CHANGED TO HTP
     //--	create htp socket and bind to localhost
@@ -786,16 +877,18 @@ int main(int argc, char** argv){
 	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
     if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){
     	errorString = SVC_ERROR_BINDING;
-    	goto errorInit;
+    	goto error;
     }
+    //-- then create a reading thread
+	if (pthread_create(&daemonInetReadingThread, daemon_inet_reading_loop, NULL) != 0){
+		errorString = SVC_ERROR_CRITICAL;
+		goto error;
+	}
     
     //-- block all signals, except SIGINT
     sigset_t blockSignals;
     sigfillset(&blockSignals);
-    sigdelset(&blockSignals, SIGINT);
-    /*sigaddset(&blockSignals, SVC_SHARED_MUTEX_SIGNAL);
-    sigaddset(&blockSignals, SVC_PERIODIC_SIGNAL);
-    sigaddset(&blockSignals, SVC_TIMEOUT_SIGNAL);*/
+    sigdelset(&blockSignals, SIGINT);    
     pthread_sigmask(SIG_BLOCK, &blockSignals, NULL);
     
     //-- handle SIGINT
@@ -805,18 +898,9 @@ int main(int argc, char** argv){
 	sigdelset(&act.sa_mask, SIGINT);
 	sigaction(SIGINT, &act, NULL);
 	
-    //--	create a thread to read from unix domain socket
-    unPacketHandler = new PacketHandler(daemonUnSocket);    
-    unPacketHandler->setPacketHandler(daemonUnPacketHandler, NULL);
-    unPacketHandler->startReading();
-    unPacketHandler->startWriting();
-    
-	//--	create a thread to read from htp socket
-	inPacketHandler = new PacketHandler(daemonInSocket);	
-	inPacketHandler->setPacketHandler(daemonInPacketHandler, NULL);
-	inPacketHandler->startReading();
-    inPacketHandler->startWriting();
-	
+	//-- packet handler
+    daemonUnixIncomingPacketHandler = new PacketHandler(daemonUnixIncomingQueue, daemon_unix_incoming_packet_handler, NULL);
+    daemonUnixOutgoingPacketHandler = new PacketHandler(daemonUnixOutgoingQueue, daemon_unix_out_packet_handler, NULL);	
 	//--	create a thread to check for daemon endpoints' lives
 	endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
 	
@@ -824,8 +908,11 @@ int main(int argc, char** argv){
 	
     goto initSuccess;
     
+    error:
+    	unlink(SVC_DAEMON_PATH.c_str());
     errorInit:
-    	printf("\nError: %s\n", errorString.c_str());
+    	delete daemonUnixIncomingQueue;
+    	delete daemonUnixOutgoingQueue;
     	exit(EXIT_FAILURE);
     	
     initSuccess:
@@ -835,17 +922,13 @@ int main(int argc, char** argv){
     	printf("\nSVC daemon is running...");
     	fflush(stdout);
     	
-        inPacketHandler->waitStop();
-        //printf("\n1"); fflush(stdout);
-    	unPacketHandler->waitStop();
-    	//printf("\n2"); fflush(stdout);
+        daemonUnixIncomingPacketHandler->waitStop();
+        daemonUnixOutgoingPacketHandler->waitStop();
     	endpointChecker->waitStop();
-    	//printf("\n3"); fflush(stdout);
         	
-    	delete inPacketHandler;
-    	delete unPacketHandler;
+    	delete daemonUnixIncomingPacketHandler;
+    	delete daemonUnixOutgoingPacketHandler;
     	delete endpointChecker;
-    	//-- wait here until signal caught    	
     	printf("\nSVC daemon stopped\n");
     	return 0;
 }

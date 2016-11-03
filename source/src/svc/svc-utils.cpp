@@ -68,17 +68,12 @@ PeriodicWorker::~PeriodicWorker(){
 }
 
 //--	PACKET HANDLER CLASS	--//
-PacketHandler::PacketHandler(int socket){
-	printf("\nnew packet handler created for socket %d", socket); fflush(stdout);
-	this->socket = socket;
-	this->working = true;
-	this->reading = false;
-	this->writing = false;
-	
-	this->readingQueue = new MutexedQueue<SVCPacket*>();
-	this->keepingQueue = new MutexedQueue<SVCPacket*>();	
-	this->writingQueue = new MutexedQueue<SVCPacket*>();
-	
+PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args){
+	this->packetHandler = handler;
+	this->packetHandlerArgs = args;
+	this->readingQueue = readingQueue;
+
+	this->working = true;	
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	pthread_create(&this->processingThread, &attr, processingLoop, this);
@@ -90,11 +85,11 @@ PacketHandler::~PacketHandler(){
 
 void PacketHandler::waitStop(){	
 	pthread_join(this->processingThread, NULL);
-	delete this->keepingQueue;
-	pthread_join(this->readingThread, NULL);
+	//delete this->keepingQueue;
+	/*pthread_join(this->readingThread, NULL);
 	delete this->readingQueue;
 	pthread_join(this->writingThread, NULL);
-	delete this->writingQueue;
+	delete this->writingQueue;*/
 }
 
 void PacketHandler::stopWorking(){
@@ -102,7 +97,7 @@ void PacketHandler::stopWorking(){
 		this->working = false;	
 	}
 }
-
+/*
 void PacketHandler::startReading(){
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
@@ -115,26 +110,21 @@ void PacketHandler::startWriting(){
 	pthread_attr_init(&attr);
 	pthread_create(&this->writingThread, &attr, writingLoop, this);
 	this->writing = true;
-}
+}*/
 
-void PacketHandler::setPacketHandler(SVCPacketProcessing handler, void* args){
-	this->packetHandler = handler;
-	this->packetHandlerArgs = args;
-}
 
-void PacketHandler::recvPacket(SVCPacket* packet){
-	//-- unset sending packet bit
+
+/*void PacketHandler::recvPacket(SVCPacket* packet){
 	if (this->working){		
 		this->readingQueue->enqueue(packet);	
 	}
-}
+}*/
 
-bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPacket* packet, int timeout){
-	struct CommandHandler handler;
+bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout){
+	struct CommandHandler handler;	
 	handler.waitingThread = pthread_self();
 	handler.cmd = cmd;
 	handler.endpointID = endpointID;
-	handler.packet = packet;
 	this->commandHandlerRegistra.push_back(handler);
 	
 	//-- suspend the calling thread until the correct command is received or the timer expires
@@ -146,6 +136,7 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, SVCPac
 	}
 }
 
+/*
 void* PacketHandler::readingLoop(void* args){
 	PacketHandler* _this = (PacketHandler*)args;
 		
@@ -164,9 +155,11 @@ void* PacketHandler::readingLoop(void* args){
 		
 		if (readrs>0){			
 			SVCPacket* packet = new SVCPacket(buffer, readrs);
-			printf("\nread a packet: "); printBuffer(packet->packet, packet->dataLen);
+			printf("\nsocket %d read a packet: ", _this->socket); printBuffer(packet->packet, packet->dataLen);
 			//-- set SVC_SOCKET_PACKET bit
-			packet->packet[INFO_BYTE] |= SVC_SOCKET_PACKET;
+			packet->packet[INFO_BYTE] |= SVC_INCOMING_PACKET;
+			//-- reset to be removed
+			packet->packet[INFO_BYTE] &= ~SVC_TOBE_REMOVED;
 			uint8_t infoByte = packet->packet[INFO_BYTE];
 			if (((infoByte & SVC_COMMAND_FRAME) != 0) && ((infoByte & SVC_ENCRYPTED) == 0)){
 				SVCCommand cmd = (SVCCommand)packet->packet[CMD_BYTE];
@@ -196,7 +189,7 @@ void* PacketHandler::writingLoop(void* args){
 		//printf("\nwritingLoop, dequeueWait return");
 		if (packet!=NULL){
 			//-- send this packet to underlayer
-			printf("\nsend a packet: "); printBuffer(packet->packet, packet->dataLen);
+			printf("\nsocket %d send a packet: ", _this->socket); printBuffer(packet->packet, packet->dataLen);
 			sendrs = send(_this->socket, packet->packet, packet->dataLen, 0);
 			//-- remove the packet after sending
 			delete packet;
@@ -205,6 +198,7 @@ void* PacketHandler::writingLoop(void* args){
 		//else: packet = NULL means dequeueWait was interrupted
 	}
 }
+*/
 
 void* PacketHandler::processingLoop(void* args){
 
@@ -212,32 +206,28 @@ void* PacketHandler::processingLoop(void* args){
 	
 	SVCPacket* packet;
 	uint8_t infoByte;
-	//bool readingTurn = false;
 	
 	while (_this->working){
-		//-- read alternatively
 		packet = _this->readingQueue->dequeue();
 		
 		//-- process the packet
 		if (packet!=NULL){
-			printf("\nprocess a packet: "); printBuffer(packet->packet, packet->dataLen);
+			//printf("\nsocket %d process a packet: ", _this->socket); printBuffer(packet->packet, packet->dataLen);
 			infoByte = packet->packet[INFO_BYTE];
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
 				//-- reload info byte
-				infoByte = packet->packet[INFO_BYTE];
+				//infoByte = packet->packet[INFO_BYTE];
 			}
 						
 			if ((infoByte & SVC_COMMAND_FRAME) != 0){
-				if ((infoByte & SVC_SOCKET_PACKET) != 0x00){				
+				//if ((infoByte & SVC_INCOMING_PACKET) != 0x00){				
 					//-- !! waitCommand processes after cmdHandler has (possibly) decrypted the packet					
 					if ((infoByte & SVC_ENCRYPTED) == 0){
 						uint64_t endpointID = *((uint64_t*)packet->packet);
 						enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 						for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
-							if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){							
-								memcpy(_this->commandHandlerRegistra[i].packet->packet, packet->packet, packet->dataLen);
-								_this->commandHandlerRegistra[i].packet->dataLen = packet->dataLen;
+							if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){								
 								pthread_kill(_this->commandHandlerRegistra[i].waitingThread, QUEUE_DATA_SIGNAL);
 								//-- remove the handler
 								_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);
@@ -246,26 +236,22 @@ void* PacketHandler::processingLoop(void* args){
 						}
 					}
 					//else: cmd packet had not been decrypt, can not process
-				}
+				//}
 				//else: dont process outgoing command, for now
 			}
 			
-			if (((infoByte & SVC_TOBE_SAVED) != 0x00) && ((infoByte & SVC_TOBE_FORWARDED) != 0x00)){
-				printf("\nto be saved and forward");
-				_this->keepingQueue->enqueue(new SVCPacket(packet));
-				_this->writingQueue->enqueue(packet);
+			if ((infoByte & SVC_TOBE_REMOVED) != 0x00){
+				delete packet;
 			}
-			else{				
-				if ((infoByte & SVC_TOBE_SAVED) != 0x00){
+			/*
+			else{
+				if ((infoByte & SVC_INCOMING_PACKET) != 0x00){
 					_this->keepingQueue->enqueue(packet);
 				}
-				else if ((infoByte & SVC_TOBE_FORWARDED) != 0x00){
+				else{
 					_this->writingQueue->enqueue(packet);
 				}
-				else{
-					delete packet;
-				}
-			}
+			}*/
 		}
 		//else: cannot read packet from queue, reloop
 	}

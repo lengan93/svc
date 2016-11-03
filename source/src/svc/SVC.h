@@ -34,21 +34,41 @@
 			SVC* svc;
 			bool isInitiator;
 			bool isAuth;
+			
 			volatile bool working;
+			static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
+			static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
+			static void* svc_endpoint_reading_loop(void* args);
+			static void* svc_endpoint_writing_loop(void* args);
+			
+			pthread_t readingThread;
+			pthread_t writingThread;			
+			MutexedQueue<SVCPacket*>* incomingQueue;
+			MutexedQueue<SVCPacket*>* outgoingQueue;
+			MutexedQueue<SVCPacket*>* tobesentQueue;
+			MutexedQueue<SVCPacket*>* dataholdQueue;
+			PacketHandler* incomingPacketHandler;
+			PacketHandler* outgoingPacketHandler;
 			
 			int sock;
 			string endpointSockPath;
 			uint64_t endpointID;
-			uint32_t appID;
-			PacketHandler* packetHandler;
+			uint32_t appID;			
 			SVCHost* remoteHost;
 			SVCPacket* request;
+			
+			//-- crypto negotitation
+			string challengeSecretSent;
+			string challengeSecretReceived;
+			string challengeSent;
+			string challengeReceived;
+			string proof;
 		
 			SVCEndpoint(SVC* svc, bool isInitiator);	
 			
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data
-			 * */		
+			 * */
 			int connectToDaemon();	
 						
 			/*
@@ -93,18 +113,29 @@
 		private:
 			//-- static members
 			static uint16_t endpointCounter;
-			static void svc_packet_handler(SVCPacket* packet, void* args);
 			
+			static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
+			static void svc_outgoing_packet_handler(SVCPacket* packet, void* args);
+			static void* svc_reading_loop(void* args);
+			static void* svc_writing_loop(void* args);
+			
+			volatile bool working;
+			pthread_t readingThread;
+			pthread_t writingThread;			
+			MutexedQueue<SVCPacket*>* incomingQueue;
+			MutexedQueue<SVCPacket*>* outgoingQueue;
+			MutexedQueue<SVCPacket*>* tobesentQueue;
+			PacketHandler* incomingPacketHandler;
+			PacketHandler* outgoingPacketHandler;
+									
 			//-- private members
-			SHA256* sha256;
-			int appSocket;
-			string appSockPath;
-			
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
 			MutexedQueue<SVCPacket*>* connectionRequests;
-			PacketHandler* packetHandler;
-			volatile bool working;
 			
+			SHA256* sha256;
+			int appSocket;
+			string appSockPath;						
+						
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
 			

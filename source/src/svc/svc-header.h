@@ -45,9 +45,9 @@
 
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80
-	#define SVC_SOCKET_PACKET					0x40
-	#define SVC_TOBE_FORWARDED					0x20
-	#define SVC_TOBE_SAVED						0x10
+	//#define SVC_INCOMING_PACKET				0x40
+	#define SVC_TOBE_REMOVED					0x20
+	//#define SVC_TOBE_SAVED					0x10
 	#define SVC_ENCRYPTED						0x08
 	#define SVC_USING_TCP						0x04
 	
