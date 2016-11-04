@@ -5,7 +5,7 @@ CINCLU = -I./src/utils -I./src/crypto
 CFLAGS = -std=c++11 -pthread -lrt -lgmp
 CDEBUG = -O0 -g
 
-
+local: daemon client
 full: daemon client server
 daemon:
 	$(CCOMPL) -o $(BINDIR)/daemon.exe $(SRCDIR)/svc/svc-daemon.cpp $(SRCDIR)/svc/svc-utils.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/ECPoint.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/ECCurve.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)

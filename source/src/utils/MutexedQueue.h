@@ -40,12 +40,13 @@
 			
 			//--	signalThread used in mutex lock, not need to lock again
 			void signalThread(){
+				//printf("\nsignal thread called");
 				pthread_t thread;
 				
 				if (this->waitDataThreads->peak(&thread)){
 					this->waitDataThreads->dequeue();
-					pthread_kill(thread, QUEUE_DATA_SIGNAL);
-				
+					//printf("\nkilling waiting thread %d: ", (int)thread); fflush(stdout);
+					pthread_kill(thread, QUEUE_DATA_SIGNAL);				
 				}		
 			}
 			
@@ -77,6 +78,7 @@
 			}
 
 			void enqueue(T data){
+				
 				Node<T>* element = new Node<T>();
 				element->setData(data);
 				element->setNext(NULL);
@@ -86,7 +88,7 @@
 					this->last->setNext(element);
 					this->last = element;					
 				}
-				else{					
+				else{			
 					this->first = element;
 					this->last = element;									
 					signalThread();
@@ -95,19 +97,22 @@
 				this->count++;
 				this->countMutex->unlock();
 				this->lastMutex->unlock();
+				//printf("\n%d: enqueue in %d, count: %d", (int)pthread_self(), (void*)this ,this->count); fflush(stdout);
 			}
 			
 			T dequeueWait(int timeout){
-				bool haveData = false;
+				bool haveData = true;
 				this->firstMutex->lock();
 				if (!this->notEmpty()){
-					//printf("\nnodata in queue, calling waitData"); fflush(stdout);
+					//printf("\n%d: nodata in queue %d, calling waitData", (int)pthread_self(), (void*)this); fflush(stdout);
 					haveData = waitData(timeout);
+					//printf("\nwaitData returned"); fflush(stdout);
 					//--	after waitData there must be data in queue, 'cause no other can perform dequeue
 					//printf("\nafter calling waitdata, havedata = %d", haveData); fflush(stdout);
 				}
 				//--	not empty, have not to wait				
 				if (haveData){
+					//printf("\n%d: have data in queue %d", (int)pthread_self(), (void*)this); fflush(stdout);
 					Node<T>* tmp = this->first;
 					this->first = tmp->getNext();																				
 					this->countMutex->lock();
