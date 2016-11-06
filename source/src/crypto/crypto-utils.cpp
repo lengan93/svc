@@ -30,7 +30,7 @@ void generateRandomNumber(mpz_t* number, int securityParam){
 }
 
 string hexToString(const uint8_t* data, uint32_t len){
-	string rs = "";
+	char buffer[len*2+1];
 	uint8_t b;
 	uint8_t c1;
 	uint8_t c2;
@@ -38,10 +38,11 @@ string hexToString(const uint8_t* data, uint32_t len){
 		b = data[i];
 		c1 = (b&0xF0)>>4;
 		c2 = (b&0x0F);		
-		rs += c1<10? (c1 + 48) : (c1 + 55);
-		rs += c2<10? (c2 + 48) : (c2 + 55);
+		buffer[2*i] = c1<10? (c1 + 48) : (c1 + 55);
+		buffer[2*i+1] = c2<10? (c2 + 48) : (c2 + 55);
 	}
-	return rs;
+	buffer[len*2+1] = '\0';
+	return string(buffer);
 }
 
 uint32_t stringToHex(const string& hexString, uint8_t** data){

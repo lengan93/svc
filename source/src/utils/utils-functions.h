@@ -33,29 +33,30 @@
 		//printf("\nwaiting for signal %d from thread %d",  waitingSignal, (int)pthread_self());
 		//block the waiting signal		
 		sigset_t sig;
-		sigset_t oldset;
+		//sigset_t oldset;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
 		sigaddset(&sig, SIGINT);	//-- interupt case
-		pthread_sigmask(SIG_BLOCK, &sig, &oldset);
+		/*pthread_sigmask(SIG_BLOCK, &sig, &oldset);
 		
 		int caughtSignal = SIGINT;
 		sigwait(&sig, &caughtSignal);
 		pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
-		//printf("\nwaiting & catched signal in thread %d: %d, %d", (int)pthread_self(), waitingSignal, caughtSignal);
-		return waitingSignal == caughtSignal;
+		//printf("\nwaiting & catched signal in thread %d: %d, %d", (int)pthread_self(), waitingSignal, caughtSignal);*/
+		//int caughtSignal = 
+		return waitingSignal == sigwaitinfo(&sig, NULL);;
 	}
 
 	//--	timeoutSignal and waitingSignal must be differrent, otherwise the behavior is undefined
 	//--	return TRUE if caught signal is correct, otherwise return FALSE
 	static inline bool waitSignal(int waitingSignal, int timeoutSignal, int timeout){
 		sigset_t sig;
-		sigset_t oldset;
+		//sigset_t oldset;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);
-		sigaddset(&sig, timeoutSignal);
+		//sigaddset(&sig, timeoutSignal);
 		sigaddset(&sig, SIGINT);
-		pthread_sigmask(SIG_BLOCK, &sig, &oldset);
+		/*pthread_sigmask(SIG_BLOCK, &sig, &oldset);
 		
 		timer_t timer;
 		struct sigevent evt;
@@ -70,15 +71,24 @@
 		time.it_value.tv_sec=timeout/1000;
 		time.it_value.tv_nsec=(timeout - time.it_value.tv_sec*1000)*1000000;	
 		timer_settime(timer, 0, &time, NULL);
+		*/
 		
+		struct timespec timeoutSpec;
+		timeoutSpec.tv_sec=timeout/1000;
+		timeoutSpec.tv_nsec=(timeout - timeoutSpec.tv_sec*1000)*1000000;
 		//--	wait for either timeoutSignal or watingSignal, or SIGINT
-		int caughtSignal;
-		sigwait(&sig, &caughtSignal);
-		if (caughtSignal == waitingSignal){
+		//int caughtSignal = -1;
+		//sigwait(&sig, &caughtSignal);
+		//caughtSignal = 
+		/*if (caughtSignal == waitingSignal){
 			//-- disable the timer so it wont send the signal after
 			timer_delete(timer);
+			printf("\nsignal caught, timer removed"); fflush(stdout);	
 		}
-		pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
-		return caughtSignal == waitingSignal;	
+		else{
+			//printf("\ntimer expired"); fflush(stdout);
+		}*/
+		//pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
+		return waitingSignal == sigtimedwait(&sig, NULL, &timeoutSpec);;
 	}	
 #endif
