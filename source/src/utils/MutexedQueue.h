@@ -103,25 +103,22 @@
 			T dequeueWait(int timeout){
 				bool haveData = true;
 				this->firstMutex->lock();
-				if (!this->notEmpty()){
-					//printf("\n%d: nodata in queue %d, calling waitData", (int)pthread_self(), (void*)this); fflush(stdout);
-					haveData = waitData(timeout);
-					//printf("\nwaitData returned"); fflush(stdout);
-					//--	after waitData there must be data in queue, 'cause no other can perform dequeue
-					//printf("\nafter calling waitdata, havedata = %d", haveData); fflush(stdout);
+				if (!this->notEmpty()){					
+					haveData = waitData(timeout);					
 				}
 				//--	not empty, have not to wait				
-				if (haveData){
-					//printf("\n%d: have data in queue %d", (int)pthread_self(), (void*)this); fflush(stdout);
+				if (haveData){					
 					Node<T>* tmp = this->first;
-					this->first = tmp->getNext();																				
+					this->first = tmp->getNext();
 					this->countMutex->lock();
 					this->count--;				
 					this->countMutex->unlock();				
 					this->firstMutex->unlock();
 					return tmp->getData();
 				}
-				else{//else: waitData interrupted by other signals
+				else{
+					//-- waitData was interrupted by other signals
+					this->firstMutex->unlock();
 					return NULL;
 				}
 			}

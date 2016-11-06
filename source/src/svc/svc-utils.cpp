@@ -20,41 +20,24 @@ PeriodicWorker::PeriodicWorker(int interval, void (*handler)(void*), void* args)
 }
 void PeriodicWorker::stopWorking(){
 	//--	disarm automatic
-	working = false;
-	timer_delete(this->timer);
-	//-- can only be interrupted by SIGINT
-	pthread_kill(this->worker, SIGINT);
+	if (this->working){
+		this->working = false;
+	}
 }
 
 void* PeriodicWorker::handling(void* args){
 	
 	PeriodicWorker* pw = (PeriodicWorker*)args;
 	
-	struct sigevent evt;
-	evt.sigev_notify = SIGEV_SIGNAL;
-	evt.sigev_signo = TIMEOUT_SIGNAL;
-	evt.sigev_notify_thread_id = pthread_self();
-	timer_create(CLOCK_REALTIME, &evt, &pw->timer);
-
-	struct itimerspec time;
-	time.it_interval.tv_sec=pw->interval/1000;
-	time.it_interval.tv_nsec=(pw->interval - time.it_interval.tv_sec*1000)*1000000;
-	time.it_value.tv_sec=pw->interval/1000;
-	time.it_value.tv_nsec=(pw->interval - time.it_value.tv_sec*1000)*1000000;
-	timer_settime(pw->timer, 0, &time, NULL);		
-	
-	bool waitrs;
 	while (pw->working){
 		//--	wait signal then perform handler
-		waitrs = waitSignal(SIGALRM);
-		if (waitrs){
-			//--	perform handler		
-			pw->handler(pw->args);
+		if (waitSignal(SIGINT, SIGALRM, this->interval)){
+			//--	SIGINT caught
+			pw->stopWorking();			
 		}
 		else{
-			//--	SIGINT caught
-			//printf("\nperiodic worker got SIGINT, stop working");
-			pw->stopWorking();
+			//--	perform handler		
+			pw->handler(pw->args);
 		}
 	}
 }
@@ -93,15 +76,9 @@ void PacketHandler::waitStop(){
 	}
 }
 
-void PacketHandler::stopWorking(){
-	printf("\npacket handler stop working called with this=NULL? %d", this==NULL); fflush(stdout);
+void PacketHandler::stopWorking(){	
 	if (this->working){		
-		this->working = false;
-		if (this->processingThread !=0){
-			printf("\nprocessingThread id: %d", (int)this->processingThread); fflush(stdout);
-			pthread_kill(this->processingThread, SIGINT);
-			printf("\nkill processingThread with SIGINT"); fflush(stdout);
-		}
+		this->working = false;		
 	}
 }
 
@@ -130,8 +107,7 @@ void* PacketHandler::processingLoop(void* args){
 	
 	while (_this->working){
 		//printf("\npacket handler %d dequeuewait -1 of %d", (void*)_this, (void*)_this->readingQueue);
-		packet = _this->readingQueue->dequeueWait(-1);
-		//printf("\npacket handler %d dequeuewait -1 return, packet!=NULL %d", (void*)_this, packet!=NULL);
+		packet = _this->readingQueue->dequeueWait(1000);		
 		//-- process the packet
 		if (packet!=NULL){
 			//printf("\npacket handler %d process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
@@ -166,8 +142,8 @@ void* PacketHandler::processingLoop(void* args){
 				delete packet;
 			}
 		}
-		//else: cannot read packet from queue, reloop
-	}
+		//else{//--TODO: can count dequeue fails to predict the network status}
+	}	
 }
 
 

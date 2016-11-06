@@ -74,8 +74,11 @@
 		//--	wait for either timeoutSignal or watingSignal, or SIGINT
 		int caughtSignal;
 		sigwait(&sig, &caughtSignal);
+		if (caughtSignal == waitingSignal){
+			//-- disable the timer so it wont send the signal after
+			timer_delete(timer);
+		}
 		pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
 		return caughtSignal == waitingSignal;	
-	}
-	
+	}	
 #endif
