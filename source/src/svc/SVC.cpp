@@ -108,12 +108,7 @@ void SVC::shutdown(){
 		//-- join reading and writing threads
 		
 		if (this->readingThread !=0) pthread_join(this->readingThread, NULL);
-		printf("\nsvc readingThread joined"); fflush(stdout);
-		if (this->writingThread!=0){
-			pthread_kill(this->writingThread, SIGINT);
-			pthread_join(this->writingThread, NULL);
-		}
-		printf("\nsvc writingThread joined"); fflush(stdout);
+		if (this->writingThread!=0) pthread_join(this->writingThread, NULL);	
 		
 		//-- send shutdown request to all SVCEndpoint instances	
 		for (auto& it : endpoints){
@@ -127,7 +122,7 @@ void SVC::shutdown(){
 		//-- remove all <key, NULL> instance
 		this->endpoints.clear();
 		
-		printf("\nsvc unlink unix socket"); fflush(stdout);
+		printf("\nsvc unlink unix socket\n"); fflush(stdout);
 		unlink(this->appSockPath.c_str());
 		delete this->incomingPacketHandler;
 		delete this->outgoingPacketHandler;
@@ -201,11 +196,9 @@ void* SVC::svc_writing_loop(void* args){
 	
 	int sendrs;
 	SVCPacket* packet;
-	while (_this->working){
-		//printf("\ndequeue wait -1 called"); fflush(stdout);
-		packet = _this->tobesentQueue->dequeueWait(-1);
-		//printf("\ndequeue wait -1 returned"); fflush(stdout);
-		//packet = _this->tobesentQueue->dequeue();
+	while (_this->working){		
+		packet = _this->tobesentQueue->dequeueWait(1000);
+		//printf("\nsvc_writing_loop dequeueWait 1000 returned");
 		if (packet!=NULL){
 			
 			sendrs = send(_this->appSocket, packet->packet, packet->dataLen, 0);
@@ -227,7 +220,7 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 	endpointID |= ++SVC::endpointCounter;
 	endpointID<<=32;
 	endpointID |= this->appID;
-	if (endpoint->bindToEndpointID(endpointID) == -1){
+	if (endpoint->bindToEndpointID(endpointID) != 0){
 		delete endpoint;
 		return NULL;
 	}
@@ -414,8 +407,8 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 	int sendrs;
 	SVCPacket* packet;
 	while (_this->working){
-		//packet = _this->writingQueue->dequeueWait(-1);
-		packet = _this->tobesentQueue->dequeue();
+		packet = _this->tobesentQueue->dequeueWait(1000);
+		printf("\nsvc_endpoint_writing_loop dequeueWait 1000 returned");
 		if (packet!=NULL){
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
@@ -511,7 +504,7 @@ bool SVCEndpoint::negotiate(){
 		
 		this->outgoingQueue->enqueue(packet);
 		
-		printf("\nwait for CONNECT_INNER4");
+		printf("\nwait for CONNECT_INNER4"); fflush(stdout);
 		if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, SVC_DEFAULT_TIMEOUT)){
 			this->isAuth = false;
 		}
@@ -569,26 +562,19 @@ void SVCEndpoint::shutdown(){
 		
 		//-- remove itself from svc collection, don't call erase because svc shutdown may iterate through the endpoints
 		this->svc->endpoints[this->endpointID]= NULL;
-		/*
+		
 		//-- clean up
 		this->working = false;
-		if (this->readingThread !=0){
-			pthread_join(this->readingThread, NULL);
-			printf("\nsvc endpoint readingThread joined"); fflush(stdout);
-		}
-		if (this->writingThread !=0){
-			pthread_kill(this->writingThread, SIGINT);
-			pthread_join(this->writingThread, NULL);
-			printf("\nsvc endpoint writingThread joined"); fflush(stdout);
-		}
-		
+		if (this->readingThread !=0) pthread_join(this->readingThread, NULL);
+		if (this->writingThread !=0) pthread_join(this->writingThread, NULL);
+				
 		if (this->incomingPacketHandler != NULL) delete this->incomingPacketHandler;
 		if (this->outgoingPacketHandler != NULL) delete this->outgoingPacketHandler;
 		delete this->incomingQueue;
 		delete this->outgoingQueue;
 		delete this->tobesentQueue;
 		delete this->dataholdQueue;
-		unlink(this->endpointSockPath.c_str());*/
+		unlink(this->endpointSockPath.c_str());
 		printf("\nendpoint shutdown success"); fflush(stdout);
 	}
 }
@@ -612,7 +598,7 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen, uint8_t priorit
 
 int SVCEndpoint::readData(uint8_t* data, uint32_t* len){
 	if (this->isAuth){
-		SVCPacket* packet = this->dataholdQueue->dequeue();//Wait(-1);
+		SVCPacket* packet = this->dataholdQueue->dequeueWait(1000);
 		if (packet!=NULL){
 			memcpy(data, packet->packet, packet->dataLen);
 			*len = packet->dataLen;

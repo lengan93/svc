@@ -153,7 +153,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	struct sockaddr_un dmnSockAddr;
-	this->dmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
+	this->dmnSockPath = string(SVC_ENDPOINT_DMN_PATH_PREFIX) + hexToString((uint8_t*)&endpointID, ENDPOINTID_LENGTH);
 	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
 	dmnSockAddr.sun_family = AF_LOCAL;
 	memcpy(dmnSockAddr.sun_path, this->dmnSockPath.c_str(), dmnSockPath.size());
@@ -183,6 +183,8 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		delete this->unixIncomingQueue;
 		delete this->unixOutgoingQueue;
 		delete this->unixToBeSentQueue;
+		delete this->inetIncomingQueue;
+		delete this->inetOutgoingQueue;
 		throw error;
 		
 	endpoint_success:
@@ -194,6 +196,9 @@ void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* pac
 	if (_this->working){	
 		_this->unixToBeSentQueue->enqueue(packet);
 	}
+	else{
+		printf("\n_this->working = false");
+	}
 }
 
 void DaemonEndpoint::shutdown(){
@@ -202,28 +207,40 @@ void DaemonEndpoint::shutdown(){
 		printf("\ndaemonEndpointShutdown called"); fflush(stdout);
 		this->working = false;
 		if (this->unixReadingThread!=0) pthread_join(this->unixReadingThread, NULL);
-		if (this->unixWritingThread!=0){
-			pthread_kill(this->unixWritingThread, SIGINT);
-			pthread_join(this->unixWritingThread, NULL);
-		}
+		if (this->unixWritingThread!=0) pthread_join(this->unixWritingThread, NULL);
 		
 		//-- clean up
-		printf("\nclean up phase 1"); fflush(stdout);
-		unlink(this->dmnSockPath.c_str());
+		//printf("\nclean up phase 1"); fflush(stdout);
+		
 		delete sendSequenceMutex;
-		delete recvSequenceMutex;
-		printf("\nclean up phase 2"); fflush(stdout);
+		delete recvSequenceMutex;				
 		delete this->sha256;
+		
+		printf("\nclean up phase 2"); fflush(stdout);
+		if (this->unixIncomingPacketHandler!=NULL){
+			this->unixIncomingPacketHandler->stopWorking();
+			//this->unixIncomingPacketHandler->waitStop();
+		}
 		printf("\nclean up phase 3"); fflush(stdout);
-		if (this->unixIncomingPacketHandler!=NULL) this->unixIncomingPacketHandler->stopWorking();
+		if (this->unixOutgoingPacketHandler!=NULL){
+			this->unixOutgoingPacketHandler->stopWorking();
+			//this->unixOutgoingPacketHandler->waitStop();
+		}
 		printf("\nclean up phase 4"); fflush(stdout);
-		if (this->unixOutgoingPacketHandler!=NULL) this->unixOutgoingPacketHandler->stopWorking();
-		printf("\nclean up phase 5"); fflush(stdout);
+		printf("\ntrying to unlink: %s", this->dmnSockPath.c_str());
+		unlink(this->dmnSockPath.c_str());
+		printf("\nendpoint shut down"); fflush(stdout);
 	}
 }
 
 DaemonEndpoint::~DaemonEndpoint(){	
 	shutdown();
+}
+
+int DaemonEndpoint::startUnixWritingThread(){
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	return pthread_create(&this->unixWritingThread, &attr, daemon_endpoint_unix_writing_loop, this);
 }
 
 int DaemonEndpoint::connectToAppSocket(){
@@ -235,14 +252,7 @@ int DaemonEndpoint::connectToAppSocket(){
 	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
 	if (connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr)) != -1){
 		//-- start daemon endpoint unix writing
-		pthread_attr_t attr;
-		pthread_attr_init(&attr);
-		if (pthread_create(&this->unixWritingThread, &attr, daemon_endpoint_unix_writing_loop, this)!=0){
-			return -1;
-		}
-		else{			
-			return 0;
-		}
+		return startUnixWritingThread();
 	}
 	else{
 		return -1;
@@ -297,7 +307,8 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 	SVCPacket* packet;
 	int sendrs;
 	while (_this->working){
-		packet = _this->unixToBeSentQueue->dequeueWait(-1);
+		packet = _this->unixToBeSentQueue->dequeueWait(1000);
+		printf("\ndaemon_endpoint_unix_writing_loop dequeueWait returned");
 		if (packet!=NULL){
 			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
 			printf("\ndaemon endpoint send packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
@@ -766,11 +777,15 @@ void shutdown(){
 				delete ep; //-- destructor calls shutdown
 			}
 		}
-		printf("\nstopping main threads");
+		printf("\nstopping main threads"); fflush(stdout);
 		//--	stop main threads
 		daemonUnixIncomingPacketHandler->stopWorking();
+		printf("\ndaemonUnixIncomingPacketHandler stopped"); fflush(stdout);
 		daemonUnixOutgoingPacketHandler->stopWorking();
+		printf("\ndaemonUnixOutgoingPacketHandler stopped"); fflush(stdout);
 		endpointChecker->stopWorking();
+		printf("\nendpointChecker stopped"); fflush(stdout);
+		
 		printf("\nmain threads stopped"); fflush(stdout);
 		//--	do cleanup before exit
 		unlink(SVC_DAEMON_PATH.c_str());		
@@ -803,8 +818,12 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 						endpoint->unixOutgoingQueue->enqueue(packet);
 					}
 					catch(const char* err){
-						printf("Error: %s", err); fflush(stdout);
+						printf("Error: %s; remove SVC_CMD_CREATE_ENDPOINT packet", err); fflush(stdout);
+						packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;
 					}					
+				}
+				else{
+					packet->packet[INFO_BYTE] |= SVC_TOBE_REMOVED;	
 				}
 				break;
 			
@@ -820,7 +839,8 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 }
 
 void daemon_unix_outgoing_packet_handler(SVCPacket* packet, void* args){
-	
+	//-- forward the packet
+	//daemonU
 }
 
 void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
@@ -917,7 +937,7 @@ void checkEndpointLiveTime(void* args){
 			DaemonEndpoint* ep = (DaemonEndpoint*)it->second;
 			if ((!ep->working) || !(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
 				//-- remove this endpoint, also remove it from endpoints
-				//printf("\nendpoints remove id: "); printBuffer((uint8_t*)&ep->endpointID, ENDPOINTID_LENGTH);
+				printf("\nendpoints remove id: "); printBuffer((uint8_t*)&ep->endpointID, ENDPOINTID_LENGTH);
 				it = endpoints.erase(it);				
 				delete ep;
 			}

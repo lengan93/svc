@@ -13,10 +13,12 @@ PeriodicWorker::PeriodicWorker(int interval, void (*handler)(void*), void* args)
 	this->handler = handler;
 	this->args = args;
 	
-	pthread_attr_t threadAttr;
-	pthread_attr_init(&threadAttr);
-	pthread_create(&this->worker, &threadAttr, handling, this);
-	//printf("\nperiodic worker started");
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	this->worker = -1;
+	if (pthread_create(&this->worker, &attr, handling, this) !=0){
+		throw SVC_ERROR_CRITICAL;
+	}
 }
 void PeriodicWorker::stopWorking(){
 	//--	disarm automatic
@@ -27,23 +29,23 @@ void PeriodicWorker::stopWorking(){
 
 void* PeriodicWorker::handling(void* args){
 	
-	PeriodicWorker* pw = (PeriodicWorker*)args;
+	PeriodicWorker* _this = (PeriodicWorker*)args;
 	
-	while (pw->working){
+	while (_this->working){
 		//--	wait signal then perform handler
-		if (waitSignal(SIGINT, SIGALRM, this->interval)){
+		if (waitSignal(SIGINT, SIGALRM, _this->interval)){
 			//--	SIGINT caught
-			pw->stopWorking();			
+			_this->stopWorking();			
 		}
 		else{
 			//--	perform handler		
-			pw->handler(pw->args);
+			_this->handler(_this->args);
 		}
 	}
 }
 
 void PeriodicWorker::waitStop(){	
-	pthread_join(this->worker, NULL);
+	if (this->worker != -1) pthread_join(this->worker, NULL);
 }
 
 PeriodicWorker::~PeriodicWorker(){
@@ -59,7 +61,7 @@ PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketPr
 	this->working = true;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
-	this->processingThread = 0;
+	this->processingThread = -1;
 	if (pthread_create(&this->processingThread, &attr, processingLoop, this) !=0){
 		throw SVC_ERROR_CRITICAL;
 	}
@@ -71,7 +73,7 @@ PacketHandler::~PacketHandler(){
 }
 
 void PacketHandler::waitStop(){	
-	if (this->processingThread!=0){
+	if (this->processingThread!=-1){
 		pthread_join(this->processingThread, NULL);
 	}
 }
@@ -108,9 +110,10 @@ void* PacketHandler::processingLoop(void* args){
 	while (_this->working){
 		//printf("\npacket handler %d dequeuewait -1 of %d", (void*)_this, (void*)_this->readingQueue);
 		packet = _this->readingQueue->dequeueWait(1000);		
+		//printf("\ndequeueWait 1000 return with packet");
 		//-- process the packet
-		if (packet!=NULL){
-			//printf("\npacket handler %d process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
+		if (packet!=NULL){			
+			printf("\npacket handler %d process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
 			infoByte = packet->packet[INFO_BYTE];
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
