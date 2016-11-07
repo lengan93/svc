@@ -49,7 +49,7 @@
 
 	//--	timeoutSignal and waitingSignal must be differrent, otherwise the behavior is undefined
 	//--	return TRUE if caught signal is correct, otherwise return FALSE
-	static inline bool waitSignal(int waitingSignal, int timeoutSignal, int timeout){
+	static inline bool waitSignal(int waitingSignal, int timeout){
 		sigset_t sig;
 		//sigset_t oldset;
 		sigemptyset(&sig);
@@ -89,6 +89,6 @@
 			//printf("\ntimer expired"); fflush(stdout);
 		}*/
 		//pthread_sigmask(SIG_SETMASK, &oldset, NULL); //-- restore the signal mask
-		return waitingSignal == sigtimedwait(&sig, NULL, &timeoutSpec);;
+		return waitingSignal == sigtimedwait(&sig, NULL, &timeoutSpec);
 	}	
 #endif

@@ -23,16 +23,18 @@
 	class SVCPacket{
 		public:
 			//-- public members
-			uint8_t* const packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+			uint8_t* packet; //[SVC_DEFAULT_BUFSIZ];
 			uint32_t dataLen;
 			
 			//-- constructors/destructors
 			
-			SVCPacket(){				
+			SVCPacket(){
+				printf("\nnew packet create: 0x%08X", (void*)this); fflush(stdout);
 				this->dataLen = 0;
+				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 			}
 			
-			SVCPacket(SVCPacket* packet){		
+			SVCPacket(SVCPacket* packet):SVCPacket(){		
 				if (packet!=NULL){
 					this->dataLen = packet->dataLen;
 					memcpy(this->packet, packet->packet, this->dataLen);
@@ -42,19 +44,19 @@
 				}
 			}
 			
-			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){				
+			SVCPacket(const uint8_t* buffer, uint32_t bufferLen):SVCPacket(){				
 				this->dataLen = bufferLen;
 				memcpy(this->packet, buffer, this->dataLen);
 			}
 			
-			SVCPacket(uint64_t endpointID){
+			SVCPacket(uint64_t endpointID):SVCPacket(){
 				this->dataLen = SVC_PACKET_HEADER_LEN;
 				memset(this->packet, 0, this->dataLen);
 				memcpy(this->packet, &endpointID, ENDPOINTID_LENGTH);
 			}
 			
 			~SVCPacket(){
-				delete this->packet;			
+				free(this->packet);
 			}
 			
 			bool isCommand(){
@@ -169,18 +171,9 @@
 			PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args);
 			virtual ~PacketHandler();
 			
-			//--	methods
-			//void setPacketHandler(SVCPacketProcessing handler, void* args);		
+			//--	methods			
 			bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout);
-			
-			//-- read a packet from keepingQueue
-			//SVCPacket* readPacket(int timeout);
-			
-			//-- enqueue a packet to the readingQueue
-			//void recvPacket(SVCPacket* packet);
-			
-			//void startReading();
-			//void startWriting();
+			void notifyCommand(enum SVCCommand cmd, uint64_t endpointID);
 			
 			void stopWorking();
 			void waitStop();

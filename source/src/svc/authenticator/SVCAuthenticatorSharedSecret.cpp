@@ -22,7 +22,7 @@ SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){
 	//-- create aesgcm and hash instances
 	this->aesGCM = new AESGCM(sharedKey, SECU_128);
 	this->sha256 = new SHA256();
-	delete sharedKey;
+	free(sharedKey);
 }
 
 SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){	
@@ -59,10 +59,10 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 	rs = hexToString(challengeBuf, challengeLen);
 	
 	//-- clear then return	
-	delete iv;
-	delete encrypted;
-	delete tag;
-	delete challengeBuf;
+	free(iv);
+	free(encrypted);
+	free(tag);
+	free(challengeBuf);
 	return rs;
 }
 
@@ -94,13 +94,13 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 				
 		if (this->aesGCM->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &challengeSecret, &challengeSecretLen)){
 			rs = string((char*)challengeSecret, challengeSecretLen);
-			delete challengeSecret;			
+			free(challengeSecret);
 		}
 		else{			
 			rs = NULL_STRING;
 		}
 		//-- clear memory
-		delete challengeBuf;		
+		free(challengeBuf);
 	}
 	else{
 		rs = NULL_STRING;

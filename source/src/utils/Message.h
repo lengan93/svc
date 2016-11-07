@@ -24,7 +24,7 @@
 				memcpy(this->data, data, len);
 			}	
 			~Message(){
-				delete data;
+				free(data);
 			}
 	};
 

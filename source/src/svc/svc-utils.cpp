@@ -33,7 +33,7 @@ void* PeriodicWorker::handling(void* args){
 	
 	while (_this->working){
 		//--	wait signal then perform handler
-		if (waitSignal(SIGINT, SIGALRM, _this->interval)){
+		if (waitSignal(SIGINT, _this->interval)){
 			//--	SIGINT caught
 			_this->stopWorking();			
 		}
@@ -85,18 +85,33 @@ void PacketHandler::stopWorking(){
 }
 
 bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout){
+	printf("\nwaitCommand called"); fflush(stdout);
 	struct CommandHandler handler;	
 	handler.waitingThread = pthread_self();
 	handler.cmd = cmd;
 	handler.endpointID = endpointID;
 	this->commandHandlerRegistra.push_back(handler);
+	printf("\nwaitCommand handler pushed"); fflush(stdout);
 	
 	//-- suspend the calling thread until the correct command is received or the timer expires
 	if (timeout>0){
-		return waitSignal(QUEUE_DATA_SIGNAL, TIMEOUT_SIGNAL, timeout);
+		return waitSignal(QUEUE_DATA_SIGNAL, timeout);
 	}
 	else{
 		return waitSignal(QUEUE_DATA_SIGNAL);
+	}
+	printf("\nwaitCommand returned"); fflush(stdout);
+}
+
+void PacketHandler::notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
+
+	for (int i=0;i<this->commandHandlerRegistra.size(); i++){
+		if ((this->commandHandlerRegistra[i].cmd == cmd) && (this->commandHandlerRegistra[i].endpointID == endpointID)){								
+			pthread_kill(this->commandHandlerRegistra[i].waitingThread, QUEUE_DATA_SIGNAL);
+			//-- remove the handler
+			this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);
+			break;
+		}
 	}
 }
 
@@ -107,43 +122,16 @@ void* PacketHandler::processingLoop(void* args){
 	SVCPacket* packet = NULL;
 	uint8_t infoByte;
 	
-	while (_this->working){
-		//printf("\npacket handler %d dequeuewait -1 of %d", (void*)_this, (void*)_this->readingQueue);
+	while (_this->working){	
 		packet = _this->readingQueue->dequeueWait(1000);		
-		//printf("\ndequeueWait 1000 return with packet");
 		//-- process the packet
 		if (packet!=NULL){			
-			printf("\npacket handler %d process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
+			printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
 			infoByte = packet->packet[INFO_BYTE];
+			
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
-				//-- reload info byte
-				//infoByte = packet->packet[INFO_BYTE];
-			}
-						
-			if ((infoByte & SVC_COMMAND_FRAME) != 0){
-				//if ((infoByte & SVC_INCOMING_PACKET) != 0x00){				
-					//-- !! waitCommand processes after cmdHandler has (possibly) decrypted the packet					
-					if ((infoByte & SVC_ENCRYPTED) == 0){
-						uint64_t endpointID = *((uint64_t*)packet->packet);
-						enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-						for (int i=0;i<_this->commandHandlerRegistra.size(); i++){
-							if ((_this->commandHandlerRegistra[i].cmd == cmd) && (_this->commandHandlerRegistra[i].endpointID == endpointID)){								
-								pthread_kill(_this->commandHandlerRegistra[i].waitingThread, QUEUE_DATA_SIGNAL);
-								//-- remove the handler
-								_this->commandHandlerRegistra.erase(_this->commandHandlerRegistra.begin() + i);
-								break;
-							}
-						}
-					}
-					//else: cmd packet had not been decrypt, can not process
-				//}
-				//else: dont process outgoing command, for now
-			}
-			
-			if ((infoByte & SVC_TOBE_REMOVED) != 0x00){
-				delete packet;
-			}
+			}						
 		}
 		//else{//--TODO: can count dequeue fails to predict the network status}
 	}	

@@ -13,7 +13,6 @@
 	using namespace std;
 	
 	#define QUEUE_DATA_SIGNAL	SIGUSR2
-	#define TIMEOUT_SIGNAL		SIGALRM
 
 	template <class T>
 	class MutexedQueue{	
@@ -35,7 +34,7 @@
 				if (timeout<0)
 					return waitSignal(QUEUE_DATA_SIGNAL);
 				else
-					return waitSignal(QUEUE_DATA_SIGNAL, TIMEOUT_SIGNAL, timeout);
+					return waitSignal(QUEUE_DATA_SIGNAL, timeout);
 			}
 			
 			//--	signalThread used in mutex lock, not need to lock again
@@ -101,6 +100,7 @@
 			}
 			
 			T dequeueWait(int timeout){
+				//printf("\ndequeueWait called by thread: 0x%08X", pthread_self()); fflush(stdout);
 				bool haveData = true;
 				this->firstMutex->lock();
 				if (!this->notEmpty()){					

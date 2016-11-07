@@ -234,7 +234,7 @@ AES256::~AES256(){
 	memset(this->aesKey, 0, KEY_LENGTH);
 	memset(this->state, 0, 4*Nb);
 	memset(this->exKey, 0, Nb*(Nr+1)*4);
-	delete this->aesKey;
-	delete this->state;	
-	delete this->exKey;
+	free(this->aesKey);
+	free(this->state);
+	free(this->exKey);
 }

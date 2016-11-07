@@ -84,8 +84,8 @@ void AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 		}
 	}
 	
-	delete blockV;
-	delete blockXCopy;
+	free(blockV);
+	free(blockXCopy);
 }
 
 
@@ -130,8 +130,8 @@ void AESGCM::gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32
 		xorBlock(cb, cb, cbC);
 		memcpy(ystr+(n-1)*BLOCK_SIZE, cb, lastBlockSize);
 		
-		delete cb;
-		delete cbC;
+		free(cb);
+		free(cbC);
 	}
 }
 
@@ -152,7 +152,7 @@ void AESGCM::prepBlockJ(const uint8_t* iv, uint32_t ivLen){
 		PUT_BE32(blockCounter + blockCounterLen - 4, ivLen<<3);
 		//-- gHash		
 		gHash(blockJ, blockCounter, blockCounterLen);		
-		delete blockCounter;
+		free(blockCounter);
 	}
 }
 
@@ -171,7 +171,7 @@ void AESGCM::calcBlockS(const uint8_t* aad, uint32_t aadLen, const uint8_t* encr
 	PUT_BE32(blockHold + blockHoldLen-12, aadLen<<3);
 	
 	gHash(this->blockS, blockHold, blockHoldLen);
-	delete blockHold;
+	free(blockHold);
 }
 
 //----------------------------------------//
@@ -196,10 +196,10 @@ AESGCM::AESGCM(const uint8_t* key, enum SecurityParameter secuParam){
 AESGCM::~AESGCM(){
 	delete this->aes256;
 	memset(this->hashSubKey, 0, BLOCK_SIZE); //--	securely remove the key by setting its value to 0
-	delete this->hashSubKey;
-	delete this->blockZero;
-	delete this->blockS;
-	delete this->blockJ;
+	free(this->hashSubKey);
+	free(this->blockZero);
+	free(this->blockS);
+	free(this->blockJ);
 }
 
 void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){

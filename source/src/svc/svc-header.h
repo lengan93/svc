@@ -26,10 +26,10 @@
 
 	/*	SVC CONSTANTS	*/
 
-	#define SVC_DEFAULT_TIMEOUT 				10000	
+	#define SVC_DEFAULT_TIMEOUT 				4000	
 	#define SVC_DEFAULT_BUFSIZ 					65535
 	#define	SVC_DAEPORT							1221
-	#define SVC_ENDPOINT_LIVETIME				5000
+	#define SVC_ENDPOINT_LIVETIME				2000
 		
 	/*	SVC CONSTANTS' LENGTHS	*/
 	
@@ -45,7 +45,7 @@
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80
 	//#define SVC_INCOMING_PACKET				0x40
-	#define SVC_TOBE_REMOVED					0x20
+	//#define SVC_TOBE_REMOVED					0x20
 	//#define SVC_TOBE_SAVED					0x10
 	#define SVC_ENCRYPTED						0x08
 	#define SVC_USING_TCP						0x04
