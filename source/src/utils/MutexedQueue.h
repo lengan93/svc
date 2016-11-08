@@ -25,12 +25,14 @@
 			SharedMutex* firstMutex;
 			SharedMutex* lastMutex;
 			
-			Queue<pthread_t>* waitDataThreads;
+			//Queue<pthread_t>* waitDataThreads;
+			pthread_t waitDataThread;
 						
 			//--	waitData used in mutex lock, not need to lock again
 			bool waitData(int timeout){
 				//printf("\n wait data called with timeout = %d", timeout);
-				this->waitDataThreads->enqueue(pthread_self());
+				//this->waitDataThreads->enqueue(pthread_self());
+				waitDataThread = pthread_self();
 				if (timeout<0)
 					return waitSignal(QUEUE_DATA_SIGNAL);
 				else
@@ -39,13 +41,14 @@
 			
 			//--	signalThread used in mutex lock, not need to lock again
 			void signalThread(){
-				//printf("\nsignal thread called");
-				pthread_t thread;
-				
-				if (this->waitDataThreads->peak(&thread)){
-					this->waitDataThreads->dequeue();
-					//printf("\nkilling waiting thread %d: ", (int)thread); fflush(stdout);
+				//pthread_t thread;				
+				/*if (this->waitDataThreads->peak(&thread)){
+					this->waitDataThreads->dequeue();		
 					pthread_kill(thread, QUEUE_DATA_SIGNAL);				
+				}*/
+				if (this->waitDataThread!=0){
+					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
+					this->waitDataThread = 0;
 				}		
 			}
 			
@@ -55,17 +58,18 @@
 				this->first = NULL;
 				this->last = NULL;
 				this->count = 0;
+				this->waitDataThread = 0;
 				countMutex = new SharedMutex();
 				firstMutex = new SharedMutex();
 				lastMutex = new SharedMutex();
-				waitDataThreads = new Queue<pthread_t>();								
+				//waitDataThreads = new Queue<pthread_t>();					
 			}
 		
 			~MutexedQueue(){
 				while (this->notEmpty()){
 					delete this->dequeue();
 				}
-				delete this->waitDataThreads;
+				//delete this->waitDataThreads;
 			}
 		
 			bool notEmpty(){			
@@ -83,28 +87,30 @@
 				element->setNext(NULL);
 				
 				this->lastMutex->lock();
-				if (this->notEmpty()){					
+				if (this->notEmpty()){
 					this->last->setNext(element);
-					this->last = element;					
+					this->last = element;
+					this->countMutex->lock();
+					this->count++;
+					this->countMutex->unlock();
+					this->lastMutex->unlock();				
 				}
 				else{			
 					this->first = element;
-					this->last = element;									
+					this->last = element;
+					this->countMutex->lock();
+					this->count++;
+					this->countMutex->unlock();
+					this->lastMutex->unlock();								
 					signalThread();
-				}
-				this->countMutex->lock();
-				this->count++;
-				this->countMutex->unlock();
-				this->lastMutex->unlock();
-				//printf("\n%d: enqueue in %d, count: %d", (int)pthread_self(), (void*)this ,this->count); fflush(stdout);
+				}				
 			}
 			
-			T dequeueWait(int timeout){
-				//printf("\ndequeueWait called by thread: 0x%08X", pthread_self()); fflush(stdout);
+			T dequeueWait(int timeout){				
 				bool haveData = true;
 				this->firstMutex->lock();
 				if (!this->notEmpty()){					
-					haveData = waitData(timeout);					
+					haveData = waitData(timeout);
 				}
 				//--	not empty, have not to wait				
 				if (haveData){					
