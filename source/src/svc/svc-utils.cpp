@@ -85,13 +85,11 @@ void PacketHandler::stopWorking(){
 }
 
 bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout){
-	printf("\nwaitCommand called"); fflush(stdout);
 	struct CommandHandler handler;	
 	handler.waitingThread = pthread_self();
 	handler.cmd = cmd;
 	handler.endpointID = endpointID;
 	this->commandHandlerRegistra.push_back(handler);
-	printf("\nwaitCommand handler pushed"); fflush(stdout);
 	
 	//-- suspend the calling thread until the correct command is received or the timer expires
 	if (timeout>0){
@@ -100,7 +98,6 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int ti
 	else{
 		return waitSignal(QUEUE_DATA_SIGNAL);
 	}
-	printf("\nwaitCommand returned"); fflush(stdout);
 }
 
 void PacketHandler::notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
@@ -126,9 +123,7 @@ void* PacketHandler::processingLoop(void* args){
 		packet = _this->readingQueue->dequeueWait(1000);		
 		//-- process the packet
 		if (packet!=NULL){			
-			printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
-			infoByte = packet->packet[INFO_BYTE];
-			
+			//printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);			
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
 			}						
