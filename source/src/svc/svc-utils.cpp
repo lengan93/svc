@@ -120,7 +120,7 @@ void* PacketHandler::processingLoop(void* args){
 	uint8_t infoByte;
 	
 	while (_this->working){	
-		packet = _this->readingQueue->dequeueWait(1000);		
+		packet = _this->readingQueue->dequeueWait(1000);
 		//-- process the packet
 		if (packet!=NULL){			
 			//printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);			

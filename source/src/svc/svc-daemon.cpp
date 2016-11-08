@@ -406,7 +406,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 			case SVC_CMD_SHUTDOWN_ENDPOINT:
 				printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 				delete packet;
-				_this->shutdown();
+				//_this->shutdown();
 				break;
 			
 			case SVC_CMD_CONNECT_INNER1:
@@ -855,7 +855,7 @@ void shutdown(){
 		for (auto& it : endpoints){
 			if (it.second != NULL){
 				DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
-				endpoints.erase(ep->endpointID);
+				endpoints[ep->endpointID] = NULL;
 				delete ep; //-- destructor calls shutdown
 			}
 		}
@@ -1049,7 +1049,7 @@ void checkEndpointLiveTime(void* args){
 			if ((!ep->working) || !(ep->isAuthenticated() || ep->checkInitLiveTime(1000))){
 				//-- remove this endpoint, also remove it from endpoints
 				printf("\nendpoints remove id: "); printBuffer((uint8_t*)&ep->endpointID, ENDPOINTID_LENGTH);
-				endpoints[ep->endpointID] = NULL;				
+				endpoints[ep->endpointID] = NULL;
 				delete ep;
 			}
 		}

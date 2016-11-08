@@ -44,15 +44,12 @@
 				this->count++;
 			}
 			
-			T dequeue(){
+			void dequeue(){
 				if (this->notEmpty()){				
 					Node<T>* tmp = this->first;
 					this->first = tmp->getNext();
 					this->count--;
-					return tmp->getData();
-				}
-				else{
-					return 0;
+					delete tmp;
 				}
 			}
 		
