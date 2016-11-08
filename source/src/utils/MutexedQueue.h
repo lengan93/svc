@@ -25,13 +25,10 @@
 			SharedMutex* firstMutex;
 			SharedMutex* lastMutex;
 			
-			//Queue<pthread_t>* waitDataThreads;
 			pthread_t waitDataThread;
 						
 			//--	waitData used in mutex lock, not need to lock again
 			bool waitData(int timeout){
-				//printf("\n wait data called with timeout = %d", timeout);
-				//this->waitDataThreads->enqueue(pthread_self());
 				waitDataThread = pthread_self();
 				if (timeout<0)
 					return waitSignal(QUEUE_DATA_SIGNAL);
@@ -41,11 +38,6 @@
 			
 			//--	signalThread used in mutex lock, not need to lock again
 			void signalThread(){
-				//pthread_t thread;				
-				/*if (this->waitDataThreads->peak(&thread)){
-					this->waitDataThreads->dequeue();		
-					pthread_kill(thread, QUEUE_DATA_SIGNAL);				
-				}*/
 				if (this->waitDataThread!=0){
 					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
 					this->waitDataThread = 0;
@@ -62,14 +54,15 @@
 				countMutex = new SharedMutex();
 				firstMutex = new SharedMutex();
 				lastMutex = new SharedMutex();
-				//waitDataThreads = new Queue<pthread_t>();					
 			}
 		
 			~MutexedQueue(){
-				while (this->notEmpty()){
-					delete this->dequeue();
+				while (this->notEmpty()){					
+					this->dequeue();
 				}
-				//delete this->waitDataThreads;
+				delete this->countMutex;
+				delete this->firstMutex;
+				delete this->lastMutex;
 			}
 		
 			bool notEmpty(){			
@@ -93,7 +86,7 @@
 					this->countMutex->lock();
 					this->count++;
 					this->countMutex->unlock();
-					this->lastMutex->unlock();				
+					this->lastMutex->unlock();
 				}
 				else{			
 					this->first = element;
@@ -101,24 +94,25 @@
 					this->countMutex->lock();
 					this->count++;
 					this->countMutex->unlock();
-					this->lastMutex->unlock();								
+					this->lastMutex->unlock();
 					signalThread();
 				}				
 			}
 			
-			T dequeueWait(int timeout){				
+			T dequeueWait(int timeout){
 				bool haveData = true;
 				this->firstMutex->lock();
-				if (!this->notEmpty()){					
+				if (!this->notEmpty()){
 					haveData = waitData(timeout);
 				}
-				//--	not empty, have not to wait				
-				if (haveData){					
+				//--	not empty, have not to wait
+				if (haveData){
+					//printf("\ndequeueWait has data, count = %d, this->first = 0x%08X", this->count, (void*)this->first); fflush(stdout);
 					Node<T>* tmp = this->first;
 					this->first = tmp->getNext();
 					this->countMutex->lock();
-					this->count--;				
-					this->countMutex->unlock();				
+					this->count--;
+					this->countMutex->unlock();
 					this->firstMutex->unlock();
 					return tmp->getData();
 				}
@@ -129,22 +123,19 @@
 				}
 			}
 			
-			T dequeue(){
+			void dequeue(){
 				this->firstMutex->lock();
 				if (this->notEmpty()){					
 					Node<T>* tmp = this->first;
 					this->first = tmp->getNext();					
-					
 					this->countMutex->lock();
-					this->count--;				
-					this->countMutex->unlock();
-					
+					this->count--;
+					this->countMutex->unlock();					
 					this->firstMutex->unlock();
-					return tmp->getData();										
+					delete tmp;
 				}
 				else{
-					this->firstMutex->unlock();
-					return NULL;
+					this->firstMutex->unlock();					
 				}
 			}
 			
