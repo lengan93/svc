@@ -11,8 +11,8 @@ int main(int argc, char** argv){
 	
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
+		printf("\nserver is listenning..."); fflush(stdout);
 		SVCEndpoint* endpoint = svc->listenConnection(-1);
-	
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");

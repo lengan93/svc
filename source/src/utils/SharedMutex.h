@@ -4,6 +4,7 @@
 	#include "Queue.h"	
 	#include <pthread.h>
 	#include <csignal>
+	#include "utils-functions.h"
 
 	using namespace std;
 	
@@ -21,16 +22,6 @@
 			pthread_mutex_t writerPresenceMutex;
 			pthread_mutex_t readWaitQueueMutex;
 			pthread_mutex_t writeWaitQueueMutex;
-
-			int waitSignal(){
-				sigset_t sigset;
-				sigemptyset(&sigset);
-				sigaddset(&sigset, SHARED_MUTEX_SIGNAL);
-				/*	no need to check for caughtSignal because we only block only one signal	*/
-				int caughtSignal;			
-				int result = sigwait(&sigset, &caughtSignal);
-				return result;
-			}
 
 		public:	
 
@@ -54,8 +45,7 @@
 	
 			int lock(){				
 				pthread_mutex_lock(&writerPresenceMutex);
-				writerPresence++;			
-				//printf("lock with writerPresence %d\n", writerPresence);
+				writerPresence++;				
 				if (writerPresence == 1){
 					//--	we are the first writer
 					pthread_mutex_unlock(&writerPresenceMutex);
@@ -72,7 +62,7 @@
 						this->writeWaitQueue->enqueue(pthread_self());
 						pthread_mutex_unlock(&writeWaitQueueMutex);
 						//--	wait for the last reader to notify
-						return waitSignal();						
+						return waitSignal(SHARED_MUTEX_SIGNAL);						
 					}
 				}
 				else{					
@@ -84,7 +74,7 @@
 					this->writeWaitQueue->enqueue(pthread_self());
 					pthread_mutex_unlock(&writeWaitQueueMutex);
 					//--	wait for signal from preceeded writer
-					return waitSignal();
+					return waitSignal(SHARED_MUTEX_SIGNAL);
 				}
 			}
 	
@@ -109,7 +99,7 @@
 					pthread_mutex_lock(&readWaitQueueMutex);
 					this->readWaitQueue->enqueue(pthread_self());
 					pthread_mutex_unlock(&readWaitQueueMutex);
-					int rs = waitSignal();
+					int rs = waitSignal(SHARED_MUTEX_SIGNAL);
 				
 					if (rs==0){
 						//--	notified, we can lock_shared

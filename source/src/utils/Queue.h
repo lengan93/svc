@@ -30,11 +30,11 @@
 
 			void enqueue(T data){			
 				Node<T>* element = new Node<T>();
-				element->setData(data);
-				element->setNext(NULL);
+				element->data = data;
+				element->next = NULL;
 				
 				if (this->notEmpty()){	
-					this->last->setNext(element);
+					this->last->next=element;
 					this->last = element;
 				}
 				else{
@@ -47,7 +47,7 @@
 			void dequeue(){
 				if (this->notEmpty()){				
 					Node<T>* tmp = this->first;
-					this->first = tmp->getNext();
+					this->first = tmp->next;
 					this->count--;
 					delete tmp;
 				}
@@ -55,7 +55,7 @@
 		
 			bool peak(T* data){			
 				if (this->notEmpty()){
-					*data = this->first->getData();				
+					*data = this->first->data;				
 					return true;
 				}
 				else{

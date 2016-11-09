@@ -79,7 +79,7 @@ void PacketHandler::waitStop(){
 }
 
 void PacketHandler::stopWorking(){	
-	if (this->working){		
+	if (this->working){
 		this->working = false;		
 	}
 }
@@ -119,11 +119,11 @@ void* PacketHandler::processingLoop(void* args){
 	SVCPacket* packet = NULL;
 	uint8_t infoByte;
 	
-	while (_this->working){	
+	while (_this->working || _this->readingQueue->notEmpty()){	
 		packet = _this->readingQueue->dequeueWait(1000);
 		//-- process the packet
 		if (packet!=NULL){			
-			//printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);			
+			//printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
 			}						

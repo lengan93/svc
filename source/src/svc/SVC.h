@@ -28,8 +28,7 @@
 		
 		static void endpoint_packet_handler(SVCPacket* packet, void* args);
 
-		private:
-			MutexedQueue<SVCPacket*>* dataQueue;
+		private:			
 		
 			SVC* svc;
 			bool isInitiator;
@@ -43,10 +42,10 @@
 			
 			pthread_t readingThread;
 			pthread_t writingThread;			
-			MutexedQueue<SVCPacket*>* incomingQueue;
-			MutexedQueue<SVCPacket*>* outgoingQueue;
-			MutexedQueue<SVCPacket*>* tobesentQueue;
-			MutexedQueue<SVCPacket*>* dataholdQueue;
+			MutexedQueue<SVCPacket*> incomingQueue;
+			MutexedQueue<SVCPacket*> outgoingQueue;
+			MutexedQueue<SVCPacket*> tobesentQueue;
+			MutexedQueue<SVCPacket*> dataholdQueue;
 			PacketHandler* incomingPacketHandler;
 			PacketHandler* outgoingPacketHandler;
 			
@@ -122,15 +121,17 @@
 			volatile bool working;
 			pthread_t readingThread;
 			pthread_t writingThread;			
-			MutexedQueue<SVCPacket*>* incomingQueue;
-			MutexedQueue<SVCPacket*>* outgoingQueue;
-			MutexedQueue<SVCPacket*>* tobesentQueue;
+			MutexedQueue<SVCPacket*> incomingQueue;
+			MutexedQueue<SVCPacket*> outgoingQueue;
+			MutexedQueue<SVCPacket*> tobesentQueue;
+			MutexedQueue<SVCPacket*> connectionRequests;			
+			
 			PacketHandler* incomingPacketHandler;
 			PacketHandler* outgoingPacketHandler;
+			
 									
 			//-- private members
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
-			MutexedQueue<SVCPacket*>* connectionRequests;
 			
 			SHA256* sha256;
 			int appSocket;

@@ -29,7 +29,7 @@
 			//-- constructors/destructors
 			
 			SVCPacket(){
-				printf("\npacket create: 0x%08X", (void*)this); fflush(stdout);
+				//printf("\npacket create: 0x%08X", (void*)this); fflush(stdout);
 				this->dataLen = 0;
 				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 			}
@@ -56,7 +56,7 @@
 			}
 			
 			~SVCPacket(){
-				printf("\npacket destroyed: 0x%08X", (void*)this); fflush(stdout);
+				//printf("\npacket destroyed: 0x%08X", (void*)this); fflush(stdout);
 				free(this->packet);
 			}
 			

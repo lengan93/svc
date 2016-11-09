@@ -7,8 +7,8 @@
 #define __SVC_QUEUE__
 
 	#include "Node.h"
-	#include "SharedMutex.h"
 	#include "utils-functions.h"
+	#include <pthread.h>
 
 	using namespace std;
 	
@@ -21,10 +21,10 @@
 			Node<T>* last;			
 			int count;
 			
-			SharedMutex* countMutex;
-			SharedMutex* firstMutex;
-			SharedMutex* lastMutex;
-			
+			pthread_mutexattr_t mutexAttr;
+			pthread_mutex_t countMutex;
+			pthread_mutex_t firstMutex;
+			pthread_mutex_t lastMutex;			
 			pthread_t waitDataThread;
 						
 			//--	waitData used in mutex lock, not need to lock again
@@ -41,9 +41,9 @@
 				if (this->waitDataThread!=0){
 					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
 					this->waitDataThread = 0;
-				}		
+				}
 			}
-			
+
 		public:
 	
 			MutexedQueue(){
@@ -51,105 +51,144 @@
 				this->last = NULL;
 				this->count = 0;
 				this->waitDataThread = 0;
-				countMutex = new SharedMutex();
-				firstMutex = new SharedMutex();
-				lastMutex = new SharedMutex();
+				pthread_mutexattr_init(&this->mutexAttr);
+				pthread_mutex_init(&this->countMutex, &this->mutexAttr);
+				pthread_mutex_init(&this->firstMutex, &this->mutexAttr);
+				pthread_mutex_init(&this->lastMutex, &this->mutexAttr);
+				//printf("\nMutexedQueue created"); fflush(stdout);
 			}
 		
 			~MutexedQueue(){
 				while (this->notEmpty()){					
 					this->dequeue();
 				}
-				delete this->countMutex;
-				delete this->firstMutex;
-				delete this->lastMutex;
+				//printf("\nMutexedQueue destructed"); fflush(stdout);
 			}
-		
-			bool notEmpty(){			
+			
+			bool notEmpty(){
 				bool rs;
-				this->countMutex->lock_shared();
+				pthread_mutex_lock(&this->countMutex);
 				rs = count>0;
-				this->countMutex->unlock_shared();
+				pthread_mutex_unlock(&this->countMutex);
 				return rs;
-			}
+			}			
 
 			void enqueue(T data){
+				//printf("\nenqueue: trying LOCK lastMutex"); fflush(stdout);										
+				pthread_mutex_lock(&this->lastMutex);
+				//printf("\nenqueue: lastMutex locked"); fflush(stdout);
 				
+				//printf("\nenqueue: trying LOCK countMutex"); fflush(stdout);
+				pthread_mutex_lock(&this->countMutex);
+				//printf("\nenqueue: countMutex locked"); fflush(stdout);
 				Node<T>* element = new Node<T>();
-				element->setData(data);
-				element->setNext(NULL);
+				element->data = data;
+				element->next = NULL;
 				
-				this->lastMutex->lock();
-				if (this->notEmpty()){
-					this->last->setNext(element);
+				if (this->count > 0){
+					this->last->next = element;
 					this->last = element;
-					this->countMutex->lock();
 					this->count++;
-					this->countMutex->unlock();
-					this->lastMutex->unlock();
+					//printf("\nenqueue: trying UNLOCK countMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->countMutex);
+					//printf("\nenqueue: countMutex unlocked"); fflush(stdout);
+					
+					//printf("\nenqueue: trying UNLOCK lastMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->lastMutex);
+					//printf("\nenqueue: lastMutex unlocked"); fflush(stdout);
 				}
 				else{			
 					this->first = element;
 					this->last = element;
-					this->countMutex->lock();
 					this->count++;
-					this->countMutex->unlock();
-					this->lastMutex->unlock();
+					//printf("\nenqueue: trying UNLOCK countMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->countMutex);
+					//printf("\nenqueue: countMutex unlocked"); fflush(stdout);
+					
+					//printf("\nenqueue: trying UNLOCK lastMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->lastMutex);
+					//printf("\nenqueue: lastMutex unlocked"); fflush(stdout);
 					signalThread();
-				}				
+				}
 			}
 			
 			T dequeueWait(int timeout){
-				bool haveData = true;
-				this->firstMutex->lock();
-				if (!this->notEmpty()){
+				//printf("\ndequeueWait: trying LOCK firstMutex"); fflush(stdout);
+				pthread_mutex_lock(&this->firstMutex);
+				//printf("\ndequeueWait: firstMutex locked"); fflush(stdout);
+				
+				//printf("\ndequeueWait: trying LOCK countMutex"); fflush(stdout);
+				pthread_mutex_lock(&this->countMutex);
+				//printf("\ndequeueWait: countMutex locked"); fflush(stdout);
+				bool haveData = true;				
+				if (this->count == 0){
+					pthread_mutex_unlock(&this->countMutex);
 					haveData = waitData(timeout);
 				}
+				else{
+					pthread_mutex_unlock(&this->countMutex);
+				}
 				//--	not empty, have not to wait
+				pthread_mutex_lock(&this->countMutex);
 				if (haveData){
-					//printf("\ndequeueWait has data, count = %d, this->first = 0x%08X", this->count, (void*)this->first); fflush(stdout);
 					Node<T>* tmp = this->first;
-					this->first = tmp->getNext();
-					this->countMutex->lock();
+					T retVal = tmp->data;
+					this->first = tmp->next;
 					this->count--;
-					this->countMutex->unlock();
-					this->firstMutex->unlock();
-					return tmp->getData();
+					//printf("\ndequeueWait: trying UNLOCK countMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->countMutex);
+					//printf("\ndequeueWait: countMutex unlocked"); fflush(stdout);
+					
+					//printf("\ndequeueWait: trying UNLOCK firstMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->firstMutex);
+					//printf("\ndequeueWait: firstMutex unlocked"); fflush(stdout);
+					delete tmp;
+					return retVal;
 				}
 				else{
 					//-- waitData was interrupted by other signals
-					this->firstMutex->unlock();
+					//printf("\ndequeueWait: trying UNLOCK countMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->countMutex);
+					//printf("\ndequeueWait: countMutex unlocked"); fflush(stdout);
+					
+					//printf("\ndequeueWait: trying UNLOCK firstMutex"); fflush(stdout);
+					pthread_mutex_unlock(&this->firstMutex);
+					//printf("\ndequeueWait: firstMutex unlocked"); fflush(stdout);
 					return NULL;
 				}
 			}
 			
 			void dequeue(){
-				this->firstMutex->lock();
-				if (this->notEmpty()){					
+				pthread_mutex_lock(&this->firstMutex);
+				pthread_mutex_lock(&this->countMutex);
+				if (this->count>0){
 					Node<T>* tmp = this->first;
-					this->first = tmp->getNext();					
-					this->countMutex->lock();
+					this->first = tmp->next;
 					this->count--;
-					this->countMutex->unlock();					
-					this->firstMutex->unlock();
+					pthread_mutex_unlock(&this->countMutex);
+					pthread_mutex_unlock(&this->firstMutex);
 					delete tmp;
 				}
 				else{
-					this->firstMutex->unlock();					
+					pthread_mutex_unlock(&this->countMutex);
+					pthread_mutex_unlock(&this->firstMutex);	
 				}
 			}
 			
 			bool peak(T* data){
-				if (this->notEmpty()){
-					this->firstMutex->lock_shared();
-					*data = this->first->getData();
-					this->firstMutex->unlock_shared();
+				pthread_mutex_lock(&this->countMutex);
+				if (this->count>0){
+					pthread_mutex_lock(&this->firstMutex);
+					*data = this->first->data;
+					pthread_mutex_unlock(&this->firstMutex);
+					pthread_mutex_unlock(&this->countMutex);
 					return true;
 				}
 				else{
+					pthread_mutex_unlock(&this->countMutex);
 					return false;
 				}
-			}
+			}						
 	};
 
 #endif
