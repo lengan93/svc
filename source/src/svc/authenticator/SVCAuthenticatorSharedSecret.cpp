@@ -9,7 +9,7 @@ const string SVCAuthenticatorSharedSecret::NULL_STRING = "";
 
 SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){	
 	//-- read shared secret in hex string format
-	uint8_t* sharedKey;
+	uint8_t sharedKey[KEY_LENGTH] = "";
 	ifstream key(secretPath);
 	stringstream buffer;
 	buffer << key.rdbuf();
@@ -17,12 +17,11 @@ SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){
 	//printf("\nread shared secret: %s", buffer.str().c_str());
 	
 	//-- convert form hex to binary form	
-	stringToHex(buffer.str().c_str(), &sharedKey);
+	stringToHex(buffer.str().c_str(), sharedKey);
 	
 	//-- create aesgcm and hash instances
 	this->aesGCM = new AESGCM(sharedKey, SECU_128);
 	this->sha256 = new SHA256();
-	free(sharedKey);
 }
 
 SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){	
@@ -32,7 +31,7 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 	string rs;
 	//-- random iv string
 	uint32_t ivLen = KEY_LENGTH;
-	uint8_t* iv = (uint8_t*)malloc(ivLen);
+	uint8_t iv[ivLen] = "";
 	generateRandomData(ivLen, iv);
 	//-- encrypt this string with aesgcm, shared key
 	uint32_t encryptedLen;
@@ -58,8 +57,7 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 	memcpy(p, tag, tagLen);
 	rs = hexToString(challengeBuf, challengeLen);
 	
-	//-- clear then return	
-	free(iv);
+	//-- clear then return
 	free(encrypted);
 	free(tag);
 	free(challengeBuf);
@@ -69,15 +67,15 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challenge){
 	string rs;
 	//-- un-hex the challenge
-	uint8_t* challengeBuf;
-	uint32_t challengeLen = stringToHex(challenge, &challengeBuf);
+	uint8_t challengeBuf[65535] = "";
+	uint32_t challengeLen = stringToHex(challenge, challengeBuf);
 	
 	if (challengeLen>0){
 		//--
 		uint8_t* iv;
 		uint8_t* encrypted;
 		uint8_t* tag;
-		uint8_t* p =challengeBuf;
+		uint8_t* p = challengeBuf;
 		uint8_t* challengeSecret;
 		uint32_t challengeSecretLen;
 		
@@ -98,9 +96,7 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 		}
 		else{			
 			rs = NULL_STRING;
-		}
-		//-- clear memory
-		free(challengeBuf);
+		}		
 	}
 	else{
 		rs = NULL_STRING;

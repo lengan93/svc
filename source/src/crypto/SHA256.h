@@ -1,8 +1,5 @@
 #ifndef __SHA256__
 #define __SHA256__
-
-	#include <string>
-	#include <cstdlib>
 	
 	class SHA256{		
 	 

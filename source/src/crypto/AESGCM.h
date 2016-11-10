@@ -18,10 +18,10 @@
 		//--	block chiffer
 		AES256* aes256;
 		//--	prefedined blocks
-		uint8_t* hashSubKey;
-		uint8_t* blockZero;
-		uint8_t* blockJ;
-		uint8_t* blockS;
+		uint8_t hashSubKey[BLOCK_SIZE];
+		uint8_t blockZero[BLOCK_SIZE];
+		uint8_t blockJ[BLOCK_SIZE];
+		uint8_t blockS[BLOCK_SIZE];
 		
 		enum SecurityParameter secuParam;
 

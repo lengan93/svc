@@ -4,7 +4,7 @@
 
 uint16_t SVC::endpointCounter = 0;
 
-SVC::SVC(string appID, SVCAuthenticator* authenticator){
+SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 	
 	this->working = true;
 	this->readingThread = 0;
@@ -29,10 +29,8 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 	this->authenticator = authenticator;
 	
 	//--	check if the app is running
-	string appIDHashed = this->sha256->hash(appID);
-	uint8_t* appIDBin;
-	stringToHex(appIDHashed.substr(0, 8), &appIDBin); //-- extract first 32 bits of hash string
-	this->appID = *((uint32_t*)appIDBin);
+	std::string appIDHashed = this->sha256->hash(appID);
+	stringToHex(appIDHashed.substr(0, 8), (uint8_t*)&this->appID); //-- extract first 32 bits of hash string
 	
 	//--	BLOCK ALL KIND OF SIGNAL
 	sigset_t sig;
@@ -43,7 +41,7 @@ SVC::SVC(string appID, SVCAuthenticator* authenticator){
 		goto errorInit;
 	}	
 	
-	this->appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(this->appID);	
+	this->appSockPath = std::string(SVC_CLIENT_PATH_PREFIX) + to_string(this->appID);	
 	//- bind app socket
 	this->appSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 	memset(&appSockAddr, 0, sizeof(appSockAddr));
@@ -171,7 +169,7 @@ void* SVC::svc_reading_loop(void* args){
 	SVC* _this = (SVC*)args;
 	
 	//-- read from unix socket then enqueue to incoming queue
-	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+	uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 	int readrs;
 		
 	while (_this->working){
@@ -300,7 +298,7 @@ SVCEndpoint::SVCEndpoint(SVC* svc, bool isInitiator){
 void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;
 
-	static uint8_t param[SVC_DEFAULT_BUFSIZ];
+	static uint8_t param[SVC_DEFAULT_BUFSIZ]="";
 	static uint16_t paramLen;
 	
 	uint8_t infoByte = packet->packet[INFO_BYTE];
@@ -319,12 +317,12 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				//-- replace packet endpointID with the new one
 				memcpy(packet->packet, param, ENDPOINTID_LENGTH);		
 				packet->popCommandParam(param, &paramLen);
-				_this->challengeReceived = string((char*)param, paramLen);
-				//printf("\nchallenge received: %s", challengeReceived.c_str()); fflush(stdout);
+				_this->challengeReceived = std::string((char*)param, paramLen);
+				//printf("\nchallenge received: %s", _this->challengeReceived.c_str()); fflush(stdout);
 		
 				//--	resolve challenge then send back to daemon
 				_this->challengeSecretReceived = _this->svc->authenticator->resolveChallenge(_this->challengeReceived);
-				//printf("\nChallenge secret resolved: %s", challengeSecretReceived.c_str()); fflush(stdout);
+				//printf("\nChallenge secret resolved: %s", _this->challengeSecretReceived.c_str()); fflush(stdout);
 		
 				//- packet updated with new endpointID
 				packet->switchCommand(SVC_CMD_CONNECT_INNER5);
@@ -337,7 +335,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				//printf("\nSVC_CMD_CONNECT_INNER6 received"); fflush(stdout);
 				//-- pop solution proof and check
 				packet->popCommandParam(param, &paramLen);
-				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, string((char*)param, paramLen))){
+				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, std::string((char*)param, paramLen))){
 					//-- proof verified, generate proof then send back to daemon
 					_this->proof = _this->svc->authenticator->generateProof(_this->challengeSecretReceived);
 					packet->switchCommand(SVC_CMD_CONNECT_INNER7);
@@ -356,10 +354,10 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				break;
 				
 			case SVC_CMD_CONNECT_INNER8:					
-				//printf("\nreceived CONNECT_INNER8"); fflush(stdout);					
+				//printf("\nSVC_CMD_CONNECT_INNER8 received"); fflush(stdout);				
 				//-- verify the client's proof
 				packet->popCommandParam(param, &paramLen);
-				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, string((char*)param, paramLen))){
+				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, std::string((char*)param, paramLen))){
 					//-- send confirm to daemon
 					packet->setCommand(SVC_CMD_CONNECT_INNER9);
 					//packet->packet[INFO_BYTE] &= ~SVC_INCOMING_PACKET;
@@ -395,7 +393,7 @@ void SVCEndpoint::svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* 
 void* SVCEndpoint::svc_endpoint_reading_loop(void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;
 	//-- read from unix socket then enqueue to incoming queue
-	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+	uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 	int readrs;
 		
 	while (_this->working){
@@ -447,7 +445,7 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 	this->endpointID = endpointID;
 	//-- bind app endpoint socket
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	this->endpointSockPath = string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
+	this->endpointSockPath = std::string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
 	struct sockaddr_un sockAddr;
 	memset(&sockAddr, 0, sizeof(sockAddr));
 	sockAddr.sun_family = AF_LOCAL;
@@ -471,7 +469,7 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 }
 
 int SVCEndpoint::connectToDaemon(){
-	string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);
+	std::string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);
 	struct sockaddr_un dmnEndpointAddr;
 	memset(&dmnEndpointAddr, 0, sizeof(dmnEndpointAddr));
 	dmnEndpointAddr.sun_family = AF_LOCAL;
@@ -495,7 +493,7 @@ int SVCEndpoint::connectToDaemon(){
 
 bool SVCEndpoint::negotiate(){	
 	
-	uint8_t param[SVC_DEFAULT_BUFSIZ];
+	uint8_t param[SVC_DEFAULT_BUFSIZ]="";
 	uint16_t paramLen;
 	SVCPacket* packet = new SVCPacket(this->endpointID);
 	//printf("\ninside negotiate"); fflush(stdout);
@@ -528,7 +526,7 @@ bool SVCEndpoint::negotiate(){
 	else{
 		//-- read challenge from request packet
 		this->request->popCommandParam(param, &paramLen);
-		this->challengeReceived = string((char*)param, paramLen);
+		this->challengeReceived = std::string((char*)param, paramLen);
 		//printf("\nChallenge received: %s", challengeReceived.c_str()); fflush(stdout);
 		
 		//-- resolve this challenge to get challenge secret

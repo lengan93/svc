@@ -162,7 +162,7 @@ ECPoint* ECCurve::opposite(const ECPoint* P){
 	mpz_add(sum, sum, P->y);
 	mpz_mod(sum, sum, this->p);
 	
-	ECPoint* result = new ECPoint(&P->x, &sum);
+	return new ECPoint(&P->x, &sum);
 }
 
 bool ECCurve::contains(const ECPoint* p){
@@ -212,5 +212,6 @@ int ECCurve::getRequestSecurityLength(){
 
 
 ECCurve::~ECCurve(){
+	delete this->g;
 }
 

@@ -4,12 +4,8 @@
 	#include "../utils/MutexedQueue.h"
 	#include "../utils/Message.h"
 	#include "svc-header.h"
-	
-	#include <cstring>
+		
 	#include <vector>
-	#include <sys/socket.h>
-	#include <netinet/in.h>
-	#include <unistd.h>
 
 	//--	class pre-declaration
 	class SVCPacket;
@@ -23,18 +19,16 @@
 	class SVCPacket{
 		public:
 			//-- public members
-			uint8_t* packet; //[SVC_DEFAULT_BUFSIZ];
+			uint8_t packet[SVC_DEFAULT_BUFSIZ];
 			uint32_t dataLen;
 			
 			//-- constructors/destructors
 			
-			SVCPacket(){
-				//printf("\npacket create: 0x%08X", (void*)this); fflush(stdout);
-				this->dataLen = 0;
-				this->packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
+			SVCPacket(){				
+				this->dataLen = 0;				
 			}
 			
-			SVCPacket(SVCPacket* packet):SVCPacket(){		
+			SVCPacket(SVCPacket* packet){		
 				if (packet!=NULL){
 					this->dataLen = packet->dataLen;
 					memcpy(this->packet, packet->packet, this->dataLen);
@@ -44,20 +38,18 @@
 				}
 			}
 			
-			SVCPacket(const uint8_t* buffer, uint32_t bufferLen):SVCPacket(){				
+			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){				
 				this->dataLen = bufferLen;
 				memcpy(this->packet, buffer, this->dataLen);
 			}
 			
-			SVCPacket(uint64_t endpointID):SVCPacket(){
+			SVCPacket(uint64_t endpointID){
 				this->dataLen = SVC_PACKET_HEADER_LEN;
 				memset(this->packet, 0, this->dataLen);
 				memcpy(this->packet, &endpointID, ENDPOINTID_LENGTH);
 			}
 			
 			~SVCPacket(){
-				//printf("\npacket destroyed: 0x%08X", (void*)this); fflush(stdout);
-				free(this->packet);
 			}
 			
 			bool isCommand(){
@@ -145,22 +137,12 @@
 		
 		private:
 			//--	static methods
-			//static void* readingLoop(void* args);
-			//static void* writingLoop(void* args);
 			static void* processingLoop(void* args);
 
 			MutexedQueue<SVCPacket*>* readingQueue;
-			//MutexedQueue<SVCPacket*>* keepingQueue;
-			//MutexedQueue<SVCPacket*>* writingQueue;
 			
 			//--	members
-			//int socket;
 			volatile bool working;
-			//volatile bool reading;
-			//volatile bool writing;
-			
-			//pthread_t readingThread;
-			//pthread_t writingThread;
 			pthread_t processingThread;			
 			
 			void* packetHandlerArgs;

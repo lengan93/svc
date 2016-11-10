@@ -3,7 +3,6 @@
 #ifndef __SVC__
 #define __SVC__
 
-	#include "svc-header.h"
 	#include "svc-utils.h"
 	#include "host/SVCHost.h"
 	#include "authenticator/SVCAuthenticator.h"
@@ -13,13 +12,10 @@
 	#include "../crypto/SHA256.h"
 	#include "../crypto/crypto-utils.h"
 	
-	#include <unistd.h>	//--	for unlink
-	#include <sys/un.h> //--	for unix socket
-	#include <cstring>  //--	for memcpy
+	#include <sys/un.h>
+	#include <sys/socket.h>	
 	#include <unordered_map>
 
-	using namespace std;
-	
 	//--	FORWARD DECLARATION		--//
 	class SVC;
 		
@@ -50,18 +46,18 @@
 			PacketHandler* outgoingPacketHandler;
 			
 			int sock;
-			string endpointSockPath;
+			std::string endpointSockPath;
 			uint64_t endpointID;
 			uint32_t appID;			
 			SVCHost* remoteHost;
 			SVCPacket* request;
 			
 			//-- crypto negotitation
-			string challengeSecretSent;
-			string challengeSecretReceived;
-			string challengeSent;
-			string challengeReceived;
-			string proof;
+			std::string challengeSecretSent;
+			std::string challengeSecretReceived;
+			std::string challengeSent;
+			std::string challengeReceived;
+			std::string proof;
 		
 			SVCEndpoint(SVC* svc, bool isInitiator);	
 			
@@ -135,7 +131,7 @@
 			
 			SHA256* sha256;
 			int appSocket;
-			string appSockPath;						
+			std::string appSockPath;						
 						
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
@@ -145,7 +141,7 @@
 			/*
 			 * Create a SVC instance which is used by 'appID' and has 'authenticator' as protocol authentication mechanism
 			 * */
-			SVC(string appID, SVCAuthenticator* authenticator);
+			SVC(std::string appID, SVCAuthenticator* authenticator);
 						
 			~SVC();
 			

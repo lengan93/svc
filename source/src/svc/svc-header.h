@@ -3,7 +3,6 @@
 #ifndef __SVC_HEADER__
 #define __SVC_HEADER__
 	
-	#include <linux/types.h>
 	#include <string>
 		
 	using namespace std;
