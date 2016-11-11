@@ -17,7 +17,8 @@
 	class MutexedQueue{	
 		private:
 			Node<T>** first;
-			Node<T>** last;			
+			Node<T>** last;	
+			Node<T>* e;		
 			Node<T>* lastNode;
 			Node<T>* beforeLastNode;
 			
@@ -29,19 +30,16 @@
 						
 			//--	waitData used in mutex lock, not need to lock again
 			bool waitData(int timeout){
-				waitDataThread = pthread_self();
-				if (timeout<0)
-					return waitSignal(QUEUE_DATA_SIGNAL);
-				else
-					return waitSignal(QUEUE_DATA_SIGNAL, timeout);
-			}
-			
-			//--	signalThread used in mutex lock, not need to lock again
-			void signalThread(){
-				if (this->waitDataThread!=0){
-					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
-					this->waitDataThread = 0;
+				bool rs;
+				this->waitDataThread = pthread_self();
+				if (timeout<0){
+					rs = waitSignal(QUEUE_DATA_SIGNAL);					
 				}
+				else{				
+					rs = waitSignal(QUEUE_DATA_SIGNAL, timeout);
+				}
+				if (!rs) this->waitDataThread = 0;
+				return rs;
 			}
 
 		public:
@@ -49,8 +47,9 @@
 			MutexedQueue(){
 				this->beforeLastNode = NULL;
 				this->lastNode = NULL;
-				this->first = &this->lastNode;
-				this->last = &this->lastNode;
+				this->e = NULL;
+				this->first = &this->e;
+				this->last = &this->e;
 
 				this->waitDataThread = 0;
 				pthread_mutexattr_init(&this->mutexAttr);
@@ -75,26 +74,36 @@
 
 			void enqueue(T data){
 				pthread_mutex_lock(&this->lastMutex);				
-				(*(this->last)) = new Node<T>();
-				(*(this->last))->data = data;
-				(*(this->last))->next = NULL;
-				this->last = &((*(this->last))->next);
+				Node<T>* node = new Node<T>();
+				node->data = data;
+				node->next = NULL;
+				(*(this->last)) = node;
+				this->last = &(node->next);				
+				if (this->waitDataThread!=0){
+					//printf("\nthread 0x%08X notifies thread 0x%08X about data, *this->last = 0x%08X (new node)", (void*)pthread_self(), (void*)this->waitDataThread, (void*)node); fflush(stdout);
+					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
+					this->waitDataThread = 0;
+				}
+				//else{
+					//printf("\nthread 0x%08X enqueues new node: 0x%08X", (void*)node); fflush(stdout);
+				//}
 				pthread_mutex_unlock(&this->lastMutex);
-				signalThread();
 			}
 			
 			T dequeueWait(int timeout){
 				pthread_mutex_lock(&this->firstMutex);
 				bool haveData = true;
-				if ((*(this->first))==NULL){				
+				if ((*(this->first))==NULL){
+					//printf("\nthread 0x%08X calls waitData, *this->first = 0x%08X", (void*)pthread_self(), (void*)(*(this->first))); fflush(stdout);		
 					haveData = waitData(timeout);
 				}				
 				if (haveData){
-					T retVal = (*(this->first))->data;
-					delete this->beforeLastNode;
+					//printf("\nthread 0x%08X haveData, *this->first = 0x%08X", (void*)pthread_self(), (void*)(*(this->first))); fflush(stdout);
+					T retVal = (*(this->first))->data;					
 					this->beforeLastNode = this->lastNode;
 					this->lastNode = *(this->first);		
 					this->first = &((*(this->first))->next);
+					delete this->beforeLastNode;
 					pthread_mutex_unlock(&this->firstMutex);
 					return retVal;
 				}
@@ -110,11 +119,11 @@
 				if (*(this->first)==NULL){
 					pthread_mutex_unlock(&this->firstMutex);
 				}
-				else{
-					delete this->beforeLastNode;
+				else{					
 					this->beforeLastNode = this->lastNode;
 					this->lastNode = (*(this->first));			
 					this->first = &((*(this->first))->next);
+					delete this->beforeLastNode;
 					pthread_mutex_unlock(&this->firstMutex);
 				}
 			}
