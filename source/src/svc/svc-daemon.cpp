@@ -131,7 +131,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	
 	this->aesgcm = NULL;
 	this->curve = NULL;
-	//this->sha256 = new SHA256();
+	this->encryptedECPoint = NULL;
 	
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -255,6 +255,7 @@ void DaemonEndpoint::shutdown(){
 			
 	//-- remove instances
 	mpz_clear(this->randomX);
+	if (this->encryptedECPoint!=NULL) delete this->encryptedECPoint;
 	delete this->aesgcm;
 	delete this->curve;		
 	printf("\nendpoint shutdown"); fflush(stdout);
@@ -599,8 +600,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				aes256 = new AES256(aeskey);
 				//printf("\naeskey used to decrypt gx: "); printBuffer(aeskey, KEY_LENGTH);
 				aes256->decrypt(_this->encryptedECPoint->packet, _this->encryptedECPoint->dataLen, &data, &dataLen);
-				//-- remove the saved encryptedpoint packet
-				delete _this->encryptedECPoint;
+				
 				//-- construct gx from decrypted K1
 				//printf("\nreceived gxx || gxy: "); printBuffer(data, dataLen); fflush(stdout);
 				paramLen = *((uint16_t*)data);
@@ -733,8 +733,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				aes256 = new AES256(aeskey);
 				//printf("\naeskey used to decrypt gy: "); printBuffer(aeskey, KEY_LENGTH);				
 				aes256->decrypt(_this->encryptedECPoint->packet, _this->encryptedECPoint->dataLen, &data, &dataLen);
-				//-- remove the saved encrypedEcpoint
-				delete _this->encryptedECPoint;
+				
 				delete aes256;
 				//-- construct gy from decrypted k2
 			
