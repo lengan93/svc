@@ -61,6 +61,7 @@
 				while (this->notEmpty()){					
 					this->dequeue();
 				}
+				//printf("\nthread 0x%08X removes node: 0x%08X", pthread_self(), (void*)this->lastNode); fflush(stdout);
 				delete this->lastNode;
 			}
 			
@@ -80,12 +81,12 @@
 				(*(this->last)) = node;
 				this->last = &(node->next);				
 				if (this->waitDataThread!=0){
-					//printf("\nthread 0x%08X notifies thread 0x%08X about data, *this->last = 0x%08X (new node)", (void*)pthread_self(), (void*)this->waitDataThread, (void*)node); fflush(stdout);
+					//printf("\nthread 0x%08X notifies thread 0x%08X about data, *this->last = 0x%08X (new node)", pthread_self(), (void*)this->waitDataThread, (void*)node); fflush(stdout);
 					pthread_kill(this->waitDataThread, QUEUE_DATA_SIGNAL);
 					this->waitDataThread = 0;
 				}
 				//else{
-					//printf("\nthread 0x%08X enqueues new node: 0x%08X", (void*)node); fflush(stdout);
+					//printf("\nthread 0x%08X enqueues new node: 0x%08X", pthread_self(), (void*)node); fflush(stdout);
 				//}
 				pthread_mutex_unlock(&this->lastMutex);
 			}
@@ -94,15 +95,16 @@
 				pthread_mutex_lock(&this->firstMutex);
 				bool haveData = true;
 				if ((*(this->first))==NULL){
-					//printf("\nthread 0x%08X calls waitData, *this->first = 0x%08X", (void*)pthread_self(), (void*)(*(this->first))); fflush(stdout);		
+					//printf("\nthread 0x%08X calls waitData, *this->first = 0x%08X", pthread_self(), (void*)(*(this->first))); fflush(stdout);		
 					haveData = waitData(timeout);
 				}				
 				if (haveData){
-					//printf("\nthread 0x%08X haveData, *this->first = 0x%08X", (void*)pthread_self(), (void*)(*(this->first))); fflush(stdout);
+					printf("\nthread 0x%08X haveData, dereferencing *this->first = 0x%08X", pthread_self(), (void*)(*(this->first))); fflush(stdout);
 					T retVal = (*(this->first))->data;					
 					this->beforeLastNode = this->lastNode;
 					this->lastNode = *(this->first);		
 					this->first = &((*(this->first))->next);
+					//printf("\nthread 0x%08X removes node: 0x%08X", pthread_self(), (void*)this->beforeLastNode); fflush(stdout);
 					delete this->beforeLastNode;
 					pthread_mutex_unlock(&this->firstMutex);
 					return retVal;
@@ -111,7 +113,7 @@
 					//-- waitData was interrupted by other signals
 					pthread_mutex_unlock(&this->firstMutex);
 					return NULL;
-				}
+				}				
 			}
 			
 			void dequeue(){
@@ -121,8 +123,9 @@
 				}
 				else{					
 					this->beforeLastNode = this->lastNode;
-					this->lastNode = (*(this->first));			
+					this->lastNode = *(this->first);			
 					this->first = &((*(this->first))->next);
+					//printf("\nthread 0x%08X removes node: 0x%08X", (void*)pthread_self(), (void*)this->beforeLastNode); fflush(stdout);					
 					delete this->beforeLastNode;
 					pthread_mutex_unlock(&this->firstMutex);
 				}

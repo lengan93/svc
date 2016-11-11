@@ -17,7 +17,7 @@ int main(int argc, char** argv){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
 				//-- try to read some data
-				uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 				uint32_t dataLen;
 				if (endpoint->readData(buffer, &dataLen) == 0){
 					string receivedData = string((char*)buffer, dataLen);

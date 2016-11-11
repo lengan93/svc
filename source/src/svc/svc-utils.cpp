@@ -72,9 +72,9 @@ PacketHandler::~PacketHandler(){
 	//printf("\npacket handler destructed"); fflush(stdout);
 }
 
-void PacketHandler::waitStop(){	
+int PacketHandler::waitStop(){	
 	if (this->processingThread!=-1){
-		pthread_join(this->processingThread, NULL);
+		return pthread_join(this->processingThread, NULL);
 	}
 }
 
@@ -129,7 +129,9 @@ void* PacketHandler::processingLoop(void* args){
 			}						
 		}
 		//else{//--TODO: can count dequeue fails to predict the network status}
-	}	
+	}
+	printf("\nthread 0x%08X stopped", (void*)pthread_self()); fflush(stdout);
+	pthread_exit(EXIT_SUCCESS);
 }
 
 

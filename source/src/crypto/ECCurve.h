@@ -3,6 +3,7 @@
 
 	#include "ECPoint.h"
 	#include <cstring>
+	#include <cstdlib>
 	
 	#define w256_001_p "8884933102832021670310856601112383279507496491807071433260928721853918699951"
 	#define w256_001_n "8884933102832021670310856601112383279454437918059397120004264665392731659049"
@@ -26,10 +27,10 @@
 			ECCurve();
 
 			//operations
-			ECPoint* add(const ECPoint* P, const ECPoint* Q);
-			ECPoint* mul(const ECPoint* P, const mpz_t* k);
-			ECPoint* dbl(const ECPoint* P);
-			ECPoint* opposite(const ECPoint* P);
+			void add(ECPoint* rs, const ECPoint* P, const ECPoint* Q);
+			void mul(ECPoint* rs, const ECPoint* P, const mpz_t* k);
+			void dbl(ECPoint* rs);
+			void opposite(ECPoint* rs, const ECPoint* P);
 			bool contains(const ECPoint* P);
 			int getRequestSecurityLength();
 			~ECCurve();

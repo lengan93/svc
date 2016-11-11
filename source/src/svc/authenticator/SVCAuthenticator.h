@@ -15,7 +15,9 @@
 			virtual std::string generateChallengeSecret(){
 				uint8_t* randomData = (uint8_t*)malloc(MINIMUM_SECURITY_LENGTH);
 				generateRandomData(MINIMUM_SECURITY_LENGTH, randomData);
-				return hexToString(randomData, MINIMUM_SECURITY_LENGTH);
+				std::string result = hexToString(randomData, MINIMUM_SECURITY_LENGTH);
+				free(randomData);
+				return result;
 			}
 			virtual std::string generateChallenge(const std::string& challengeSecret)=0;			
 			virtual std::string resolveChallenge(const std::string& challenge)=0;

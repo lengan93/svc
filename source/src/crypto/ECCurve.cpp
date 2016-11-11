@@ -8,38 +8,39 @@ ECCurve::ECCurve(){
 	this->g = new ECPoint(w256_001_gx, w256_001_gy);
 }
 
-ECPoint* ECCurve::add(const ECPoint* P, const ECPoint* Q){	
-	ECPoint* result;
+void ECCurve::add(ECPoint* rs, const ECPoint* P, const ECPoint* Q){	
 
 	if (P->inf || Q->inf){		
 		if (!P->inf){
 			//return p1
-			result = new ECPoint(&P->x, &P->y);
+			mpz_set(rs->x, P->x);
+			mpz_set(rs->y, P->y);
 		}
 		else if (!Q->inf){
-			result = new ECPoint(&Q->x, &Q->y);			
+			mpz_set(rs->x, Q->x);
+			mpz_set(rs->y, Q->y);
 		}
 		else{
-			result = new ECPoint();
-			result->inf = true;
-		}		
-		return result;
+			rs->inf = true;
+		}
 	}
 	else if (mpz_cmp(P->x, Q->x)==0){
 		if (mpz_cmp(P->y, Q->y)==0){
 			//two identical points
-			return dbl(P);
+			mpz_set(rs->x, P->x);
+			mpz_set(rs->y, P->y);
+			dbl(rs);
 		}
-		else{
-			result = new ECPoint();
-			result->inf = true;
-			return result;
+		else{			
+			rs->inf = true;			
 		}
 	}
 	else{
 		//compute the slope		
 		mpz_t s;
 		mpz_t denom;
+		mpz_t xR;
+		mpz_t yR;
 		
 		mpz_init_set(s, P->y);
 		mpz_sub(s, s, Q->y);
@@ -50,9 +51,7 @@ ECPoint* ECCurve::add(const ECPoint* P, const ECPoint* Q){
 		mpz_mul(s, s, denom);
 		mpz_mod(s, s, this->p);
 		
-		//compute R coordinate
-		mpz_t xR;
-		mpz_t yR;
+		//compute R coordinate	
 
 		//xR = s^2 - (xP + xQ)
 		mpz_init(xR);
@@ -68,16 +67,20 @@ ECPoint* ECCurve::add(const ECPoint* P, const ECPoint* Q){
 		mpz_sub(yR, yR, P->y);
 		mpz_mod(yR, yR, this->p);
 		
-		result = new ECPoint(&xR, &yR);
-		return result;
+		//-- set result
+		mpz_set(rs->x, xR);
+		mpz_set(rs->y, yR);		
+		
+		mpz_clear(s);
+		mpz_clear(denom);
+		mpz_clear(xR);
+		mpz_clear(yR);
 	}	
 }
 
-ECPoint* ECCurve::mul(const ECPoint* P, const mpz_t* k){
+void ECCurve::mul(ECPoint* rs, const ECPoint* P, const mpz_t* k){	
 	if (mpz_sgn(*k)==0){
-		ECPoint* result = new ECPoint();
-		result->inf=true;
-		return result;
+		rs->inf=true;		
 	}
 	else
 	{
@@ -98,71 +101,78 @@ ECPoint* ECCurve::mul(const ECPoint* P, const mpz_t* k){
 			mpz_fdiv_q_ui(tmp, tmp, 2);
 		}
 
-		ECPoint* result = new ECPoint();
-
 		while (mpz_sgn(b_inverse)>0 || bitlength){
 			bitlength--;		
-			result = dbl(result);
+			dbl(rs);
 			if (mpz_odd_p(b_inverse)){
-				result = add(result, P);
+				add(rs, rs, P);
 			}
 			mpz_fdiv_q_ui(b_inverse, b_inverse, 2);
 		}
-		return result;
+		
+		mpz_clear(b_inverse);
+		mpz_clear(tmp);
 	}
 }
 
-ECPoint* ECCurve::dbl(const ECPoint* P){	
+void ECCurve::dbl(ECPoint* rs){	
 	
-	ECPoint* result;
-	if (P->inf || mpz_sgn(P->y)==0){
-		result = new ECPoint();
-		result->inf = true;
-		return result;
+	if (rs->inf || mpz_sgn(rs->y)==0){
+		rs->inf = true;
 	}
 	else{		
 		//compute the slope
 		mpz_t s;
+		mpz_t denom;
+		mpz_t xR;
+		mpz_t yR;
+		
 		mpz_init(s);
-		mpz_powm_ui(s, P->x, 2, this->p);
+		mpz_powm_ui(s, rs->x, 2, this->p);
 		mpz_mul_ui(s, s, 3);
 		mpz_add(s, s, this->a4);
 		
-		mpz_t denom;
-		mpz_init_set(denom, P->y);
+		
+		mpz_init_set(denom, rs->y);
 		mpz_mul_ui(denom, denom, 2);
 		mpz_invert(denom, denom, this->p);
 		mpz_mul(s, s, denom);
 		
-		//compute xR and yR
-		mpz_t xR;
-		mpz_t yR;
-		
+		//compute xR and yR				
 		//xR = s^2 - 2xP
 		mpz_init(xR);
 		mpz_powm_ui(xR, s, 2, this->p);
-		mpz_sub(xR, xR, P->x);
-		mpz_sub(xR, xR, P->x);
+		mpz_sub(xR, xR, rs->x);
+		mpz_sub(xR, xR, rs->x);
 		mpz_mod(xR, xR, this->p);
 		
 		//yR = s(xP - xR) - yP
-		mpz_init_set(yR, P->x);
+		mpz_init_set(yR, rs->x);
 		mpz_sub(yR, yR, xR);
 		mpz_mul(yR, yR, s);
-		mpz_sub(yR, yR, P->y);
+		mpz_sub(yR, yR, rs->y);
 		mpz_mod(yR, yR, this->p);
 		
-		return new ECPoint(&xR, &yR);
+		mpz_set(rs->x, xR);
+		mpz_set(rs->y, yR);
+		
+		mpz_clear(s);
+		mpz_clear(denom);
+		mpz_clear(xR);
+		mpz_clear(yR);
 	}
 }
 
-ECPoint* ECCurve::opposite(const ECPoint* P){
+void ECCurve::opposite(ECPoint* rs, const ECPoint* P){
 	mpz_t sum;
 	mpz_init_set(sum, P->x);
 	mpz_add(sum, sum, P->y);
 	mpz_mod(sum, sum, this->p);
 	
-	return new ECPoint(&P->x, &sum);
+	mpz_set(rs->x, P->x);
+	mpz_set(rs->y, sum);
+	
+	mpz_clear(sum);
 }
 
 bool ECCurve::contains(const ECPoint* p){
@@ -170,8 +180,10 @@ bool ECCurve::contains(const ECPoint* p){
 		return true;	
 	}
 	else{
+		bool rs;
 		mpz_t x3;
 		mpz_t y2;
+		mpz_t y;
 		
 		mpz_init(x3);
 		mpz_powm_ui(x3, p->x, 3, this->p);
@@ -181,15 +193,21 @@ bool ECCurve::contains(const ECPoint* p){
 		mpz_add(y2,y2,x3);
 		mpz_mod(y2,y2,this->p);
 		
-		mpz_t y;
 		mpz_init(y);
 		mpz_powm_ui(y, p->y, 2, this->p);
-		return (mpz_cmp(y,y2)==0);
+		rs = (mpz_cmp(y,y2)==0);
+		
+		mpz_clear(x3);
+		mpz_clear(y2);
+		mpz_clear(y);
+		return rs;
 	}
 }
 
 int ECCurve::getRequestSecurityLength(){
-	int N = strlen(mpz_get_str(NULL,2,this->n));
+	char* displayedN = mpz_get_str(NULL,2,this->n);
+	int N = strlen(displayedN);
+	free(displayedN);
 	if (N>=512){
 		return 256;			
 	}
@@ -210,8 +228,11 @@ int ECCurve::getRequestSecurityLength(){
 	}
 }
 
-
 ECCurve::~ECCurve(){
+	mpz_clear(this->a4);
+	mpz_clear(this->a6);
+	mpz_clear(this->n);
+	mpz_clear(this->p);
 	delete this->g;
 }
 

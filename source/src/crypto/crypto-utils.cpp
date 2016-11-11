@@ -14,14 +14,15 @@ void generateRandomData(uint32_t length, uint8_t* data){
 }
 
 void generateRandomNumber(mpz_t* number, int securityParam){
-	mpz_init(*number);
 	int byteLen = securityParam/8;
-	uint8_t randomData[byteLen];	
+	uint8_t* randomData = (uint8_t*)malloc(byteLen);
+	printf("\nrandomNumber byteLen: %d", byteLen); fflush(stdout);
 	generateRandomData(byteLen, randomData);
 	for (int i=0;i<byteLen;i++){
-		mpz_mul_ui(*number, *number, 256);		
+		mpz_mul_ui(*number, *number, 256);
 		mpz_add_ui(*number, *number, randomData[i]);
-	}
+	}	
+	free(randomData);
 }
 
 std::string hexToString(const uint8_t* data, uint32_t len){

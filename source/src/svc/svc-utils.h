@@ -2,10 +2,10 @@
 #define __SVC_UTILS__
 
 	#include "../utils/MutexedQueue.h"
-	#include "../utils/Message.h"
 	#include "svc-header.h"
 		
 	#include <vector>
+	#include <cstring>
 
 	//--	class pre-declaration
 	class SVCPacket;
@@ -19,16 +19,17 @@
 	class SVCPacket{
 		public:
 			//-- public members
-			uint8_t packet[SVC_DEFAULT_BUFSIZ];
+			uint8_t* packet;
 			uint32_t dataLen;
 			
 			//-- constructors/destructors
 			
-			SVCPacket(){				
-				this->dataLen = 0;				
+			SVCPacket(){
+				packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);	
+				this->dataLen = 0;	
 			}
 			
-			SVCPacket(SVCPacket* packet){		
+			SVCPacket(SVCPacket* packet):SVCPacket(){		
 				if (packet!=NULL){
 					this->dataLen = packet->dataLen;
 					memcpy(this->packet, packet->packet, this->dataLen);
@@ -38,18 +39,19 @@
 				}
 			}
 			
-			SVCPacket(const uint8_t* buffer, uint32_t bufferLen){				
+			SVCPacket(const uint8_t* buffer, uint32_t bufferLen):SVCPacket(){				
 				this->dataLen = bufferLen;
 				memcpy(this->packet, buffer, this->dataLen);
 			}
 			
-			SVCPacket(uint64_t endpointID){
+			SVCPacket(uint64_t endpointID):SVCPacket(){
 				this->dataLen = SVC_PACKET_HEADER_LEN;
 				memset(this->packet, 0, this->dataLen);
 				memcpy(this->packet, &endpointID, ENDPOINTID_LENGTH);
 			}
 			
 			~SVCPacket(){
+				free(this->packet);
 			}
 			
 			bool isCommand(){
@@ -111,7 +113,7 @@
 	class PeriodicWorker{
 		private:
 			timer_t timer;
-			pthread_t worker;
+			//pthread_t worker;
 			volatile bool working;
 			void (*handler)(void*);
 			void* args;
@@ -120,6 +122,7 @@
 			static void* handling(void* args);
 			
 		public:
+			pthread_t worker;
 			PeriodicWorker(int interval, void (*handler)(void* args), void* args);
 			~PeriodicWorker();			
 			void stopWorking();
@@ -143,13 +146,14 @@
 			
 			//--	members
 			volatile bool working;
-			pthread_t processingThread;			
+						
 			
 			void* packetHandlerArgs;
 			SVCPacketProcessing packetHandler;
 			vector<CommandHandler> commandHandlerRegistra;
 						
 		public:
+			pthread_t processingThread;
 			//--	constructors/destructors
 			PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args);
 			virtual ~PacketHandler();
@@ -159,7 +163,7 @@
 			void notifyCommand(enum SVCCommand cmd, uint64_t endpointID);
 			
 			void stopWorking();
-			void waitStop();
+			int waitStop();
 	};
 	
 #endif

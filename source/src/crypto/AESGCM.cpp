@@ -185,7 +185,7 @@ AESGCM::~AESGCM(){
 	memset(this->hashSubKey, 0, BLOCK_SIZE); //--	securely remove the key by setting its value to 0
 }
 
-void AESGCM::encrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* data, uint32_t dataLen, const uint8_t* aad, uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){
+void AESGCM::encrypt(const uint8_t* iv, const uint32_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){
 	//--	1. H has been calculated before
 	//--	2. prepare blockJ	
 	prepBlockJ(iv, ivLen);
@@ -229,5 +229,7 @@ bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted
 	memcpy(tagT, blockS, tagLen);
 	
 	//--	6. return
-	return memcmp(tagT, tag, tagLen)==0;	
+	bool rs = memcmp(tagT, tag, tagLen)==0;
+	free(tagT);
+	return rs;
 }

@@ -19,4 +19,6 @@ ECPoint::ECPoint(const char* x_str, const char* y_str){
 }
 
 ECPoint::~ECPoint(){
+	mpz_clear(this->x);
+	mpz_clear(this->y);
 }

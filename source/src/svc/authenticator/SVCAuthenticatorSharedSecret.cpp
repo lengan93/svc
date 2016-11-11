@@ -24,7 +24,9 @@ SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){
 	this->sha256 = new SHA256();
 }
 
-SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){	
+SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){
+	delete this->aesGCM;
+	delete this->sha256;
 }
 
 string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSecret){

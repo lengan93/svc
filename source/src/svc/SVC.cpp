@@ -298,8 +298,8 @@ SVCEndpoint::SVCEndpoint(SVC* svc, bool isInitiator){
 void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;
 
-	static uint8_t param[SVC_DEFAULT_BUFSIZ]="";
-	static uint16_t paramLen;
+	uint8_t param[SVC_DEFAULT_BUFSIZ]="";
+	uint16_t paramLen;
 	
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 

@@ -7,7 +7,6 @@
 	#include "host/SVCHost.h"
 	#include "authenticator/SVCAuthenticator.h"
 	
-	#include "../utils/Message.h"
 	#include "../utils/MutexedQueue.h"
 	#include "../crypto/SHA256.h"
 	#include "../crypto/crypto-utils.h"
