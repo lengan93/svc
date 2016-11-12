@@ -28,7 +28,7 @@
 
 	//--	block and wait for the presence of a signal
 	//--	return FALSE if the waiting is interrupted by a SIGINT
-	static inline bool waitSignal(int waitingSignal){		
+	inline bool waitSignal(int waitingSignal){		
 		//block the waiting signal		
 		sigset_t sig;
 		//sigset_t oldset;
@@ -40,7 +40,7 @@
 
 	//--	timeoutSignal and waitingSignal must be differrent, otherwise the behavior is undefined
 	//--	return TRUE if caught signal is correct, otherwise return FALSE
-	static inline bool waitSignal(int waitingSignal, int timeout){
+	inline bool waitSignal(int waitingSignal, int timeout){
 		sigset_t sig;
 		sigemptyset(&sig);
 		sigaddset(&sig, waitingSignal);

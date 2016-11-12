@@ -132,6 +132,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	this->aesgcm = NULL;
 	this->curve = NULL;
 	this->encryptedECPoint = NULL;
+	this->encryptedProof = NULL;
 	
 	//-- create dmn unix socket, bind 
 	this->dmnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -255,6 +256,7 @@ void DaemonEndpoint::shutdown(){
 			
 	//-- remove instances
 	mpz_clear(this->randomX);
+	if (this->encryptedProof!=NULL) delete this->encryptedProof;
 	if (this->encryptedECPoint!=NULL) delete this->encryptedECPoint;
 	delete this->aesgcm;
 	delete this->curve;		
@@ -793,7 +795,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 							printf("\naesgcm decrypt failed connect inner 5");
 							delete packet;
 						}
-						delete _this->encryptedProof;
+						
 						free(decrypted);
 					}
 					else{
@@ -1164,6 +1166,7 @@ int main(int argc, char** argv){
     
     //-- handle SIGINT
 	struct sigaction act;
+	act.sa_flags = 0;
 	act.sa_handler = signal_handler;
 	sigfillset(&act.sa_mask);
 	sigdelset(&act.sa_mask, SIGINT);

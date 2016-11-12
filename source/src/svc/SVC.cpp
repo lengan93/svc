@@ -57,6 +57,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 		errorString = SVC_ERROR_CRITICAL;
 		goto error;
 	}
+	printf("\nsvc readingThread create with thread: 0x%08X", (void*)this->readingThread); fflush(stdout);
 	
 	//-- connect to daemon socket
 	memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
@@ -71,6 +72,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 		errorString = SVC_ERROR_CRITICAL;
 		goto error;
 	}
+	printf("\nsvc writingThread create with thread: 0x%08X", (void*)this->writingThread); fflush(stdout);
 		
 	goto success;
 	
@@ -83,9 +85,10 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 	success:
 		this->endpoints.clear();				
 		this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_incoming_packet_handler, this);
-		//printf("\nSVC incomingPacketHandler create: 0x%08X", (void*)this->incomingPacketHandler); fflush(stdout);	
+		printf("\nSVC incomingPacketHandler create with thread: 0x%08X", (void*)this->incomingPacketHandler->processingThread); fflush(stdout);	
+		
 		this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_outgoing_packet_handler, this);
-		//printf("\nSVC outgoingPacketHandler create: 0x%08X", (void*)this->outgoingPacketHandler); fflush(stdout);		
+		printf("\nSVC outgoingPacketHandler create with thread: 0x%08X", (void*)this->outgoingPacketHandler->processingThread); fflush(stdout);		
 }
 
 void SVC::shutdown(){
@@ -461,9 +464,11 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 		if (pthread_create(&this->readingThread, &attr, svc_endpoint_reading_loop, this) !=0){
 			return -1;
 		}
+		printf("\nendpoint readingThread create with thread: 0x%08X", (void*)this->readingThread); fflush(stdout);
+		
 		//-- create a packet handler to process incoming packets		
 		this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_endpoint_incoming_packet_handler, this);
-		//printf("\nsvc endpoint incomingPacketHandler created: 0x%08X", this->incomingPacketHandler); fflush(stdout);
+		printf("\nsvc endpoint incomingPacketHandler created with thread: 0x%08X", (void*)this->incomingPacketHandler->processingThread); fflush(stdout);
 		return 0;
 	}
 }
@@ -484,9 +489,13 @@ int SVCEndpoint::connectToDaemon(){
 			this->writingThread = 0;
 			return -1;
 		}
+		else{
+			printf("\nendpoint writingThread create with thread: 0x%08X", (void*)this->writingThread); fflush(stdout);
+		}
+		
 		//-- create a packet handler to process incoming packets		
 		this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_endpoint_outgoing_packet_handler, this);
-		//printf("\nconnect to Daemon success"); fflush(stdout);
+		printf("\nsvc endpoint outgoingPacketHandler created with thread: 0x%08X", (void*)this->outgoingPacketHandler->processingThread); fflush(stdout);
 		return 0;
 	}
 }
@@ -568,25 +577,47 @@ void SVCEndpoint::shutdown(){
 		this->outgoingQueue.enqueue(packet);
 	
 		this->working = false;
+		int joinrs;
 		//-- do not receive data anymore
-		if (this->readingThread !=0) pthread_join(this->readingThread, NULL);
+		if (this->readingThread !=0) {
+			joinrs = pthread_join(this->readingThread, NULL);
+			if (joinrs!=0){
+				printf("\njoinning endpoint readingThread failed: %d", joinrs); fflush(stdout);
+			}
+		}
+		printf("\nsvc reading thread stopped");	fflush(stdout);
 				
 		//-- process residual packets
 		if (this->incomingPacketHandler != NULL){
 			this->incomingPacketHandler->stopWorking();
-			this->incomingPacketHandler->waitStop();
+			joinrs = this->incomingPacketHandler->waitStop();
+			if (joinrs!=0){
+				printf("\njoinning endpoint incomingPacketHandler failed: %d", joinrs); fflush(stdout);
+			}
 			delete this->incomingPacketHandler;
 		}
+		printf("\nsvc incomingPacketHandler stopped");	fflush(stdout);
 		
 		//-- send out residual packets
 		if (this->outgoingPacketHandler != NULL){
 			this->outgoingPacketHandler->stopWorking();
-			this->outgoingPacketHandler->waitStop();
+			joinrs = this->outgoingPacketHandler->waitStop();
+			if (joinrs!=0){
+				printf("\njoinning endpoint outgoingPacketHandler failed: %d", joinrs); fflush(stdout);
+			}
 			delete this->outgoingPacketHandler;
-		}
+		}		
+		printf("\nsvc outgoingPacketHandler stopped");	fflush(stdout);
 		
 		//-- stop writing		
-		if (this->writingThread !=0) pthread_join(this->writingThread, NULL);
+		if (this->writingThread !=0) {
+			joinrs = pthread_join(this->writingThread, NULL);
+			if (joinrs!=0){
+				printf("\njoinning endpoint writingThread failed: %d", joinrs); fflush(stdout);
+			}
+		}
+		printf("\nsvc writing thread stopped");	fflush(stdout);
+		
 		unlink(this->endpointSockPath.c_str());
 		
 		//-- remove queues and created instances		
