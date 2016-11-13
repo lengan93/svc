@@ -1,47 +1,32 @@
 #ifndef __TOM_PERIODIC_WORKER__
 #define __TOM_PERIODIC_WORKER__
 
-	#include "utils-functions.h"
-
-	#define PERIODIC_SIGNAL SIGALRM
-
+	#include <csignal>		//-- for signal
+	#include <sys/time.h>	//-- for time
+	
 	class PeriodicWorker{
 		private:
-			timer_t timer;
+			//timer_t timer;
 			pthread_t worker;
 			volatile bool working;
 			void (*handler)(void*);
 			void* args;
-			int interval;
+			struct timespec loopTime;
+			sigset_t sigset;
 			
 			static void* handling(void* args){
-				PeriodicWorker* pw = (PeriodicWorker*)args;
-				
-				struct sigevent evt;
-				evt.sigev_notify = SIGEV_SIGNAL;
-				evt.sigev_signo = PERIODIC_SIGNAL;
-				evt.sigev_notify_thread_id = pthread_self();
-				timer_create(CLOCK_REALTIME, &evt, &pw->timer);
-
-				struct itimerspec time;
-				time.it_interval.tv_sec=pw->interval/1000;
-				time.it_interval.tv_nsec=(pw->interval - time.it_interval.tv_sec*1000)*1000000;
-				time.it_value.tv_sec=pw->interval/1000;
-				time.it_value.tv_nsec=(pw->interval - time.it_value.tv_sec*1000)*1000000;
-				timer_settime(pw->timer, 0, &time, NULL);		
-				
-				bool waitrs;
-				while (pw->working){
-					//--	wait signal then perform handler
-					waitrs = waitSignal(PERIODIC_SIGNAL);
-					if (waitrs){
-						//--	perform handler
-						pw->handler(pw->args);
+				PeriodicWorker* _this = (PeriodicWorker*)args;								
+				int waitrs;
+				while (_this->working){
+					//--	waitrs will normally return -1, otherwise SIGINT
+					waitrs = sigtimedwait(&_this->sigset, NULL, &_this->loopTime);
+					if (waitrs == -1){
+						//--	perform handler						
+						_this->handler(_this->args);
 					}
 					else{
-						//--	SIGINT caught
-						printf("\nperiodic worker got SIGINT, stop working");
-						pw->stopWorking();
+						//--	SIGINT caught	
+						_this->stopWorking();
 					}
 				}
 			}
@@ -49,23 +34,27 @@
 		public:			
 			~PeriodicWorker(){}				
 			
-			PeriodicWorker(int interval, void (*handler)(void* args), void* args){
-				this->interval = interval;
+			PeriodicWorker(int interval, void (*handler)(void* args), void* args){			
 				this->working = true;
 				this->handler = handler;
 				this->args = args;
 				
+				this->loopTime.tv_sec = interval/1000;
+				this->loopTime.tv_nsec = (interval-this->loopTime.tv_sec*1000)/1000000;
+				sigemptyset(&this->sigset);
+				sigaddset(&this->sigset, SIGINT);
+				
 				pthread_attr_t threadAttr;
 				pthread_attr_init(&threadAttr);
-				pthread_create(&this->worker, &threadAttr, handling, this);
+				pthread_create(&this->worker, &threadAttr, handling, this);				
+			}
+			
+			int waitStop(){
+				return pthread_join(this->worker, NULL);
 			}
 			
 			void stopWorking(){
-				//--	disarm automatic
-				working = false;
-				pthread_join(this->worker, NULL);
-				timer_delete(this->timer);
-				printf("\nperiodic worker stopped");
+				working = false;				
 			}
 	};
 #endif

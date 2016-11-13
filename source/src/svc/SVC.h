@@ -11,6 +11,7 @@
 	#include "../crypto/SHA256.h"
 	#include "../crypto/crypto-utils.h"
 	
+	#include <csignal>
 	#include <sys/un.h>
 	#include <sys/socket.h>	
 	#include <unordered_map>

@@ -15,8 +15,7 @@ void generateRandomData(uint32_t length, uint8_t* data){
 
 void generateRandomNumber(mpz_t* number, int securityParam){
 	int byteLen = securityParam/8;
-	uint8_t* randomData = (uint8_t*)malloc(byteLen);
-	printf("\nrandomNumber byteLen: %d", byteLen); fflush(stdout);
+	uint8_t* randomData = (uint8_t*)malloc(byteLen);	
 	generateRandomData(byteLen, randomData);
 	for (int i=0;i<byteLen;i++){
 		mpz_mul_ui(*number, *number, 256);

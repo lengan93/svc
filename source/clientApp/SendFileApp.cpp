@@ -14,8 +14,7 @@ int main(int argc, char** argv){
 	SVC* svc = NULL;
 	
 	try{
-		svc = new SVC(appID, authenticator);
-		
+		svc = new SVC(appID, authenticator);		
 		SVCEndpoint* endpoint = svc->establishConnection(remoteHost);
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
@@ -28,13 +27,13 @@ int main(int argc, char** argv){
 				printf("\nCannot establish connection!");
 			}
 			delete endpoint;
-		}		
-		delete svc;
+		}				
 	}
 	catch (const char* str){
 		printf("\nError: %s\n", str);
 	}
 	
+	delete svc;
 	delete authenticator;
 	delete remoteHost;
 		

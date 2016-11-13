@@ -110,32 +110,27 @@
 			}
 	};
 	
-	class PeriodicWorker{
-		private:
-			timer_t timer;
-			//pthread_t worker;
-			volatile bool working;
-			void (*handler)(void*);
-			void* args;
-			int interval;
-			
-			static void* handling(void* args);
-			
-		public:
-			pthread_t worker;
-			PeriodicWorker(int interval, void (*handler)(void* args), void* args);
-			~PeriodicWorker();			
-			void stopWorking();
-			void waitStop();
-	};
-	
 	class PacketHandler{
 	
 		class CommandHandler{
 			public:
 				uint64_t endpointID;
 				enum SVCCommand cmd;
-				pthread_t waitingThread;			
+				pthread_mutex_t waitingMutex;
+				pthread_cond_t waitingCond;
+			
+				CommandHandler(){
+					pthread_mutexattr_t mutexAttr;
+					pthread_condattr_t condAttr;
+					
+					pthread_mutexattr_init(&mutexAttr);
+					pthread_mutex_init(&this->waitingMutex, &mutexAttr);				
+					pthread_condattr_init(&condAttr);
+					pthread_cond_init(&this->waitingCond, &condAttr); 
+				}
+				
+				~CommandHandler(){
+				}
 		};
 		
 		private:
@@ -150,7 +145,7 @@
 			
 			void* packetHandlerArgs;
 			SVCPacketProcessing packetHandler;
-			vector<CommandHandler> commandHandlerRegistra;
+			vector<CommandHandler*> commandHandlerRegistra;
 						
 		public:
 			pthread_t processingThread;

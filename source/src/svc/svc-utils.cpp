@@ -6,52 +6,6 @@ bool isEncryptedCommand(enum SVCCommand command){
 	return (command == SVC_CMD_CONNECT_OUTER3);
 }
 
-//--	PERIODIC WORKER
-PeriodicWorker::PeriodicWorker(int interval, void (*handler)(void*), void* args){
-	this->interval = interval;
-	this->working = true;
-	this->handler = handler;
-	this->args = args;
-	
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	this->worker = -1;
-	if (pthread_create(&this->worker, &attr, handling, this) !=0){
-		throw SVC_ERROR_CRITICAL;
-	}
-}
-void PeriodicWorker::stopWorking(){
-	//--	disarm automatic
-	if (this->working){
-		this->working = false;
-	}
-}
-
-void* PeriodicWorker::handling(void* args){
-	
-	PeriodicWorker* _this = (PeriodicWorker*)args;
-	
-	while (_this->working){
-		//--	wait signal then perform handler
-		if (waitSignal(SIGINT, _this->interval)){
-			//--	SIGINT caught
-			_this->stopWorking();			
-		}
-		else{
-			//--	perform handler		
-			_this->handler(_this->args);
-		}
-	}
-}
-
-void PeriodicWorker::waitStop(){	
-	if (this->worker != -1) pthread_join(this->worker, NULL);
-}
-
-PeriodicWorker::~PeriodicWorker(){
-	//printf("\nperiodic worker stopped"); fflush(stdout);
-}
-
 //--	PACKET HANDLER CLASS	--//
 PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args){
 	this->packetHandler = handler;
@@ -85,26 +39,51 @@ void PacketHandler::stopWorking(){
 }
 
 bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout){
-	struct CommandHandler handler;	
-	handler.waitingThread = pthread_self();
-	handler.cmd = cmd;
-	handler.endpointID = endpointID;
+	CommandHandler* handler = new CommandHandler();		
+	handler->cmd = cmd;
+	handler->endpointID = endpointID;
 	this->commandHandlerRegistra.push_back(handler);
 	
+	int rs;
+	pthread_mutex_lock(&handler->waitingMutex);
 	//-- suspend the calling thread until the correct command is received or the timer expires
-	if (timeout>0){
-		return waitSignal(QUEUE_DATA_SIGNAL, timeout);
+	
+	if (timeout<0){
+		rs = pthread_cond_wait(&handler->waitingCond, &handler->waitingMutex);
+		//printf("\nwaitCommand -1 return rs: %d, ETIMEDOUT %d, EPERM %d", rs, ETIMEDOUT, EPERM); fflush(stdout);
 	}
-	else{
-		return waitSignal(QUEUE_DATA_SIGNAL);
+	else{						
+		struct timespec timeoutSpec;
+		clock_gettime(CLOCK_REALTIME, &timeoutSpec);
+		//-- add timeout to timeoutSpec
+		uint32_t addedSec = timeout/1000;
+		uint32_t addedNsec = (timeout%1000)*1000000;
+		if (addedNsec + timeoutSpec.tv_nsec >= 1000000000){
+			timeoutSpec.tv_nsec = addedNsec + timeoutSpec.tv_nsec - 1000000000;
+			addedSec +=1;
+		}
+		else{
+			timeoutSpec.tv_nsec = addedNsec + timeoutSpec.tv_nsec;
+		}
+		timeoutSpec.tv_sec += addedSec;
+		rs = pthread_cond_timedwait(&handler->waitingCond, &handler->waitingMutex, &timeoutSpec);
+		//printf("\nwaitCommand timeout return rs: %d, ETIMEDOUT %d, EPERM %d", rs, ETIMEDOUT, EPERM); fflush(stdout);
 	}
+	pthread_mutex_unlock(&handler->waitingMutex);
+	delete handler;
+	
+	return rs==0;
 }
 
 void PacketHandler::notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
 
 	for (int i=0;i<this->commandHandlerRegistra.size(); i++){
-		if ((this->commandHandlerRegistra[i].cmd == cmd) && (this->commandHandlerRegistra[i].endpointID == endpointID)){								
-			pthread_kill(this->commandHandlerRegistra[i].waitingThread, QUEUE_DATA_SIGNAL);
+		CommandHandler* handler = this->commandHandlerRegistra[i];
+		if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){											
+			//printf("\nnotifying command %d", cmd); fflush(stdout);
+			pthread_mutex_lock(&handler->waitingMutex);
+			pthread_cond_signal(&handler->waitingCond);
+			pthread_mutex_unlock(&handler->waitingMutex);
 			//-- remove the handler
 			this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);
 			break;
@@ -130,7 +109,7 @@ void* PacketHandler::processingLoop(void* args){
 		}
 		//else{//--TODO: can count dequeue fails to predict the network status}
 	}
-	printf("\nthread 0x%08X stopped", (void*)pthread_self()); fflush(stdout);
+	//printf("\nthread 0x%08X stopped", (void*)pthread_self()); fflush(stdout);
 	pthread_exit(EXIT_SUCCESS);
 }
 
