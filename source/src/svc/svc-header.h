@@ -54,8 +54,8 @@
 	#define SVC_NORMAL_PRIORITY					0x01
 	#define SVC_LOW_PRIORITY					0x00
 	
-	static std::string SVC_DAEMON_PATH = 			"/tmp/svc-daemon";
-	static std::string SVC_CLIENT_PATH_PREFIX = 	"/tmp/svc-client-";
+	static std::string SVC_DAEMON_PATH = 				"/tmp/svc-daemon";
+	static std::string SVC_CLIENT_PATH_PREFIX = 		"/tmp/svc-client-";
 	static std::string SVC_ENDPOINT_APP_PATH_PREFIX = 	"/tmp/svc-endpoint-a";
 	static std::string SVC_ENDPOINT_DMN_PATH_PREFIX = 	"/tmp/svc-endpoint-d";
 

@@ -22,8 +22,7 @@ PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketPr
 }
 
 PacketHandler::~PacketHandler(){
-	stopWorking();
-	//printf("\npacket handler destructed"); fflush(stdout);
+	stopWorking();	
 }
 
 int PacketHandler::waitStop(){	
@@ -46,11 +45,9 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int ti
 	
 	int rs;
 	pthread_mutex_lock(&handler->waitingMutex);
-	//-- suspend the calling thread until the correct command is received or the timer expires
-	
+	//-- suspend the calling thread until the correct command is received or the timer expires	
 	if (timeout<0){
-		rs = pthread_cond_wait(&handler->waitingCond, &handler->waitingMutex);
-		//printf("\nwaitCommand -1 return rs: %d, ETIMEDOUT %d, EPERM %d", rs, ETIMEDOUT, EPERM); fflush(stdout);
+		rs = pthread_cond_wait(&handler->waitingCond, &handler->waitingMutex);		
 	}
 	else{						
 		struct timespec timeoutSpec;
@@ -67,7 +64,6 @@ bool PacketHandler::waitCommand(enum SVCCommand cmd, uint64_t endpointID, int ti
 		}
 		timeoutSpec.tv_sec += addedSec;
 		rs = pthread_cond_timedwait(&handler->waitingCond, &handler->waitingMutex, &timeoutSpec);
-		//printf("\nwaitCommand timeout return rs: %d, ETIMEDOUT %d, EPERM %d", rs, ETIMEDOUT, EPERM); fflush(stdout);
 	}
 	pthread_mutex_unlock(&handler->waitingMutex);
 	delete handler;
@@ -79,8 +75,7 @@ void PacketHandler::notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
 
 	for (int i=0;i<this->commandHandlerRegistra.size(); i++){
 		CommandHandler* handler = this->commandHandlerRegistra[i];
-		if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){											
-			//printf("\nnotifying command %d", cmd); fflush(stdout);
+		if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){														
 			pthread_mutex_lock(&handler->waitingMutex);
 			pthread_cond_signal(&handler->waitingCond);
 			pthread_mutex_unlock(&handler->waitingMutex);
@@ -101,15 +96,13 @@ void* PacketHandler::processingLoop(void* args){
 	while (_this->working || _this->readingQueue->notEmpty()){	
 		packet = _this->readingQueue->dequeueWait(1000);
 		//-- process the packet
-		if (packet!=NULL){			
-			//printf("\npacket handler 0x%08X process a packet: ", (void*)_this); printBuffer(packet->packet, packet->dataLen);
+		if (packet!=NULL){						
 			if (_this->packetHandler!=NULL){
 				_this->packetHandler(packet, _this->packetHandlerArgs);
 			}						
 		}
 		//else{//--TODO: can count dequeue fails to predict the network status}
-	}
-	//printf("\nthread 0x%08X stopped", (void*)pthread_self()); fflush(stdout);
+	}	
 	pthread_exit(EXIT_SUCCESS);
 }
 

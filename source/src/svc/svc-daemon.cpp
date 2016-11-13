@@ -153,19 +153,13 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		pthread_attr_t attr;
 		pthread_attr_init(&attr);
 		if (pthread_create(&this->unixReadingThread, &attr, daemon_endpoint_unix_reading_loop, this) !=0){
-			error = SVC_ERROR_CRITICAL;
-			pthread_attr_destroy(&attr);
+			error = SVC_ERROR_CRITICAL;			
 			goto endpoint_error;
 		}
-		else{
-			pthread_attr_destroy(&attr);
-		}
-		//printf("\ndaemon endpoint unixReadingThread create with thread: 0x%08X", (void*)this->unixReadingThread); fflush(stdout);
+		
 		//-- create a packet handler
-		this->unixIncomingPacketHandler = new PacketHandler(&this->unixIncomingQueue, daemon_endpoint_unix_incoming_packet_handler, this);
-		//printf("\ndaemon endpoint unixIncomingPacketHandler create with thread: 0x%08X", (void*)this->unixIncomingPacketHandler->processingThread); fflush(stdout);
+		this->unixIncomingPacketHandler = new PacketHandler(&this->unixIncomingQueue, daemon_endpoint_unix_incoming_packet_handler, this);		
 		this->unixOutgoingPacketHandler = new PacketHandler(&this->unixOutgoingQueue, daemon_endpoint_unix_outgoing_packet_handler, this);
-		//printf("\ndaemon endpoint unixOutgoingPacketHandler create with thread: 0x%08X", (void*)this->unixOutgoingPacketHandler->processingThread); fflush(stdout);
 		goto endpoint_success;
 	}
 	
@@ -189,71 +183,44 @@ void DaemonEndpoint::shutdown(){
 	
 	//-- stop reading packets
 	if (this->unixReadingThread!=0){
-		joinrs = pthread_join(this->unixReadingThread, NULL);
-		//if (joinrs != 0){
-			//printf("\npthread_join on unixReadingThread failed with: %d", joinrs); fflush(stdout);
-		//}
+		joinrs = pthread_join(this->unixReadingThread, NULL);		
 	}
-	//printf("\nunixReadingThread stopped"); fflush(stdout);
 	
 	//-- process residual incoming packets
 	if (this->unixIncomingPacketHandler!=NULL){
 		this->unixIncomingPacketHandler->stopWorking();
-		joinrs = this->unixIncomingPacketHandler->waitStop();
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on unixIncomingPacketHandler failed with: %d", joinrs); fflush(stdout);
-		//}
+		joinrs = this->unixIncomingPacketHandler->waitStop();		
 		delete this->unixIncomingPacketHandler;
 	}
-	//printf("\nunixIncomingPacketHandler stopped"); fflush(stdout);
 	
 	if (this->inetIncomingPacketHandler!=NULL){
 		this->inetIncomingPacketHandler->stopWorking();
-		joinrs = this->inetIncomingPacketHandler->waitStop();
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on inetIncomingPacketHandler failed with: %d", joinrs); fflush(stdout);
-		//}
+		joinrs = this->inetIncomingPacketHandler->waitStop();		
 		delete this->inetIncomingPacketHandler;
 	}
-	//printf("\ninetIncomingPacketHandler stopped"); fflush(stdout);
 	
 	//-- process residual outgoing packets
 	if (this->unixOutgoingPacketHandler!=NULL){
 		this->unixOutgoingPacketHandler->stopWorking();
-		joinrs = this->unixOutgoingPacketHandler->waitStop();
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on unixOutgoingPacketHandler failed with: %d", joinrs); fflush(stdout);
-		//}
+		joinrs = this->unixOutgoingPacketHandler->waitStop();		
 		delete this->unixOutgoingPacketHandler;
 	}
-	//printf("\nunixOutgoingPacketHandler stopped"); fflush(stdout);
 	
 	if (this->inetOutgoingPacketHandler!=NULL){
 		this->inetOutgoingPacketHandler->stopWorking();
 		joinrs = this->inetOutgoingPacketHandler->waitStop();
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on inetOutgoingPacketHandler failed with: %d", joinrs); fflush(stdout);
-		//}
 		delete this->inetOutgoingPacketHandler;
 	}			
-	//printf("\ninetOutgoingPacketHandler stopped"); fflush(stdout);
 
 	//-- stop sending packets
 	if (this->unixWritingThread!=0){
-		joinrs = pthread_join(this->unixWritingThread, NULL);
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on unixWritingThread failed with: %d", joinrs); fflush(stdout);
-		//}
+		joinrs = pthread_join(this->unixWritingThread, NULL);		
 	}
-	//printf("\nunixWritingThread stopped"); fflush(stdout);
+	
 	
 	if (this->inetWritingThread!=0){
 		joinrs = pthread_join(this->inetWritingThread, NULL);
-		//if (joinrs != 0){
-		//	//printf("\npthread_join on inetWritingThread failed with: %d", joinrs); fflush(stdout);
-		//}
-	}
-	//printf("\ninetWritingThread stopped"); fflush(stdout);
+	}	
 	unlink(this->dmnSockPath.c_str());
 			
 	//-- remove instances
@@ -278,12 +245,10 @@ int DaemonEndpoint::connectToAppSocket(){
 	appSockAddr.sun_family = AF_LOCAL;
 	memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
 	if (connect(this->dmnSocket, (struct sockaddr*) &appSockAddr, sizeof(appSockAddr)) == 0){
-		//-- start daemon endpoint unix writing
-		//printf("\ndaemon endpoint connected to app endpoint");
+		//-- start daemon endpoint unix writing		
 		pthread_attr_t attr;
 		pthread_attr_init(&attr);
-		if (pthread_create(&this->unixWritingThread, &attr, daemon_endpoint_unix_writing_loop, this) == 0 ){
-			//printf("\ndaemon endpoint unixWritingThread create with thread: 0x%08X", (void*)this->unixWritingThread); fflush(stdout);
+		if (pthread_create(&this->unixWritingThread, &attr, daemon_endpoint_unix_writing_loop, this) == 0 ){			
 			rs = 0;
 		}
 		else{
@@ -291,8 +256,7 @@ int DaemonEndpoint::connectToAppSocket(){
 		}
 		pthread_attr_destroy(&attr);
 	}
-	else{
-		//printf("\nconnectToAppSocket connect fail"); fflush(stdout);
+	else{		
 		rs = -1;
 	}
 	return rs;
@@ -301,15 +265,12 @@ int DaemonEndpoint::connectToAppSocket(){
 int DaemonEndpoint::startInetHandlingRoutine(){
 	int rs;
 	//-- create packethandler for inet outgoing packet and writing thread
-	this->inetOutgoingPacketHandler = new PacketHandler(&this->inetOutgoingQueue, daemon_endpoint_inet_outgoing_packet_handler, this);
-	//printf("\ndaemon endpoint inetOutgoingPacketHandler create with thread: 0x%08X", (void*)this->inetOutgoingPacketHandler->processingThread); fflush(stdout);
+	this->inetOutgoingPacketHandler = new PacketHandler(&this->inetOutgoingQueue, daemon_endpoint_inet_outgoing_packet_handler, this);	
 	this->inetIncomingPacketHandler = new PacketHandler(&this->inetIncomingQueue, daemon_endpoint_inet_incoming_packet_handler, this);
-	//printf("\ndaemon endpoint inetIncomingPacketHandler create with thread: 0x%08X", (void*)this->inetIncomingPacketHandler->processingThread); fflush(stdout);
 	
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
 	if (pthread_create(&this->inetWritingThread, &attr, daemon_endpoint_inet_writing_loop, this) == 0){
-		//printf("\ndaemon endpoint inetWritingThread create with thread: 0x%08X", (void*)this->inetWritingThread); fflush(stdout);
 		rs = 0;
 	}
 	else{
@@ -350,7 +311,6 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 			//-- TODO: check send result here
 		};
 	}
-	//printf("\ndaemon_endpoint_inet_writing_loop thread stopped : 0x%08X", (void*)pthread_self());
 	pthread_exit(EXIT_SUCCESS);
 }
 
@@ -377,12 +337,10 @@ void* DaemonEndpoint::daemon_endpoint_unix_reading_loop(void* args){
 		}
 		while((readrs==-1) && _this->working);
 		
-		if (readrs>0){
-			//printf("\ndaemon endpoint unix read packet: "); printBuffer(buffer, readrs); fflush(stdout);
+		if (readrs>0){	
 			_this->unixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
 		}
 	}
-	//printf("\ndaemon_endpoint_unix_reading_loop thread stopped : 0x%08X", (void*)pthread_self());
 	pthread_exit(EXIT_SUCCESS);
 }
 
@@ -393,12 +351,10 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 	while (_this->working || _this->unixOutgoingQueue.notEmpty() || _this->unixToBeSentQueue.notEmpty()){		
 		packet = _this->unixToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
-			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
-			//printf("\ndaemon endpoint send packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);			
 			delete packet;		
 		}
 	}
-	//printf("\ndaemon_endpoint_unix_writing_loop thread stopped : 0x%08X", (void*)pthread_self());
 	pthread_exit(EXIT_SUCCESS);
 }
 
@@ -422,54 +378,42 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 		switch (cmd){
-			case SVC_CMD_CONNECT_OUTER2:
-				//printf("\nSVC_CMD_CONNECT_OUTER2 received"); fflush(stdout);				
+			case SVC_CMD_CONNECT_OUTER2:			
 				//-- pop encrypted proof
 				packet->popCommandParam(param, &paramLen);
 				_this->encryptedProof = new SVCPacket(param, paramLen);			
 				packet->popCommandParam(param, &paramLen);
 				_this->encryptedECPoint = new SVCPacket(param, paramLen);
 		
-				//-- change command to INNER_4
-				//printf("\nchange command to SVC_CMD_CONNECT_INNER4: %d", SVC_CMD_CONNECT_INNER4); fflush(stdout);
+				//-- change command to INNER_4				
 				packet->switchCommand(SVC_CMD_CONNECT_INNER4);
 				//-- app svc is still waiting for the 'old' endpointID, push the current endpointID as new param
 				packet->pushCommandParam(packet->packet, ENDPOINTID_LENGTH);
 				//-- clear the 6&7 byte of endpointID
 				packet->packet[6]=0x00;
-				packet->packet[7]=0x00;
-				//printf("\nSVC_CMD_CONNECT_INNER4 to be enqueued: ");
-				//printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+				packet->packet[7]=0x00;				
 				_this->unixOutgoingQueue.enqueue(packet);	
 				break;
 			
-			case SVC_CMD_CONNECT_OUTER3:
-				//printf("\nSVC_CMD_CONNECT_OUTER3 received"); fflush(stdout);
+			case SVC_CMD_CONNECT_OUTER3:				
 				//-- decrypt solution proof
 				packet->popCommandParam(param, &paramLen);
 				iv = param+2;
 				ivLen = *((uint16_t*)param);
-				//printf("\nreceived iv : "); printBuffer((uint8_t*)iv, ivLen);
 				encrypted = param + 4 + ivLen;
-				encryptedLen = *((uint16_t*)(param + 2 + ivLen));		
-				//printf("\nreceived encrypted proof: "); printBuffer(encrypted, encryptedLen);
+				encryptedLen = *((uint16_t*)(param + 2 + ivLen));						
 				tag = param + 6 + ivLen + encryptedLen;
-				tagLen = *((uint16_t*)(param + 4 + ivLen + encryptedLen));
-				//printf("\nreceived tag : "); printBuffer(tag, tagLen);		
+				tagLen = *((uint16_t*)(param + 4 + ivLen + encryptedLen));				
 
-				if (_this->aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &data, &dataLen)){
-					//printf("\ndecrypted success"); fflush(stdout);
-					//-- solution proof decrypted succeeded by aesgcm
-					//printf("\nsolution proof decrypted: %s", string((char*)data, dataLen).c_str()); fflush(stdout);
+				if (_this->aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &data, &dataLen)){					
+					//-- solution proof decrypted succeeded by aesgcm					
 					//-- forward CONNECT_INNER8 to app
 					packet->switchCommand(SVC_CMD_CONNECT_INNER8);
 					packet->pushCommandParam(data, dataLen);
-					_this->unixOutgoingQueue.enqueue(packet);
-					//printf("\nsend this CONNECT_INNER8 to app");
+					_this->unixOutgoingQueue.enqueue(packet);					
 				}
 				else{
-					delete packet;
-					//printf("\naesgcm decrypt failed connect inner 7");
+					delete packet;					
 				}
 				free(data);
 				break;
@@ -533,14 +477,12 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 		switch (cmd){			
 		
 			case SVC_CMD_SHUTDOWN_ENDPOINT:
-				//printf("\nSVC_SHUTDOWN_ENDPOINT received for: "); printBuffer((uint8_t*) &_this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 				delete packet;
 				_this->working = false;
 				break;
 			
 			case SVC_CMD_CONNECT_INNER1:
-				if (!_this->isAuth){					
-					//printf("\nSVC_CMD_CONNECT_INNER1 received"); fflush(stdout);	
+				if (!_this->isAuth){										
 					//-- extract remote address
 					packet->popCommandParam(param, &paramLen);		
 					_this->connectToAddress(*((uint32_t*)param));			
@@ -551,7 +493,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					stringToHex(hashValue, aeskey); //AES key is guaranteed to be 256 bits length
 					if (aes256!=NULL) delete aes256;
 					aes256 = new AES256(aeskey);
-					//printf("\naeskey used to encrypt gx: "); printBuffer(aeskey, KEY_LENGTH); fflush(stdout);
+					
 					//-- generate STS-gx
 					if (_this->curve == NULL) _this->curve = new ECCurve();
 					requested_security_strength = _this->curve->getRequestSecurityLength();					
@@ -562,7 +504,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					//-- use created AES to encrypt gx = Ex(gx), copy to param
 					mpz_get_str(ecpointHexString, 16, ecpoint->x);
 					ecpointHexLen = strlen(ecpointHexString) + 1;			
-					//printf("\nsent gx_x: %s", ecpointHexString); fflush(stdout);				
+					
 					memcpy(param + paramLen, &ecpointHexLen, 2);
 					paramLen += 2;
 					memcpy(param + paramLen, ecpointHexString, ecpointHexLen);	
@@ -570,7 +512,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				
 					mpz_get_str(ecpointHexString, 16, ecpoint->y);
 					ecpointHexLen = strlen(ecpointHexString)+1; 
-					//printf("\nsent gx_y: %s", ecpointHexString); fflush(stdout);
+					
 					memcpy(param + paramLen, &ecpointHexLen, 2);
 					paramLen += 2;				
 					memcpy(param+paramLen, ecpointHexString, ecpointHexLen);
@@ -578,7 +520,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				
 					aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);					
 					packet->pushCommandParam(encrypted, encryptedLen);
-					//printf("\nsent encrypted gx: "); printBuffer(encrypted, encryptedLen);
+					
 					free(encrypted);
 					delete aes256;
 					delete ecpoint;
@@ -593,8 +535,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				}				
 				break;
 			
-			case SVC_CMD_CONNECT_INNER3:
-				//printf("\nSVC_CMD_CONNECT_INNER3 received"); fflush(stdout);				
+			case SVC_CMD_CONNECT_INNER3:			
 				//-- app responded with CONNECT_INNER3, now can connect to app socke
 				_this->connectToAppSocket();
 				packet->popCommandParam(param, &paramLen);
@@ -602,15 +543,13 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				hashValue = _this->sha256.hash(string((char*)param, paramLen));
 				stringToHex(hashValue, aeskey); //-- aes key used to decrypt k1
 				aes256 = new AES256(aeskey);
-				//printf("\naeskey used to decrypt gx: "); printBuffer(aeskey, KEY_LENGTH);
+				
 				aes256->decrypt(_this->encryptedECPoint->packet, _this->encryptedECPoint->dataLen, &data, &dataLen);
 				
 				//-- construct gx from decrypted K1
-				//printf("\nreceived gxx || gxy: "); printBuffer(data, dataLen); fflush(stdout);
+				
 				paramLen = *((uint16_t*)data);
-				//printf("\nreceived gx_x: %s", data + 2);				
-				//printf("\nreceived gx_y: %s", data + 4 + paramLen); fflush(stdout);
-			
+				
 				//-- !! check if the decrypt ecpoint data is at least VALID, by verifying the null-terminator at the end of each number
 				//-- otherwise the new ECPoint will be created with buffer-overflow error
 				if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
@@ -623,8 +562,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					stringToHex(hashValue, aeskey);
 					delete aes256;
 					aes256 = new AES256(aeskey);
-					//printf("\naeskey used to encrypt gy: ");printBuffer(aeskey, KEY_LENGTH);
-				
+					
 					//-- generate random number y
 					if (_this->curve == NULL) _this->curve = new ECCurve();					
 					requested_security_strength = _this->curve->getRequestSecurityLength();
@@ -650,8 +588,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						//-- aesgcm key = hash(gxy.x || gxy.y)
 						hashValue = _this->sha256.hash(string((char*)param, paramLen));
 						stringToHex(hashValue, aeskey);
-						_this->aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);
-						//printf("\naesgcm key to encrypt proof, secu param %d: ", (enum SecurityParameter)requested_security_strength); printBuffer(aeskey, KEY_LENGTH); fflush(stdout);
+						_this->aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);					
 					}
 				
 					//-- pop solution proof to be encrypted
@@ -662,8 +599,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					mpz_clear(randomNumber);
 					//-- use created AES to encrypt gy = Ey(gy), copy to param
 					mpz_get_str(ecpointHexString, 16, ecpoint->x);
-					ecpointHexLen = strlen(ecpointHexString) + 1;
-					//printf("\nsent gy_x: %s", ecpointHexString);
+					ecpointHexLen = strlen(ecpointHexString) + 1;				
 					paramLen = 0;
 					memcpy(param + paramLen, &ecpointHexLen, 2);
 					paramLen += 2;
@@ -672,7 +608,6 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				
 					mpz_get_str(ecpointHexString, 16, ecpoint->y);
 					ecpointHexLen = strlen(ecpointHexString) + 1;
-					//printf("\nsent gy_y: %s", ecpointHexString);
 					memcpy(param + paramLen, &ecpointHexLen, 2);
 					paramLen += 2;
 					memcpy(param+paramLen, ecpointHexString, ecpointHexLen);
@@ -684,16 +619,14 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					//-- switch command
 					packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
 					//-- attach Ey(gy) to packet
-					packet->pushCommandParam(encrypted, encryptedLen);
-					//printf("\nsent Ey(gy): "); printBuffer(encrypted, encryptedLen);
+					packet->pushCommandParam(encrypted, encryptedLen);					
 					free(encrypted);
 				
 					//-- encrypt solution proof then attach to packet
 					//-- generate random iv, the first 2 byte are used to store ivLen				
 					generateRandomData(requested_security_strength, param + 2);
 				
-					_this->aesgcm->encrypt(param + 2, requested_security_strength, solutionProof, solutionProofLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);			
-					//printf("\nsent iv: "); printBuffer(param+2, requested_security_strength);
+					_this->aesgcm->encrypt(param + 2, requested_security_strength, solutionProof, solutionProofLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);					
 					//-- add iv, encrypted and tag to param				
 					paramLen = 0;
 					memcpy(param + paramLen, &requested_security_strength, 2);
@@ -702,15 +635,12 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					memcpy(param + paramLen, &encryptedLen, 2);
 					paramLen += 2;
 					memcpy(param + paramLen, encrypted, encryptedLen);
-					paramLen += encryptedLen;
-					//printf("\nsent encrypted proof: "); printBuffer(encrypted, encryptedLen);
+					paramLen += encryptedLen;					
 					memcpy(param + paramLen, &tagLen, 2);
 					paramLen += 2;
 					memcpy(param + paramLen, tag, tagLen);
-					paramLen += tagLen;
-					//printf("\nsent tag: "); printBuffer(tag, tagLen);
+					paramLen += tagLen;					
 					packet->pushCommandParam(param, paramLen);
-					//printf("\nsent encrypted proof (printBuffer): "); printBuffer(param, paramLen);
 					free(encrypted);
 					free(tag);
 					delete aes256;
@@ -725,8 +655,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				free(data);
 				break;		
 			
-			case SVC_CMD_CONNECT_INNER5:
-				//printf("\nSVC_CMD_CONNECT_INNER5 received");
+			case SVC_CMD_CONNECT_INNER5:				
 				requested_security_strength = _this->curve->getRequestSecurityLength();		
 				packet->popCommandParam(solution, &solutionLen);				
 			
@@ -734,16 +663,12 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				hashValue = _this->sha256.hash(string((char*)solution, solutionLen));
 				stringToHex(hashValue, aeskey); //-- aes key used to decrypt k1
 				aes256 = new AES256(aeskey);
-				//printf("\naeskey used to decrypt gy: "); printBuffer(aeskey, KEY_LENGTH);				
 				aes256->decrypt(_this->encryptedECPoint->packet, _this->encryptedECPoint->dataLen, &data, &dataLen);
 				
 				delete aes256;
 				//-- construct gy from decrypted k2
 			
-				paramLen = *((uint16_t*)data);
-				//printf("\nreceived gy_x: %s", data + 2);
-				//printf("\ngx_y by printBuffer: "); printBuffer(data + 4 + paramLen, dataLen - 4 - paramLen); fflush(stdout);
-				//printf("\nreceived gy_y: %s", data + 4 + paramLen); fflush(stdout);
+				paramLen = *((uint16_t*)data);				
 				//-- !! check these gy_x and gy_y
 				if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
 					ecpoint = new ECPoint((char*)(data + 2) , (char*)(data + 4 + paramLen));
@@ -774,25 +699,19 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						
 						//-- decrypt the solution proof
 						iv = _this->encryptedProof->packet+2;
-						ivLen = *((uint16_t*)_this->encryptedProof->packet);
-						//printf("\nreceived iv : "); printBuffer((uint8_t*)iv, ivLen);
+						ivLen = *((uint16_t*)_this->encryptedProof->packet);						
 						encrypted = _this->encryptedProof->packet + 4 + ivLen;
-						encryptedLen = *((uint16_t*)(_this->encryptedProof->packet + 2 + ivLen));		
-						//printf("\nreceived encrypted proof: "); printBuffer(encrypted, encryptedLen);
+						encryptedLen = *((uint16_t*)(_this->encryptedProof->packet + 2 + ivLen));								
 						tag = _this->encryptedProof->packet + 6 + ivLen + encryptedLen;
-						tagLen = *((uint16_t*)(_this->encryptedProof->packet + 4 + ivLen + encryptedLen));
-						//printf("\nreceived tag : "); printBuffer(tag, tagLen);
+						tagLen = *((uint16_t*)(_this->encryptedProof->packet + 4 + ivLen + encryptedLen));						
 						if (_this->aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
-							//-- solution proof decrypted succeeded by aesgcm
-							//printf("\nsolution proof decrypted: %s", string((char*)data, dataLen).c_str()); fflush(stdout);
+							//-- solution proof decrypted succeeded by aesgcm							
 							//-- forward CONNECT_INNER6 to app
 							packet->switchCommand(SVC_CMD_CONNECT_INNER6);
-							packet->pushCommandParam(decrypted, decryptedLen);
-							//printf("\nsend this INNER6 to app: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+							packet->pushCommandParam(decrypted, decryptedLen);							
 							_this->unixOutgoingQueue.enqueue(packet);
 						}
-						else{
-							//printf("\naesgcm decrypt failed connect inner 5");
+						else{							
 							delete packet;
 						}
 						
@@ -808,8 +727,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				}
 				break;
 			
-			case SVC_CMD_CONNECT_INNER7:
-				//printf("\nSVC_CMD_CONNECT_INNER7 received"); fflush(stdout);
+			case SVC_CMD_CONNECT_INNER7:				
 				requested_security_strength = _this->curve->getRequestSecurityLength();
 				//-- authenticated
 				_this->isAuth = true;			
@@ -819,8 +737,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				generateRandomData(requested_security_strength, param + 2);
 			
 				_this->aesgcm->encrypt(param + 2, requested_security_strength, solutionProof, solutionProofLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);
-			
-				//printf("\niv: "); printBuffer(param+2, requested_security_strength);
+							
 				//-- add iv, encrypted and tag to param				
 				paramLen = 0;
 				memcpy(param + paramLen, &requested_security_strength, 2);
@@ -830,12 +747,10 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				paramLen += 2;
 				memcpy(param + paramLen, encrypted, encryptedLen);
 				paramLen += encryptedLen;
-				//printf("\nencrypted proof: "); printBuffer(encrypted, encryptedLen);
 				memcpy(param + paramLen, &tagLen, 2);
 				paramLen += 2;
 				memcpy(param + paramLen, tag, tagLen);
 				paramLen += tagLen;
-				//printf("\ntag: "); printBuffer(tag, tagLen);
 				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
 				packet->pushCommandParam(param, paramLen);			
 				_this->inetOutgoingQueue.enqueue(packet);
@@ -845,7 +760,6 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 			
 			case SVC_CMD_CONNECT_INNER9:
 				//-- connection established
-				//printf("\nSVC_CMD_CONNECT_INNER9 received"); fflush(stdout);
 				_this->isAuth = true;
 				delete packet;
 				break;		
@@ -854,7 +768,6 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				delete packet;
 				break;
 		}
-		//_this->unixIncomingPacketHandler->notifyCommand(cmd, endpointID);
 	}
 	else{
 		//-- encrypt packet the sendout
@@ -882,7 +795,6 @@ void* daemon_unix_reading_loop(void* args){
 		}
 		//else: read received nothing
 	}
-	//printf("\ndaemon_ unix_reading_loop thread stopped : 0x%08X", (void*)pthread_self());
 	pthread_exit(EXIT_SUCCESS);
 }
 
@@ -908,7 +820,6 @@ void* daemon_inet_reading_loop(void* args){
 			daemonInetIncomingQueue.enqueue(packet);
 		}
 	}
-	//printf("\ndaemon_ inet_reading_loop thread stopped : 0x%08X", (void*)pthread_self());
 	pthread_exit(EXIT_SUCCESS);
 }
 
@@ -939,7 +850,6 @@ void shutdown(){
 
 void signal_handler(int sig){
 	if (sig == SIGINT){
-		//printf("\nSIGINT caught, calling shutdown");
 		shutdown();
 	}	
 }
@@ -952,7 +862,6 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 		bool existed = false;
 		switch (cmd){
 			case SVC_CMD_CREATE_ENDPOINT:
-				//printf("\nSVC_CMD_CREATE_ENDPOINT received for: "); printBuffer((uint8_t*)&endpointID, ENDPOINTID_LENGTH); fflush(stdout);				
 				//-- check if this endpointID is used before to create an endpoint that is working				
 				for (auto& it : endpoints){
 					if (it.second != NULL){
@@ -967,7 +876,6 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 					DaemonEndpoint* endpoint;
 					try{
 						endpoint = new DaemonEndpoint(endpointID);
-						//printf("\ntrying connect to app socket"); fflush(stdout);
 						if (endpoint->connectToAppSocket()==0){
 							endpoints[endpointID] = endpoint;
 							//-- send back the packet
@@ -982,13 +890,11 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 						}
 					}
 					catch(const char* err){
-						//printf("\nError: %s; remove SVC_CMD_CREATE_ENDPOINT packet", err); fflush(stdout);
 						delete packet;
 					}
 				}
 				else{
 					//-- TODO: check if the endpoint has been dead, then replace
-					//printf("\nError: endpoint with the sameID is working"); fflush(stdout);		
 					delete packet;
 				}
 				break;
@@ -1036,13 +942,11 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 	
 		switch (cmd){
 			case SVC_CMD_CONNECT_OUTER1:
-				//printf("\nSVC_CMD_CONNECT_OUTER1 received"); fflush(stdout);
 				newEndpointID |= ++daemonEndpointCounter;
 				newEndpointID <<= 48;
 				newEndpointID |= endpointID;
 				//-- create new daemonEndpoint for this endpointID
 				dmnEndpoint = new DaemonEndpoint(newEndpointID);
-				//printf("\nendpoint created with ID: "); printBuffer((uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
 				endpoints[newEndpointID] = dmnEndpoint;				
 				dmnEndpoint->connectToAddress(&sourceAddr, sourceAddrLen);
 				//-- extract DH-1
@@ -1110,7 +1014,6 @@ void checkEndpointLiveTime(void* args){
 			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
 			if ((!ep->working) || (!ep->isAuthenticated() && !ep->checkInitLiveTime(1000))){
 				//-- remove this endpoint, also remove it from endpoints
-				//printf("\nendpoints remove id: "); printBuffer((uint8_t*)&ep->endpointID, ENDPOINTID_LENGTH);
 				endpoints[ep->endpointID] = NULL;
 				delete ep;
 			}

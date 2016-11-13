@@ -6,7 +6,6 @@
 	
 	class PeriodicWorker{
 		private:
-			//timer_t timer;
 			pthread_t worker;
 			volatile bool working;
 			void (*handler)(void*);
