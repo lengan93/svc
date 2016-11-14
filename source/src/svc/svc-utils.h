@@ -6,6 +6,7 @@
 		
 	#include <vector>
 	#include <cstring>
+	#include <sys/socket.h>
 
 	//--	class pre-declaration
 	class SVCPacket;
@@ -21,6 +22,8 @@
 			//-- public members
 			uint8_t* packet;
 			uint32_t dataLen;
+			struct sockaddr_storage srcAddr;
+			socklen_t srcAddrLen;
 			
 			//-- constructors/destructors
 			
@@ -58,12 +61,23 @@
 				return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
 			}
 			
+			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
+				memset(&this->srcAddr, 0, sizeof(this->srcAddr));
+				memcpy(&this->srcAddr, srcAddr, addrLen);
+				this->srcAddrLen = addrLen;
+			}
+			
 			void setData(const uint8_t* data, uint32_t dataLen){
 				memcpy(this->packet + SVC_PACKET_HEADER_LEN, &dataLen, 4);
-				memcpy(this->packet + SVC_PACKET_HEADER_LEN + 4, data, dataLen);				
+				memcpy(this->packet + SVC_PACKET_HEADER_LEN + 4, data, dataLen);
 				this->dataLen = SVC_PACKET_HEADER_LEN + 4 + dataLen; //-- 4 byte datalen
 				this->packet[INFO_BYTE] &= 0x7F; //-- set 7th bit to 0: data
 			}
+			
+			void extractData(uint8_t* data, uint32_t* dataLen){
+				*dataLen = *((uint32_t*)(this->packet+SVC_PACKET_HEADER_LEN));
+				memcpy(data, this->packet + SVC_PACKET_HEADER_LEN + 4, *dataLen);
+			}			
 			
 			//-- public methods
 			void setCommand(enum SVCCommand cmd){

@@ -577,12 +577,11 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen, uint8_t priorit
 	}
 }
 
-int SVCEndpoint::readData(uint8_t* data, uint32_t* len){
+int SVCEndpoint::readData(uint8_t* data, uint32_t* len, int timeout){
 	if (this->isAuth){
-		SVCPacket* packet = this->dataholdQueue.dequeueWait(1000);
+		SVCPacket* packet = this->dataholdQueue.dequeueWait(timeout);
 		if (packet!=NULL){
-			memcpy(data, packet->packet, packet->dataLen);
-			*len = packet->dataLen;			
+			packet->extractData(data, len);
 			delete packet;
 			return 0;
 		}

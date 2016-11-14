@@ -297,6 +297,10 @@ int DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, socklen
 
 void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* packet, void* args){
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
+	uint8_t infoByte = packet->packet[INFO_BYTE];
+	if ((infoByte & SVC_COMMAND_FRAME) == 0x00){
+		printf("\ndaemon endpoint sending a data frame: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+	}
 	_this->inetToBeSentQueue.enqueue(packet);
 }
 
@@ -425,6 +429,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	}
 	else{
 		//-- decrypt the forward to app
+		printf("\ndaemon endpoint received a data packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		_this->unixOutgoingQueue.enqueue(packet);
 	}
 	
@@ -771,7 +776,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 	}
 	else{
 		//-- encrypt packet the sendout
-		_this->inetToBeSentQueue.enqueue(packet);
+		printf("\nendpointn unix received a data packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+		_this->inetOutgoingQueue.enqueue(packet);
 	}
 }
 
@@ -804,7 +810,7 @@ void* daemon_inet_reading_loop(void* args){
 	int readrs;
 	SVCPacket* packet;
 	
-	uint8_t buffer[SVC_DEFAULT_BUFSIZ] = "";
+	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 	
 	while (working){
 		do{
@@ -814,9 +820,10 @@ void* daemon_inet_reading_loop(void* args){
 		while((readrs==-1) && working);
 		
 		if (readrs>0){
-			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
+			printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
-			packet->pushCommandParam((uint8_t*)&srcAddr, (uint16_t)srcAddrLen);
+			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);
+			printf("\npacket adter add source address: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			daemonInetIncomingQueue.enqueue(packet);
 		}
 	}
@@ -925,14 +932,8 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		uint32_t appID;
 		string appSockPath;
 		DaemonEndpoint* dmnEndpoint;
-	
-		struct sockaddr_in sourceAddr;
-		socklen_t sourceAddrLen;
-		//-- extract source address
-		packet->popCommandParam(param, &paramLen);
-		memcpy(&sourceAddr, param, paramLen);
-		sourceAddrLen = paramLen;		
-		//-- TODO: check if this address is the same as connected, if not updates
+			
+		//-- TODO: check if packet's address is the same as connected, if not updates
 				
 		struct sockaddr_un appSockAddr;	
 		memset(&appSockAddr, 0, sizeof(appSockAddr));
@@ -948,7 +949,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 				//-- create new daemonEndpoint for this endpointID
 				dmnEndpoint = new DaemonEndpoint(newEndpointID);
 				endpoints[newEndpointID] = dmnEndpoint;				
-				dmnEndpoint->connectToAddress(&sourceAddr, sourceAddrLen);
+				dmnEndpoint->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
 				//-- extract DH-1
 				packet->popCommandParam(param, &paramLen);
 				dmnEndpoint->encryptedECPoint = new SVCPacket(param, paramLen);
@@ -1003,6 +1004,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		}
 		else{
 			//forward packet to inetIncomingQueue
+			printf("\ndaemon_inet_incoming_packet_handler handling: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			endpoints[endpointID]->inetIncomingQueue.enqueue(packet);
 		}
 	}
@@ -1048,7 +1050,7 @@ int main(int argc, char** argv){
 	if (pthread_create(&daemonUnixReadingThread, &attr, daemon_unix_reading_loop, NULL) != 0){
 		errorString = SVC_ERROR_CRITICAL;
 		goto error;
-	}	
+	}
     
     //--TODO:	TO BE CHANGED TO HTP
     //--	create htp socket and bind to localhost
@@ -1059,11 +1061,15 @@ int main(int argc, char** argv){
 	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
     if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){
     	errorString = SVC_ERROR_BINDING;
+    	working = false;
+    	pthread_join(daemonUnixReadingThread, NULL);
     	goto error;
     }
     //-- then create a reading thread
 	if (pthread_create(&daemonInetReadingThread, &attr, daemon_inet_reading_loop, NULL) != 0){
 		errorString = SVC_ERROR_CRITICAL;
+		working = false;
+    	pthread_join(daemonUnixReadingThread, NULL);
 		goto error;
 	}
     
@@ -1082,8 +1088,6 @@ int main(int argc, char** argv){
 	endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
 	
 	//--	init some globals variables
-	
-	pthread_attr_destroy(&attr);
     goto initSuccess;
     
     error:

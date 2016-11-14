@@ -19,9 +19,8 @@ int main(int argc, char** argv){
 				//-- try to read some data
 				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 				uint32_t dataLen;
-				if (endpoint->readData(buffer, &dataLen) == 0){
-					string receivedData = string((char*)buffer, dataLen);
-					printf("\nreceived some data: %s", receivedData.c_str());
+				if (endpoint->readData(buffer, &dataLen, -1) == 0){					
+					printf("\nreceived some data: %s", string((char*)buffer, dataLen).c_str()); // printBuffer(buffer, dataLen); fflush(stdout);
 				}
 				//else: interrupted
 			}

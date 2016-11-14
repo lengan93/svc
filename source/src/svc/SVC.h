@@ -94,7 +94,7 @@
 			/*
 			 * Read data from the buffer. The data had already been decrypted.
 			 * */
-			int readData(uint8_t* data, uint32_t* len);
+			int readData(uint8_t* data, uint32_t* len, int timeout);
 			
 			/*
 			 * Close the communication endpoint and send terminate signals to underlayer
