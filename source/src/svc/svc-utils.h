@@ -66,6 +66,10 @@
 				this->dataLen = SVC_PACKET_HEADER_LEN + bodyLen;
 			}
 			
+			void setSequence(uint64_t sequence){
+				memcpy(this->packet+ENDPOINTID_LENGTH + 1, &sequence, SEQUENCE_LENGTH);
+			}
+			
 			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
 				memset(&this->srcAddr, 0, sizeof(this->srcAddr));
 				memcpy(&this->srcAddr, srcAddr, addrLen);

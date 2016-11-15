@@ -19,33 +19,36 @@
 	#define SVC_ERROR_AUTHENTICATION_FAILED		"Authentication failed"
 	#define SVC_ERROR_CRITICAL					"Critical error"
 	#define SVC_ERROR_BINDING					"Error binding socket"
-	#define SVC_ERROR_CONNECTING				"Error connecting socket"
-	#define SVC_ERROR_NOTIFICATOR_DUPLICATED	"Notificator duplicated"	
+	#define SVC_ERROR_CONNECTING				"Error connecting socket"	
 	#define SVC_ERROR_SIGNAL_INTERRUPTED		"Execution interrupted by SIGINT"
 
-	/*	SVC CONSTANTS	*/
+	/*	SVC CONFIG	*/
 
 	#define SVC_DEFAULT_TIMEOUT 				10000	
 	#define SVC_DEFAULT_BUFSIZ 					65535
 	#define	SVC_DAEPORT							1221
 	#define SVC_ENDPOINT_LIVETIME				5000
-		
-	/*	SVC CONSTANTS' LENGTHS	*/
 	
-	#define 		HOST_ADDR_LENGTH			4
-	#define 		APPID_LENGTH				4
-	#define 		SEQUENCE_LENGTH				4
-	#define 		ENDPOINTID_LENGTH			8
-	#define 		SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = ENDPOINTID_LENGTH + 1 (info byte) + SEQUENCE_LENGTH
-	#define			INFO_BYTE					ENDPOINTID_LENGTH
-	#define			CMD_BYTE					SVC_PACKET_HEADER_LEN
+	static std::string SVC_DAEMON_PATH = 				"/tmp/svc-daemon";
+	static std::string SVC_CLIENT_PATH_PREFIX = 		"/tmp/svc-client-";
+	static std::string SVC_ENDPOINT_APP_PATH_PREFIX = 	"/tmp/svc-endpoint-a";
+	static std::string SVC_ENDPOINT_DMN_PATH_PREFIX = 	"/tmp/svc-endpoint-d";
+		
+	/*	SVC CONSTANTS' LENGTHS	*/	
+	#define HOST_ADDR_LENGTH			4
+	#define APPID_LENGTH				4
+	#define SEQUENCE_LENGTH				4
+	#define ENDPOINTID_LENGTH			8
+	#define SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = ENDPOINTID_LENGTH + 1 (info byte) + SEQUENCE_LENGTH
+	#define	INFO_BYTE					ENDPOINTID_LENGTH
+	#define	CMD_BYTE					SVC_PACKET_HEADER_LEN
 	
 
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80
-	//#define SVC_INCOMING_PACKET				0x40
-	//#define SVC_TOBE_REMOVED					0x20
-	//#define SVC_TOBE_SAVED					0x10
+	//#define SVC_								0x40
+	//#define SVC_								0x20
+	//#define SVC_								0x10
 	#define SVC_ENCRYPTED						0x08
 	#define SVC_USING_TCP						0x04
 	
@@ -54,10 +57,7 @@
 	#define SVC_NORMAL_PRIORITY					0x01
 	#define SVC_LOW_PRIORITY					0x00
 	
-	static std::string SVC_DAEMON_PATH = 				"/tmp/svc-daemon";
-	static std::string SVC_CLIENT_PATH_PREFIX = 		"/tmp/svc-client-";
-	static std::string SVC_ENDPOINT_APP_PATH_PREFIX = 	"/tmp/svc-endpoint-a";
-	static std::string SVC_ENDPOINT_DMN_PATH_PREFIX = 	"/tmp/svc-endpoint-d";
+
 
 	/*	ABI, DO NOT MODIFY UNLESS YOU KNOW EXACTLY WHAT	YOU DO	*/
 	enum SVCCommand : uint8_t{

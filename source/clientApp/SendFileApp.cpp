@@ -18,14 +18,20 @@ int main(int argc, char** argv){
 		SVCEndpoint* endpoint = svc->establishConnection(remoteHost);
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
-				string textToSend;
+				string text;
+				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
+				uint32_t dataLen;
 				printf("\nConnection established.");
 				do{
 					printf("\nInput a text to be sent ('close' to terminate): ");
-					cin>>textToSend;
-					endpoint->sendData((uint8_t*)textToSend.c_str(), textToSend.size(), SVC_URGENT_PRIORITY, false);
+					cin>>text;
+					endpoint->sendData((uint8_t*)text.c_str(), text.size(), SVC_URGENT_PRIORITY, false);
+					if (endpoint->readData(buffer, &dataLen, 1000) ==0){
+						text = string((char*)buffer, dataLen);
+						printf("Received echo: %s", text.c_str());
+					}
 				}
-				while (textToSend != "close");
+				while (text != "close");
 				endpoint->shutdown();
 				printf("\nProgram terminated.\n");
 			}

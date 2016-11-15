@@ -21,9 +21,11 @@ int main(int argc, char** argv){
 				uint32_t dataLen;
 				string text;
 				do{
-					if (endpoint->readData(buffer, &dataLen, 1) == 0){
+					if (endpoint->readData(buffer, &dataLen, 1000) == 0){
 						text = string((char*)buffer, dataLen);
 						printf("\nReceived: %s", text.c_str());
+						//-- send pack packet to client
+						endpoint->sendData(buffer, dataLen, SVC_URGENT_PRIORITY, false);
 					}
 				}
 				while (text!="close");

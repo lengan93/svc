@@ -105,8 +105,8 @@ class DaemonEndpoint{
 		
 		int connectToAppSocket();
 		int startInetHandlingRoutine();		
-		int connectToAddress(uint32_t remoteAddress);
-		int connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen);
+		void connectToAddress(uint32_t remoteAddress);
+		void connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen);
 		
 		void shutdown();
 };
@@ -285,28 +285,42 @@ int DaemonEndpoint::startInetHandlingRoutine(){
 	else{
 		rs = -1;
 	}
-	pthread_attr_destroy(&attr);
 	return rs;
 }
 
-int DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
+void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
 	this->remoteAddrLen = sizeof(this->remoteAddr);							
 	this->remoteAddr.sin_family = AF_INET;
 	this->remoteAddr.sin_port = htons(SVC_DAEPORT);
-	this->remoteAddr.sin_addr.s_addr = remoteAddress;
-	return startInetHandlingRoutine();	
+	this->remoteAddr.sin_addr.s_addr = remoteAddress;	
 }
 
-int DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen){
+void DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen){
 	memcpy(&this->remoteAddr, sockAddr, sockLen);
 	this->remoteAddrLen = sockLen;
-	return startInetHandlingRoutine();
 }
 
 
 void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* packet, void* args){
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
-	_this->inetToBeSentQueue.enqueue(packet);
+	uint8_t infoByte = packet->packet[INFO_BYTE];
+	if ((infoByte & SVC_ENCRYPTED)!=0x00){
+		if (_this->aesgcm!=NULL){
+			//-- encrypt packet before send out
+			_this->sendSequence++;
+			packet->setSequence(_this->sendSequence);
+			_this->encryptPacket(packet);			
+			_this->inetToBeSentQueue.enqueue(packet);
+		}
+		else{
+			//-- secure connection not yet established, silently discard
+			delete packet;
+		}
+	}
+	else{
+		_this->sendSequence++;	
+		_this->inetToBeSentQueue.enqueue(packet);
+	}
 }
 
 void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
@@ -316,6 +330,7 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 			sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			//printf("\ndaemon inet writes packet:"); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
 			//-- TODO: check send result here
 		};
@@ -339,7 +354,7 @@ bool DaemonEndpoint::isAuthenticated(){
 
 void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 
-	uint8_t* iv = (uint8_t*)&this->sendSequence;
+	uint8_t* iv = packet->packet+ENDPOINTID_LENGTH+1;
 	uint16_t ivLen = SEQUENCE_LENGTH;	
 	
 	uint8_t* tag;
@@ -347,9 +362,8 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	uint8_t* encrypted;
 	uint32_t encryptedLen;
 
-	//-- set sequence and infoByte
+	//-- set infoByte
 	packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
-	memcpy(packet->packet+ENDPOINTID_LENGTH+1, iv, ivLen);
 	
 	/*printf("\nencrypt packet with:");
 	printf("\niv: "); printBuffer(iv, ivLen); fflush(stdout);
@@ -361,8 +375,9 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	
 	/*printf("\ngot:");
 	printf("\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
-	printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);*/
-		
+	printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
+	*/
+	
 	//-- set body to be encrypted
 	packet->setBody(encrypted, encryptedLen);
 	//-- copy tag and tagLen to the end of packet
@@ -390,16 +405,18 @@ bool DaemonEndpoint::decryptPacket(SVCPacket* packet){
 	printf("\niv: "); printBuffer(iv, ivLen); fflush(stdout);
 	printf("\naad: "); printBuffer(aad, aadLen); fflush(stdout);
 	printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
-	printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
-	*/
+	printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);*/
+	
 	rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
 	
 	/*printf("\ngot:");
 	printf("\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);*/
 		
 	//-- set body to be decrypted
-	packet->setBody(decrypted, decryptedLen);
-	packet->packet[INFO_BYTE] &= ~SVC_ENCRYPTED;
+	if (rs){
+		packet->setBody(decrypted, decryptedLen);
+		packet->packet[INFO_BYTE] &= ~SVC_ENCRYPTED;
+	}
 	free(decrypted);
 	return rs;
 }
@@ -417,6 +434,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_reading_loop(void* args){
 		
 		if (readrs>0){	
 			_this->unixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
+			//printf("\ndaemon endpoint unix reads packet:"); printBuffer(buffer, readrs); fflush(stdout);
 		}
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -429,7 +447,8 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 	while (_this->working || _this->unixOutgoingQueue.notEmpty() || _this->unixToBeSentQueue.notEmpty()){		
 		packet = _this->unixToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
-			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);			
+			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
+			//printf("\ndaemon unix writes packet:"); printBuffer(packet->packet, packet->dataLen); fflush(stdout);			
 			delete packet;		
 		}
 	}
@@ -444,22 +463,24 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 	
-	uint8_t* iv;
+	/*uint8_t* iv;
 	uint32_t ivLen;
 	uint8_t* encrypted;
 	uint32_t encryptedLen;
 	uint8_t* tag;
 	uint32_t tagLen;
 	uint8_t* data;
-	uint32_t dataLen;
+	uint32_t dataLen;*/
 	
 	//-- check for encryption
 	bool decryptSuccess = true;
-	if ((infoByte & SVC_ENCRYPTED) != 0x00){
+	if (((infoByte & SVC_ENCRYPTED) != 0x00) && (_this->aesgcm!=NULL)){
 		decryptSuccess = _this->decryptPacket(packet);
 	}
 	
 	if (decryptSuccess){
+		//-- check sequence and address to be update
+		
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 			switch (cmd){
@@ -489,7 +510,10 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 					break;
 			
 				case SVC_CMD_CONNECT_OUTER3:
-					//-- decrypt solution proof
+					//printf("\nSVC_CMD_CONNECT_OUTER3 received: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+					packet->switchCommand(SVC_CMD_CONNECT_INNER8);
+					_this->unixOutgoingQueue.enqueue(packet);
+					/*//-- decrypt solution proof
 					if (!packet->popCommandParam(param, &paramLen)){
 						delete packet;
 						break;
@@ -504,14 +528,14 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 					if (_this->aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &data, &dataLen)){					
 						//-- solution proof decrypted succeeded by aesgcm					
 						//-- forward CONNECT_INNER8 to app
-						packet->switchCommand(SVC_CMD_CONNECT_INNER8);
+						
 						packet->pushCommandParam(data, dataLen);
-						_this->unixOutgoingQueue.enqueue(packet);					
+						
 					}
 					else{
 						delete packet;					
 					}
-					free(data);
+					free(data);*/
 					break;
 				
 				default:
@@ -592,7 +616,12 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						delete packet;
 						break;
 					}		
-					_this->connectToAddress(*((uint32_t*)param));			
+					_this->connectToAddress(*((uint32_t*)param));
+					if (_this->startInetHandlingRoutine()!=0){
+						delete packet;
+						_this->working = false;
+						break;
+					}
 					
 					//-- extract challengeSecret x
 					if (!packet->popCommandParam(param, &paramLen)){
@@ -860,16 +889,16 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				break;
 			
 			case SVC_CMD_CONNECT_INNER7:				
-				requested_security_strength = _this->curve->getRequestSecurityLength();						
-				//-- encrypt solution proof then attach to packet
+				//requested_security_strength = _this->curve->getRequestSecurityLength();						
+				/*//-- encrypt solution proof
 				if (!packet->popCommandParam(solutionProof, &solutionProofLen)){
 					delete packet;
 					break;
-				}
+				}*/
 				//-- authenticated
 				_this->isAuth = true;
 				
-				//-- generate random iv, the first 2 byte are used to store ivLen				
+				/*//-- generate random iv, the first 2 byte are used to store ivLen				
 				generateRandomData(requested_security_strength, param + 2);
 			
 				_this->aesgcm->encrypt(param + 2, requested_security_strength, solutionProof, solutionProofLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);
@@ -887,11 +916,14 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				paramLen += 2;
 				memcpy(param + paramLen, tag, tagLen);
 				paramLen += tagLen;
-				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
+				
 				packet->pushCommandParam(param, paramLen);			
 				_this->inetOutgoingQueue.enqueue(packet);
 				free(encrypted);
-				free(tag);
+				free(tag);*/
+				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
+				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
+				_this->inetOutgoingQueue.enqueue(packet);
 				break;							
 			
 			case SVC_CMD_CONNECT_INNER9:
@@ -906,19 +938,9 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 		}
 	}
 	else{
-		//-- encrypt packet the sendout
-		//-- check if the connection has been established
-		if (_this->isAuth){
-			//-- encrypt the packet				
-			//-- TODO: check if send and recv reach their limits				
-			_this->sendSequence++;	
-			_this->encryptPacket(packet);				
-			_this->inetOutgoingQueue.enqueue(packet);
-		}
-		else{
-			//-- data packet not allowed without secure connection
-			delete packet;
-		}
+		//-- mark to be encrypted
+		packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;				
+		_this->inetOutgoingQueue.enqueue(packet);
 	}
 }
 
@@ -963,8 +985,7 @@ void* daemon_inet_reading_loop(void* args){
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
-			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);
-			//printf("\npacket adter add source address: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
 			daemonInetIncomingQueue.enqueue(packet);
 		}
 	}
@@ -1068,87 +1089,98 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		uint64_t endpointID = *((uint64_t*)packet->packet);
 	
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
-			//-- incoming command			
-			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];			
-			uint64_t newEndpointID = 0;
-			uint32_t appID;
-			string appSockPath;
-			DaemonEndpoint* dmnEndpoint;
-			SVCPacket* encryptedECPoint;
-			
-			//-- TODO: check if packet's address is the same as connected, if not updates
-				
-			struct sockaddr_un appSockAddr;	
-			memset(&appSockAddr, 0, sizeof(appSockAddr));
-			appSockAddr.sun_family = AF_LOCAL;
-		
-			int sendrs;
-	
-			switch (cmd){
-				case SVC_CMD_CONNECT_OUTER1:
-					//-- extract DH-1
-					if (!packet->popCommandParam(param, &paramLen)){
-						delete packet;
-						break;
-					}
-					encryptedECPoint = new SVCPacket(param, paramLen);
-					
-					newEndpointID |= ++daemonEndpointCounter;
-					newEndpointID <<= 48;
-					newEndpointID |= endpointID;
-					//-- create new daemonEndpoint for this endpointID
-					dmnEndpoint = new DaemonEndpoint(newEndpointID);
-					endpoints[newEndpointID] = dmnEndpoint;				
-					dmnEndpoint->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
-					dmnEndpoint->encryptedECPoint = encryptedECPoint;
-					
-					//-- extract appID
-					if (!packet->popCommandParam(param, &paramLen)){
-						delete packet;
-						dmnEndpoint->working = false;
-						break;
-					}
-					appID = *((uint32_t*)param);					
-					
-					//-- send the packet to the corresponding app
-					packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
-					appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);			
-					memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
-					//-- replace the oldEndpointID by the newEndpointID
-					memcpy(packet->packet, (uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
-					sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));
+			if ((infoByte & SVC_ENCRYPTED)!=0x00){
+				if (endpoints[endpointID] != NULL){
+					//-- forward packet if endpoint found
+					//printf("\nforwarding encrypted command packet (OUTER3)"); fflush(stdout);
+					endpoints[endpointID]->inetIncomingQueue.enqueue(packet);
+				}
+				else{
 					delete packet;
-					break;
+				}
+			}
+			else{
+				enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];			
+				uint64_t newEndpointID = 0;
+				uint32_t appID;
+				string appSockPath;
+				DaemonEndpoint* dmnEndpoint;
+				SVCPacket* encryptedECPoint;
 			
-				case SVC_CMD_CONNECT_OUTER2:
-					//-- newEndpointID contains old ID			
-					newEndpointID = endpointID;
-					endpointID = newEndpointID & 0x0000FFFFFFFFFFFF;			
-					if (endpoints[endpointID] != NULL && (!endpoints[endpointID]->isAuth)){				
-						endpoints[newEndpointID] = endpoints[endpointID];
-						//-- remove old record
-						endpoints[endpointID] = NULL;
-						//--	update endpointID
-						endpoints[newEndpointID]->endpointID = newEndpointID;
+				//-- TODO: check if packet's address is the same as connected, if not updates
+				
+				struct sockaddr_un appSockAddr;	
+				memset(&appSockAddr, 0, sizeof(appSockAddr));
+				appSockAddr.sun_family = AF_LOCAL;
+		
+				int sendrs;
+	
+				switch (cmd){
+					case SVC_CMD_CONNECT_OUTER1:
+						//-- extract DH-1
+						if (!packet->popCommandParam(param, &paramLen)){
+							delete packet;
+							break;
+						}
+						encryptedECPoint = new SVCPacket(param, paramLen);
 					
-						//-- forward packet
-						endpoints[newEndpointID]->inetIncomingQueue.enqueue(packet);
-					}
-					else{
+						newEndpointID |= ++daemonEndpointCounter;
+						newEndpointID <<= 48;
+						newEndpointID |= endpointID;
+						//-- create new daemonEndpoint for this endpointID
+						dmnEndpoint = new DaemonEndpoint(newEndpointID);
+						endpoints[newEndpointID] = dmnEndpoint;				
+						dmnEndpoint->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
+						if (dmnEndpoint->startInetHandlingRoutine()!=0){
+							delete packet;
+							dmnEndpoint->working = false;
+							break;
+						}
+						dmnEndpoint->encryptedECPoint = encryptedECPoint;
+					
+						//-- extract appID
+						if (!packet->popCommandParam(param, &paramLen)){
+							delete packet;
+							dmnEndpoint->working = false;
+							break;
+						}
+						appID = *((uint32_t*)param);					
+					
+						//-- send the packet to the corresponding app
+						packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
+						appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);			
+						memcpy(appSockAddr.sun_path, appSockPath.c_str(), appSockPath.size());
+						//-- replace the oldEndpointID by the newEndpointID
+						memcpy(packet->packet, (uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
+						sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));
 						delete packet;
-					}
-					break;
+						break;
 			
-				default:			
-					if (endpoints[endpointID] != NULL){
-						//-- forward packet if endpoint found
-						endpoints[endpointID]->inetIncomingQueue.enqueue(packet);
-					}
-					else{
+					case SVC_CMD_CONNECT_OUTER2:
+						//-- newEndpointID contains old ID			
+						newEndpointID = endpointID;
+						endpointID = newEndpointID & 0x0000FFFFFFFFFFFF;			
+						if (endpoints[endpointID] != NULL && (!endpoints[endpointID]->isAuth)){				
+							endpoints[newEndpointID] = endpoints[endpointID];
+							//-- remove old record
+							endpoints[endpointID] = NULL;
+							//--	update endpointID
+							endpoints[newEndpointID]->endpointID = newEndpointID;
+					
+							//-- forward packet
+							endpoints[newEndpointID]->inetIncomingQueue.enqueue(packet);
+						}
+						else{
+							delete packet;
+						}
+						break;
+			
+					default:
+						//-- ignore other command that not be encrypted
 						delete packet;
-					}
-					break;
-			}		
+						break;
+				}
+			}
 		}
 		else{
 			//-- incoming data, discard if not encrypted or endpoint not found		
@@ -1165,7 +1197,6 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		//-- packet's length not valid
 		delete packet;
 	}
-		
 }
 
 void checkEndpointLiveTime(void* args){	
@@ -1181,11 +1212,35 @@ void checkEndpointLiveTime(void* args){
 	}
 }
 
+void showHelp(){
+	
+}
+
+void startDaemon(const char* configFile){
+}
+
+void restartDaemon(const char* imageFile){
+
+}
+
+void generateDefaultConfig(const char* configFile){
+}
+
+
 int main(int argc, char** argv){
 	
 	const char* errorString;
-	working = true;
 	
+	if (argc == 1){
+		//-- cal program without any argument. show help
+		showHelp();
+		
+	}
+	else{
+		//-- 
+	}
+	
+	working = true;	
 	//-- block all signals, except SIGINT
     sigset_t blockSignals;
     sigfillset(&blockSignals);

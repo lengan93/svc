@@ -44,8 +44,7 @@ SVC frame format for daemon
 		° SVC_CMD_CONNECT_INNER8:
 		° SVC_CMD_CONNECT_INNER9:
 
-	+ number of arguments: 1 byte
-	+ [arguments' lengths in 2 bytes followed by arguments]
+	+ [arguments arguments' followed by lengths in 2 bytes]
 	
 	+ HMAC (if encrypted)
 ------------------------------------------------------	
