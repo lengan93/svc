@@ -185,7 +185,7 @@ AESGCM::~AESGCM(){
 	memset(this->hashSubKey, 0, BLOCK_SIZE); //--	securely remove the key by setting its value to 0
 }
 
-void AESGCM::encrypt(const uint8_t* iv, const uint32_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen){
+void AESGCM::encrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen){
 	//--	1. H has been calculated before
 	//--	2. prepare blockJ	
 	prepBlockJ(iv, ivLen);
@@ -207,7 +207,7 @@ void AESGCM::encrypt(const uint8_t* iv, const uint32_t ivLen, const uint8_t* dat
 	memcpy(*tag, blockS, *tagLen);
 }
 
-bool AESGCM::decrypt(const uint8_t* iv, uint32_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen){
+bool AESGCM::decrypt(const uint8_t* iv, uint16_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint16_t aadLen, const uint8_t* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen){
 	//--	1. check lengths
 	if (tagLen!=this->secuParam>>3) return false;
 	//--	2. generate blockJ

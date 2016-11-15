@@ -388,7 +388,8 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 		packet = _this->tobesentQueue.dequeueWait(1000);		
 		if (packet!=NULL){
 			//-- send this packet to underlayer
-			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);			
+			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
+			//printf("\nsvc endpoint write packet %d: ", sendrs); printBuffer(packet->packet, packet->dataLen); fflush(stdout);		
 			delete packet;			
 			//-- TODO: check this send result for futher decision
 		}
@@ -462,7 +463,7 @@ int SVCEndpoint::connectToDaemon(){
 
 bool SVCEndpoint::negotiate(){	
 	
-	uint8_t param[SVC_DEFAULT_BUFSIZ]="";
+	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
 	SVCPacket* packet = new SVCPacket(this->endpointID);
 	if (this->isInitiator){
@@ -491,7 +492,7 @@ bool SVCEndpoint::negotiate(){
 	else{
 		//-- read challenge from request packet
 		this->request->popCommandParam(param, &paramLen);
-		this->challengeReceived = std::string((char*)param, paramLen);		
+		this->challengeReceived = std::string((char*)param, paramLen);
 		
 		//-- resolve this challenge to get challenge secret
 		this->challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeReceived);
@@ -508,18 +509,18 @@ bool SVCEndpoint::negotiate(){
 		packet->pushCommandParam((uint8_t*)this->proof.c_str(), this->proof.size());
 		packet->pushCommandParam((uint8_t*)this->challengeSecretSent.c_str(), this->challengeSecretSent.size());
 		packet->pushCommandParam((uint8_t*)this->challengeSecretReceived.c_str(),  this->challengeSecretReceived.size());
-		
 		this->outgoingQueue.enqueue(packet);
+		
 		if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, SVC_DEFAULT_TIMEOUT)){
 			this->isAuth = false;
 		}
-	}	
+	}
+	free(param);
 	return this->isAuth;
 }
 
 void SVCEndpoint::shutdown(){
-	if (this->working){
-	
+	if (this->working){	
 		//-- send a shutdown packet to daemon		
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);

@@ -41,8 +41,8 @@
 			//--	SECURITY PARAMETERS
 			AESGCM(const uint8_t* key, enum SecurityParameter secuParam);
 			~AESGCM();
-			void encrypt(const uint8_t* iv, const uint32_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint32_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint32_t* tagLen);
-			bool decrypt(const uint8_t* iv, const uint32_t ivLen, const uint8_t* encrypted, const uint32_t encryptedLen, const uint8_t* aad, const uint32_t aadLen, const uint8_t* tag, uint32_t tagLen, uint8_t** data, uint32_t* dataLen);
+			void encrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen);
+			bool decrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* encrypted, const uint32_t encryptedLen, const uint8_t* aad, const uint16_t aadLen, const uint8_t* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen);
 	};
 
 #endif

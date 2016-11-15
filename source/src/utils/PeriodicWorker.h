@@ -45,7 +45,9 @@
 				
 				pthread_attr_t threadAttr;
 				pthread_attr_init(&threadAttr);
-				pthread_create(&this->worker, &threadAttr, handling, this);				
+				if (pthread_create(&this->worker, &threadAttr, handling, this)!=0){
+					throw SVC_ERROR_CRITICAL;
+				}
 			}
 			
 			int waitStop(){

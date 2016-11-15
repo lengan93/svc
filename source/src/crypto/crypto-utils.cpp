@@ -28,8 +28,8 @@ std::string hexToString(const uint8_t* data, uint32_t len){
 	char buffer[len*2];
 	memset(buffer, 0, len*2);
 	uint8_t b;
-	uint8_t c1;
-	uint8_t c2;
+	uint8_t c1=0;
+	uint8_t c2=0;
 	for (int i=0;i<len;i++){
 		b = data[i];
 		c1 = (b&0xF0)>>4;

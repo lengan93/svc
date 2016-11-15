@@ -12,23 +12,30 @@ int main(int argc, char** argv){
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
 		printf("\nserver is listenning..."); fflush(stdout);
-		SVCEndpoint* endpoint = svc->listenConnection(-1);
+		SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT);
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
 				//-- try to read some data
 				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 				uint32_t dataLen;
-				if (endpoint->readData(buffer, &dataLen, -1) == 0){					
-					printf("\nreceived some data: %s", string((char*)buffer, dataLen).c_str()); // printBuffer(buffer, dataLen); fflush(stdout);
+				string text;
+				do{
+					if (endpoint->readData(buffer, &dataLen, 1) == 0){
+						text = string((char*)buffer, dataLen);
+						printf("\nReceived: %s", text.c_str());
+					}
 				}
-				//else: interrupted
+				while (text!="close");
+				endpoint->shutdown();
+				printf("\nProgram terminated!\n");
 			}
 			else{
-				printf("\nCannot establish connection!");
+				printf("\nCannot establish connection!\n");
 			}
 			delete endpoint;
 		}
+		svc->shutdown();
 		delete svc;
 	}
 	catch (...){

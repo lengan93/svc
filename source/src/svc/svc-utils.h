@@ -61,6 +61,11 @@
 				return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
 			}
 			
+			void setBody(const uint8_t* body, uint32_t bodyLen){
+				memcpy(this->packet + SVC_PACKET_HEADER_LEN, body, bodyLen);
+				this->dataLen = SVC_PACKET_HEADER_LEN + bodyLen;
+			}
+			
 			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
 				memset(&this->srcAddr, 0, sizeof(this->srcAddr));
 				memcpy(&this->srcAddr, srcAddr, addrLen);
@@ -82,14 +87,12 @@
 			//-- public methods
 			void setCommand(enum SVCCommand cmd){
 				//-- reset length
-				this->dataLen = SVC_PACKET_HEADER_LEN + 2;
+				this->dataLen = SVC_PACKET_HEADER_LEN + 1;
 				//-- set info byte				
 				packet[INFO_BYTE] |= SVC_COMMAND_FRAME; //-- set info byte
 				packet[INFO_BYTE] |= SVC_URGENT_PRIORITY; 	
 				//-- set commandID
-				packet[SVC_PACKET_HEADER_LEN] = (uint8_t)cmd;
-				//-- reset number of param
-				packet[SVC_PACKET_HEADER_LEN + 1] = 0x00;	
+				packet[SVC_PACKET_HEADER_LEN] = (uint8_t)cmd;				
 			}
 			
 			void switchCommand(enum SVCCommand cmd){
@@ -98,28 +101,21 @@
 			
 			void pushCommandParam(const uint8_t* param, uint16_t paramLen){					
 				//-- copy new param to packet
-				memcpy(this->packet+this->dataLen, &paramLen, 2);
-				memcpy(this->packet+this->dataLen+2, param, paramLen);				
-				//-- add 1 to number of param
-				this->packet[SVC_PACKET_HEADER_LEN + 1] += 1;
+				memcpy(this->packet+this->dataLen, param, paramLen);
+				memcpy(this->packet+this->dataLen+paramLen, &paramLen, 2);
 				this->dataLen += 2 + paramLen;
 			}
 			
-			void popCommandParam(uint8_t* param, uint16_t* paramLen){
-				uint8_t argc = this->packet[SVC_PACKET_HEADER_LEN + 1];
-				if (argc>0){						
-					uint8_t* p = this->packet + SVC_PACKET_HEADER_LEN + 2;
-					for (int i=0; i<argc-1; i++){
-						p += 2 + *((uint16_t*)p);
-					}
-					*paramLen = *((uint16_t*)p);
-					memcpy(param, p+2, *paramLen);
+			bool popCommandParam(uint8_t* param, uint16_t* paramLen){
+				*paramLen = *((uint16_t*)(this->packet+this->dataLen-2));
+				if (*paramLen + SVC_PACKET_HEADER_LEN < this->dataLen){
+					memcpy(param, this->packet+this->dataLen-2-*paramLen, *paramLen);
 					//-- reduce the packet len
-					this->packet[SVC_PACKET_HEADER_LEN + 1] -= 1;
 					this->dataLen -= 2 + *paramLen;
+					return true;
 				}
 				else{
-					*paramLen = 0;					
+					return false;
 				}				
 			}
 	};

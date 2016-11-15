@@ -32,30 +32,32 @@ SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){
 string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSecret){
 	string rs;
 	//-- random iv string
-	uint32_t ivLen = KEY_LENGTH;
+	uint16_t ivLen = KEY_LENGTH;
 	uint8_t iv[ivLen] = "";
 	generateRandomData(ivLen, iv);
 	//-- encrypt this string with aesgcm, shared key
 	uint32_t encryptedLen;
 	uint8_t* encrypted;
 	uint8_t* tag;
-	uint32_t tagLen;
+	uint16_t tagLen;
 
 	this->aesGCM->encrypt(iv, ivLen, (uint8_t*)challengeSecret.c_str(), challengeSecret.size(), NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);
-	uint32_t challengeLen = 12 + encryptedLen + ivLen + tagLen;
+	uint32_t challengeLen = 8 + encryptedLen + ivLen + tagLen;
 	uint8_t* challengeBuf = (uint8_t*)malloc(challengeLen);
 	
 	uint8_t* p = challengeBuf;
-	memcpy(p, (uint32_t*)&encryptedLen, 4);
+	memcpy(p, &encryptedLen, 4);
 	p+=4;
-	memcpy(p, encrypted, encryptedLen);
+	memcpy(p, encrypted, encryptedLen);	
 	p+=encryptedLen;
-	memcpy(p, (uint32_t*)&ivLen, 4);
-	p+=4;
+	
+	memcpy(p, &ivLen, 2);
+	p+=2;
 	memcpy(p, iv, ivLen);
 	p+=ivLen;
-	memcpy(p, (uint32_t*)&tagLen, 4);
-	p+=4;
+	
+	memcpy(p, &tagLen, 2);
+	p+=2;
 	memcpy(p, tag, tagLen);
 	rs = hexToString(challengeBuf, challengeLen);
 	
@@ -68,29 +70,31 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 
 string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challenge){
 	string rs;
-	//-- un-hex the challenge
-	uint8_t challengeBuf[65535] = "";
+	
+	uint8_t* challengeBuf = (uint8_t*)malloc(65535);
 	uint32_t challengeLen = stringToHex(challenge, challengeBuf);
 	
-	if (challengeLen>0){
-		//--
-		uint8_t* iv;
-		uint8_t* encrypted;
-		uint8_t* tag;
-		uint8_t* p = challengeBuf;
-		uint8_t* challengeSecret;
-		uint32_t challengeSecretLen;
-		
+	uint8_t* iv;
+	uint16_t ivLen;
+	
+	uint8_t* encrypted;
+	uint8_t* tag;
+	uint16_t tagLen;
+	uint8_t* p = challengeBuf;
+	uint8_t* challengeSecret;
+	uint32_t challengeSecretLen;
+	
+	if (challengeLen>0){		
 		encrypted = p+4;
 		uint32_t encryptedLen = *((uint32_t*)p);
 		p += 4 + encryptedLen;
 		
-		iv = p+4;
-		uint32_t ivLen = *((uint32_t*)p);
-		p += 4 + ivLen;
+		iv = p+2;
+		ivLen = *((uint16_t*)p);
+		p += 2 + ivLen;
 		
-		tag = p+4;
-		uint32_t tagLen = *((uint32_t*)p);
+		tag = p+2;
+		tagLen = *((uint16_t*)p);
 				
 		if (this->aesGCM->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &challengeSecret, &challengeSecretLen)){
 			rs = string((char*)challengeSecret, challengeSecretLen);
@@ -103,6 +107,7 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 	else{
 		rs = NULL_STRING;
 	}	
+	free(challengeBuf);
 	return rs;
 }
 
