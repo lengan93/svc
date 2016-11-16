@@ -32,20 +32,21 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 		throw SVC_ERROR_CRITICAL;
 	}	
 	else{
-		this->appSockPath = std::string(SVC_CLIENT_PATH_PREFIX) + to_string(this->appID);	
+		string appSockPath = std::string(SVC_CLIENT_PATH_PREFIX) + to_string(this->appID);	
 		//- bind app socket
 		this->appSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
 		memset(&appSockAddr, 0, sizeof(appSockAddr));
 		appSockAddr.sun_family = AF_LOCAL;
-		memcpy(appSockAddr.sun_path, appSockPath.c_str(), this->appSockPath.size());
+		appSockAddr.sun_path[0] = '\0';
+		memcpy(appSockAddr.sun_path+1, appSockPath.c_str(), appSockPath.size());
 		if (bind(this->appSocket, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr))==-1){			
 			delete this->sha256;
 			throw SVC_ERROR_BINDING;
 		}
 		else{
 			//-- then create reading thread
-			if (pthread_create(&this->readingThread, &attr, svc_reading_loop, this) !=0){				
-				unlink(this->appSockPath.c_str());
+			if (pthread_create(&this->readingThread, &attr, svc_reading_loop, this) !=0){
+				close(this->appSocket);							
 				delete this->sha256;
 				throw SVC_ERROR_CRITICAL;
 			}
@@ -53,11 +54,12 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 				//-- connect to daemon socket
 				memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
 				dmnSockAddr.sun_family = AF_LOCAL;
-				memcpy(dmnSockAddr.sun_path, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
+				dmnSockAddr.sun_path[0]='\0';
+				memcpy(dmnSockAddr.sun_path+1, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
 				if (connect(this->appSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr)) == -1){						
 					this->working = false;
 					pthread_join(this->readingThread, NULL);
-					unlink(this->appSockPath.c_str());
+					close(this->appSocket);
 					delete this->sha256;
 					throw SVC_ERROR_CONNECTING;
 				}
@@ -66,7 +68,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 					if (pthread_create(&this->writingThread, &attr, svc_writing_loop, this) !=0){
 						this->working = false;
 						pthread_join(this->readingThread, NULL);
-						unlink(this->appSockPath.c_str());
+						close(this->appSocket);
 						delete this->sha256;
 						throw SVC_ERROR_CRITICAL;
 					}
@@ -111,7 +113,7 @@ void SVC::shutdown(){
 		
 		//-- stop writing packets
 		if (this->writingThread!=0) pthread_join(this->writingThread, NULL);	
-		unlink(this->appSockPath.c_str());
+		close(this->appSocket);
 				
 		//-- remove queues and intances
 		delete this->sha256;		
@@ -389,7 +391,7 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 		if (packet!=NULL){
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
-			//printf("\nsvc endpoint write packet %d: ", sendrs); printBuffer(packet->packet, packet->dataLen); fflush(stdout);		
+			//printf("\nsvc endpoint write packet %d: ", sendrs); //printBuffer(packet->packet, packet->dataLen); fflush(stdout);		
 			delete packet;			
 			//-- TODO: check this send result for futher decision
 		}
@@ -414,11 +416,12 @@ int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
 	this->endpointID = endpointID;
 	//-- bind app endpoint socket
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	this->endpointSockPath = std::string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
+	string endpointSockPath = std::string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
 	struct sockaddr_un sockAddr;
 	memset(&sockAddr, 0, sizeof(sockAddr));
 	sockAddr.sun_family = AF_LOCAL;
-	memcpy(sockAddr.sun_path, this->endpointSockPath.c_str(), endpointSockPath.size());
+	sockAddr.sun_path[0]='\0';
+	memcpy(sockAddr.sun_path+1, endpointSockPath.c_str(), endpointSockPath.size());
 	if (bind(this->sock, (struct sockaddr*)&sockAddr, sizeof(sockAddr)) == -1){
 		return -1;
 	}
@@ -442,7 +445,8 @@ int SVCEndpoint::connectToDaemon(){
 	struct sockaddr_un dmnEndpointAddr;
 	memset(&dmnEndpointAddr, 0, sizeof(dmnEndpointAddr));
 	dmnEndpointAddr.sun_family = AF_LOCAL;
-	memcpy(dmnEndpointAddr.sun_path, endpointDmnSockPath.c_str(), endpointDmnSockPath.size());
+	dmnEndpointAddr.sun_path[0]= '\0';
+	memcpy(dmnEndpointAddr.sun_path+1, endpointDmnSockPath.c_str(), endpointDmnSockPath.size());
 	if (connect(this->sock, (struct sockaddr*)&dmnEndpointAddr, sizeof(dmnEndpointAddr)) != 0){
 		return -1;
 	}
@@ -551,7 +555,7 @@ void SVCEndpoint::shutdown(){
 		if (this->writingThread !=0) {
 			joinrs = pthread_join(this->writingThread, NULL);			
 		}			
-		unlink(this->endpointSockPath.c_str());
+		close(this->sock);
 		
 		//-- remove queues and created instances		
 		if (this->request != NULL) delete this->request;
