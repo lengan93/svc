@@ -1,3 +1,4 @@
+#include <iostream>
 #include "../src/svc/SVC.h"
 #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
@@ -20,15 +21,17 @@ int main(int argc, char** argv){
 				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 				uint32_t dataLen;
 				string text;
-				do{
+				while (endpoint->isAlive()){
 					if (endpoint->readData(buffer, &dataLen, 1000) == 0){
 						text = string((char*)buffer, dataLen);
 						printf("\nReceived: %s", text.c_str());
 						//-- send pack packet to client
-						endpoint->sendData(buffer, dataLen, SVC_URGENT_PRIORITY, false);
+						endpoint->sendData(buffer, dataLen);
 					}
+					printf("\n(input 'close' to terminate): ");
+					cin>>text;
+					if (text == "close") break;
 				}
-				while (text!="close");
 				endpoint->shutdown();
 				printf("\nProgram terminated!\n");
 			}

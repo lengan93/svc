@@ -29,6 +29,10 @@ SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){
 	delete this->sha256;
 }
 
+string SVCAuthenticatorSharedSecret::getIdentity(){
+	return "";
+}
+
 string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSecret){
 	string rs;
 	//-- random iv string

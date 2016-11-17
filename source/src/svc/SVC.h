@@ -31,6 +31,7 @@
 			bool isAuth;
 			
 			volatile bool working;
+			volatile bool shutdownCalled;
 			static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
 			static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_endpoint_reading_loop(void* args);
@@ -46,7 +47,6 @@
 			PacketHandler* outgoingPacketHandler;
 			
 			int sock;
-			std::string endpointSockPath;
 			uint64_t endpointID;
 			uint32_t appID;			
 			SVCHost* remoteHost;
@@ -59,7 +59,7 @@
 			std::string challengeReceived;
 			std::string proof;
 		
-			SVCEndpoint(SVC* svc, bool isInitiator);	
+			SVCEndpoint(SVC* svc, uint64_t endpointID, bool isInitiator);	
 			
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data
@@ -72,11 +72,7 @@
 			
 			/*
 			 * */
-			void changeEndpointID(uint64_t endpointID);
-			
-			/*
-			 * */
-			int bindToEndpointID(uint64_t endpointID);
+			void changeEndpointID(uint64_t endpointID);			
 
 		public:
 			~SVCEndpoint();
@@ -86,10 +82,15 @@
 			bool negotiate();
 			
 			/*
+			 *
+			 * */
+			std::string getIdentity();
+						
+			/*
 			 * Send data over the connector to the other endpoint of communication.
 			 * The data will be automatically encrypted by the under layer
-			 * */
-			int sendData(const uint8_t* data, uint32_t dalalen, uint8_t priority, bool tcp);
+			 * */			 						 
+			int sendData(const uint8_t* data, uint32_t dalalen);
 			
 			/*
 			 * Read data from the buffer. The data had already been decrypted.
@@ -100,6 +101,10 @@
 			 * Close the communication endpoint and send terminate signals to underlayer
 			 * */
 			void shutdown();
+			
+			bool isAlive(){
+				return this->isAuth;
+			}
 	};
 	
 	class SVC{
@@ -115,6 +120,7 @@
 			static void* svc_writing_loop(void* args);
 			
 			volatile bool working;
+			volatile bool shutdownCalled;
 			pthread_t readingThread;
 			pthread_t writingThread;			
 			MutexedQueue<SVCPacket*> incomingQueue;
@@ -131,7 +137,6 @@
 			
 			SHA256* sha256;
 			int appSocket;
-			std::string appSockPath;						
 						
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
@@ -149,7 +154,7 @@
 			 * establishConnection immediately returns a pointer of SVCEndpoint that will later be used to perform the protocol's negotiation
 			 * Because the negotiation takes time, it is highly recommended to start it in a seperated thread
 			 * */
-			SVCEndpoint* establishConnection(SVCHost* remoteHost);
+			SVCEndpoint* establishConnection(SVCHost* remoteHost, uint8_t option);
 			
 			/*
 			 * 'listenConnection' reads in the connection request queue and returns immediately if a request is found

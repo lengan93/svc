@@ -7,6 +7,7 @@ uint16_t SVC::endpointCounter = 0;
 SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 
 	this->working = true;
+	this->shutdownCalled = false;
 	this->readingThread = 0;
 	this->writingThread = 0;
 	this->sha256 = new SHA256();		
@@ -86,7 +87,8 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 
 void SVC::shutdown(){
 
-	if (this->working){
+	if (!this->shutdownCalled){
+		this->shutdownCalled = true;
 		//-- send shutdown request to all SVCEndpoint instances	
 		for (auto& it : endpoints){
 			if (it.second!=NULL){
@@ -197,19 +199,15 @@ void* SVC::svc_writing_loop(void* args){
 
 //--	SVC PUBLIC FUNCTION IMPLEMENTATION		--//
 
-SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
+SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 	
 	//-- create new endpoint to handle further packets
-	SVCEndpoint* endpoint = new SVCEndpoint(this, true);
 	uint64_t endpointID = 0;	
 	endpointID |= ++SVC::endpointCounter;
 	endpointID<<=32;
 	endpointID |= this->appID;
-	if (endpoint->bindToEndpointID(endpointID) != 0){
-		delete endpoint;
-		return NULL;
-	}
-	else{	
+	try{
+		SVCEndpoint* endpoint = new SVCEndpoint(this, endpointID, true);	
 		endpoint->setRemoteHost(remoteHost);
 		//-- add this endpoint to be handled
 		this->endpoints[endpoint->endpointID] = endpoint;
@@ -233,6 +231,9 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost){
 			return NULL;
 		}
 	}
+	catch(...){
+		return NULL;
+	}
 }
 
 SVCEndpoint* SVC::listenConnection(int timeout){
@@ -240,11 +241,11 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 	request=this->connectionRequests.dequeueWait(timeout);
 	if (request!=NULL){
 		//-- there is connection request, read for endpointID
-		uint64_t endpointID = *((uint64_t*)request->packet);		
-		SVCEndpoint* ep = new SVCEndpoint(this, false);
-		ep->request = request;
-		//-- set the endpointID and bind to unix socket		
-		if (ep->bindToEndpointID(endpointID) ==0){
+		uint64_t endpointID = *((uint64_t*)request->packet);
+		SVCEndpoint* ep;
+		try{
+			ep = new SVCEndpoint(this, endpointID, false);
+			ep->request = request;		
 			if (ep->connectToDaemon() == 0){
 				this->endpoints[endpointID] = ep;
 				return ep;
@@ -254,8 +255,7 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 				return NULL;
 			}
 		}
-		else{			
-			delete ep;
+		catch(...){		
 			return NULL;
 		}
 	}
@@ -265,14 +265,46 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 }
 //--	SVCENDPOINT class	//
 
-SVCEndpoint::SVCEndpoint(SVC* svc, bool isInitiator){
+SVCEndpoint::SVCEndpoint(SVC* svc, uint64_t endpointID,  bool isInitiator){
 	this->svc = svc;
 	this->isInitiator = isInitiator;
 	this->request = NULL;
 	this->incomingPacketHandler = NULL;
 	this->outgoingPacketHandler = NULL;
 	this->readingThread = 0;
-	this->writingThread = 0;	
+	this->writingThread = 0;
+	this->shutdownCalled = false;
+	
+	this->endpointID = endpointID;	
+	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
+	
+	string endpointSockPath = std::string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
+	struct sockaddr_un sockAddr;
+	memset(&sockAddr, 0, sizeof(sockAddr));
+	sockAddr.sun_family = AF_LOCAL;
+	sockAddr.sun_path[0]='\0';
+	memcpy(sockAddr.sun_path+1, endpointSockPath.c_str(), endpointSockPath.size());
+	
+	if (bind(this->sock, (struct sockaddr*)&sockAddr, sizeof(sockAddr)) == -1){
+		throw SVC_ERROR_BINDING;
+	}
+	else{
+		//-- create new reading thread
+		pthread_attr_t attr;
+		pthread_attr_init(&attr);
+		this->working = true;
+		if (pthread_create(&this->readingThread, &attr, svc_endpoint_reading_loop, this) !=0){
+			throw SVC_ERROR_CRITICAL;
+		}		
+		
+		//-- create a packet handler to process incoming packets
+		try{	
+			this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_endpoint_incoming_packet_handler, this);
+		}
+		catch(...){
+			throw SVC_ERROR_CRITICAL;
+		}
+	}
 };
 
 void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args){
@@ -288,7 +320,13 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 		SVCCommand cmd = (SVCCommand)packet->packet[CMD_BYTE];
 		uint64_t endpointID = *((uint64_t*)packet->packet);
 		
-		switch (cmd){				
+		switch (cmd){
+			case SVC_CMD_SHUTDOWN_ENDPOINT:
+				delete packet;
+				_this->isAuth = false;
+				_this->working = false;
+				break;
+						
 			case SVC_CMD_CONNECT_INNER4:				
 				//--	new endpointID
 				packet->popCommandParam(param, &paramLen);
@@ -391,9 +429,10 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 		if (packet!=NULL){
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
-			//printf("\nsvc endpoint write packet %d: ", sendrs); //printBuffer(packet->packet, packet->dataLen); fflush(stdout);		
+			printf("\nsvc endpoint write packet: %d, error: %d ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//-- TODO: on error: ECONNREFUSED with the first packet, then socket remove the connection. following packets will get ENOTCONN
 			delete packet;			
-			//-- TODO: check this send result for futher decision
+			//-- call reconnection method, if fail then set isAuth = false, working = false
 		}
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -409,35 +448,6 @@ void SVCEndpoint::changeEndpointID(uint64_t endpointID){
 	//-- update
 	this->svc->endpoints[endpointID] = this;
 	this->endpointID = endpointID;
-}
-
-int SVCEndpoint::bindToEndpointID(uint64_t endpointID){
-	
-	this->endpointID = endpointID;
-	//-- bind app endpoint socket
-	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	string endpointSockPath = std::string(SVC_ENDPOINT_APP_PATH_PREFIX) + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);	
-	struct sockaddr_un sockAddr;
-	memset(&sockAddr, 0, sizeof(sockAddr));
-	sockAddr.sun_family = AF_LOCAL;
-	sockAddr.sun_path[0]='\0';
-	memcpy(sockAddr.sun_path+1, endpointSockPath.c_str(), endpointSockPath.size());
-	if (bind(this->sock, (struct sockaddr*)&sockAddr, sizeof(sockAddr)) == -1){
-		return -1;
-	}
-	else{
-		//-- create new reading thread
-		pthread_attr_t attr;
-		pthread_attr_init(&attr);
-		this->working = true;
-		if (pthread_create(&this->readingThread, &attr, svc_endpoint_reading_loop, this) !=0){
-			return -1;
-		}		
-		
-		//-- create a packet handler to process incoming packets		
-		this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_endpoint_incoming_packet_handler, this);
-		return 0;
-	}
 }
 
 int SVCEndpoint::connectToDaemon(){
@@ -465,111 +475,122 @@ int SVCEndpoint::connectToDaemon(){
 	}
 }
 
-bool SVCEndpoint::negotiate(){	
+bool SVCEndpoint::negotiate(){
 	
 	uint8_t* param = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint16_t paramLen;
-	SVCPacket* packet = new SVCPacket(this->endpointID);
-	if (this->isInitiator){
-		//--	send SVC_CMD_CONNECT_INNER1		
-		packet->setCommand(SVC_CMD_CONNECT_INNER1);
-		//-- get challenge secret and challenge		
-		this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
-		this->challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);		
-		packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
-		packet->pushCommandParam((uint8_t*)&this->svc->appID, APPID_LENGTH);
-		packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
-		uint32_t remoteAddr = this->remoteHost->getHostAddress();
-		packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
+	SVCPacket* packet;
+	
+	if (this->working){
+		this->isAuth = false;
+		packet = new SVCPacket(this->endpointID);
+		if (this->isInitiator){
+			//--	send SVC_CMD_CONNECT_INNER1		
+			packet->setCommand(SVC_CMD_CONNECT_INNER1);
+			//-- get challenge secret and challenge		
+			this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
+			this->challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);		
+			packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
+			packet->pushCommandParam((uint8_t*)&this->svc->appID, APPID_LENGTH);
+			packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
+			uint32_t remoteAddr = this->remoteHost->getHostAddress();
+			packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
 		
-		this->outgoingQueue.enqueue(packet);
+			this->outgoingQueue.enqueue(packet);
 		
-		if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, SVC_DEFAULT_TIMEOUT)){
-			this->isAuth = false;
+			if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, SVC_DEFAULT_TIMEOUT)){
+				this->isAuth = false;
+			}
+			else{
+				if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->endpointID, SVC_DEFAULT_TIMEOUT)){
+					this->isAuth = false;
+				}
+			}
 		}
 		else{
-			if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->endpointID, SVC_DEFAULT_TIMEOUT)){
+			//-- read challenge from request packet
+			this->request->popCommandParam(param, &paramLen);
+			this->challengeReceived = std::string((char*)param, paramLen);
+		
+			//-- resolve this challenge to get challenge secret
+			this->challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeReceived);
+		
+			//-- generate proof
+			this->proof = this->svc->authenticator->generateProof(this->challengeSecretReceived);		
+		
+			//-- generate challenge
+			this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
+			this->challengeSent = this->svc->authenticator->generateChallenge(this->challengeSecretSent);		
+				
+			packet->setCommand(SVC_CMD_CONNECT_INNER3);
+			packet->pushCommandParam((uint8_t*)this->challengeSent.c_str(), this->challengeSent.size());
+			packet->pushCommandParam((uint8_t*)this->proof.c_str(), this->proof.size());
+			packet->pushCommandParam((uint8_t*)this->challengeSecretSent.c_str(), this->challengeSecretSent.size());
+			packet->pushCommandParam((uint8_t*)this->challengeSecretReceived.c_str(),  this->challengeSecretReceived.size());
+			this->outgoingQueue.enqueue(packet);
+		
+			if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, SVC_DEFAULT_TIMEOUT)){
 				this->isAuth = false;
 			}
 		}
+		free(param);
+		return this->isAuth;
 	}
 	else{
-		//-- read challenge from request packet
-		this->request->popCommandParam(param, &paramLen);
-		this->challengeReceived = std::string((char*)param, paramLen);
-		
-		//-- resolve this challenge to get challenge secret
-		this->challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeReceived);
-		
-		//-- generate proof
-		this->proof = this->svc->authenticator->generateProof(this->challengeSecretReceived);		
-		
-		//-- generate challenge
-		this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
-		this->challengeSent = this->svc->authenticator->generateChallenge(this->challengeSecretSent);		
-				
-		packet->setCommand(SVC_CMD_CONNECT_INNER3);
-		packet->pushCommandParam((uint8_t*)this->challengeSent.c_str(), this->challengeSent.size());
-		packet->pushCommandParam((uint8_t*)this->proof.c_str(), this->proof.size());
-		packet->pushCommandParam((uint8_t*)this->challengeSecretSent.c_str(), this->challengeSecretSent.size());
-		packet->pushCommandParam((uint8_t*)this->challengeSecretReceived.c_str(),  this->challengeSecretReceived.size());
-		this->outgoingQueue.enqueue(packet);
-		
-		if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, SVC_DEFAULT_TIMEOUT)){
-			this->isAuth = false;
-		}
+		free(param);
+		return false;
 	}
-	free(param);
-	return this->isAuth;
 }
 
 void SVCEndpoint::shutdown(){
-	if (this->working){	
+	if (!this->shutdownCalled){
+		this->shutdownCalled = true;
 		//-- send a shutdown packet to daemon		
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
 		this->outgoingQueue.enqueue(packet);
-	
+
 		this->working = false;
+		this->isAuth = false;
 		int joinrs;
 		//-- do not receive data anymore
 		if (this->readingThread !=0) {
 			joinrs = pthread_join(this->readingThread, NULL);
 		}
-		
+	
 		//-- process residual packets
 		if (this->incomingPacketHandler != NULL){
 			this->incomingPacketHandler->stopWorking();
 			joinrs = this->incomingPacketHandler->waitStop();
 			delete this->incomingPacketHandler;
 		}
-		
+	
 		//-- send out residual packets
 		if (this->outgoingPacketHandler != NULL){
 			this->outgoingPacketHandler->stopWorking();
 			joinrs = this->outgoingPacketHandler->waitStop();			
 			delete this->outgoingPacketHandler;
 		}	
-		
+	
 		//-- stop writing		
 		if (this->writingThread !=0) {
 			joinrs = pthread_join(this->writingThread, NULL);			
 		}			
 		close(this->sock);
-		
+	
 		//-- remove queues and created instances		
 		if (this->request != NULL) delete this->request;
-		
+	
 		//-- unregister from endpoints collection
-		this->svc->endpoints[this->endpointID]= NULL;		
+		this->svc->endpoints[this->endpointID]= NULL;
 	}
 }
 
-SVCEndpoint::~SVCEndpoint(){
-	shutdown();
+SVCEndpoint::~SVCEndpoint(){	
+	this->shutdown();
 }
 
-int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen, uint8_t priority, bool tcp){
+int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
 	if (this->isAuth){
 		//-- try to send		
 		SVCPacket* packet = new SVCPacket(this->endpointID);

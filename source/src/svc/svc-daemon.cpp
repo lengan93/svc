@@ -73,6 +73,7 @@ class DaemonEndpoint{
 		pthread_t inetWritingThread;
 		
 		//-- private members
+		volatile bool shutdownCalled;
 		volatile bool working;
 		bool isAuth;
 		int initLiveTime;
@@ -123,6 +124,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 	this->inetWritingThread = 0;
 	
 	this->working = true;
+	this->shutdownCalled = false;
 	this->endpointID = endpointID;	
 	this->isAuth = false;
 	this->initLiveTime = SVC_ENDPOINT_LIVETIME;
@@ -194,58 +196,60 @@ void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* pac
 }
 
 void DaemonEndpoint::shutdown(){
-	//printf("\ndaemonEndpointShutdown called"); fflush(stdout);
-	this->working = false;
-	int joinrs;
+	if (!this->shutdownCalled){
+		this->shutdownCalled = true;
+		this->working = false;
+		int joinrs;
 	
-	//-- stop reading packets
-	if (this->unixReadingThread!=0){
-		joinrs = pthread_join(this->unixReadingThread, NULL);		
-	}
+		//-- stop reading packets
+		if (this->unixReadingThread!=0){
+			joinrs = pthread_join(this->unixReadingThread, NULL);		
+		}
 	
-	//-- process residual incoming packets
-	if (this->unixIncomingPacketHandler!=NULL){
-		this->unixIncomingPacketHandler->stopWorking();
-		joinrs = this->unixIncomingPacketHandler->waitStop();		
-		delete this->unixIncomingPacketHandler;
-	}
+		//-- process residual incoming packets
+		if (this->unixIncomingPacketHandler!=NULL){
+			this->unixIncomingPacketHandler->stopWorking();
+			joinrs = this->unixIncomingPacketHandler->waitStop();		
+			delete this->unixIncomingPacketHandler;
+		}
 	
-	if (this->inetIncomingPacketHandler!=NULL){
-		this->inetIncomingPacketHandler->stopWorking();
-		joinrs = this->inetIncomingPacketHandler->waitStop();		
-		delete this->inetIncomingPacketHandler;
-	}
+		if (this->inetIncomingPacketHandler!=NULL){
+			this->inetIncomingPacketHandler->stopWorking();
+			joinrs = this->inetIncomingPacketHandler->waitStop();		
+			delete this->inetIncomingPacketHandler;
+		}
 	
-	//-- process residual outgoing packets
-	if (this->unixOutgoingPacketHandler!=NULL){
-		this->unixOutgoingPacketHandler->stopWorking();
-		joinrs = this->unixOutgoingPacketHandler->waitStop();		
-		delete this->unixOutgoingPacketHandler;
-	}
+		//-- process residual outgoing packets
+		if (this->unixOutgoingPacketHandler!=NULL){
+			this->unixOutgoingPacketHandler->stopWorking();
+			joinrs = this->unixOutgoingPacketHandler->waitStop();		
+			delete this->unixOutgoingPacketHandler;
+		}
 	
-	if (this->inetOutgoingPacketHandler!=NULL){
-		this->inetOutgoingPacketHandler->stopWorking();
-		joinrs = this->inetOutgoingPacketHandler->waitStop();
-		delete this->inetOutgoingPacketHandler;
-	}			
+		if (this->inetOutgoingPacketHandler!=NULL){
+			this->inetOutgoingPacketHandler->stopWorking();
+			joinrs = this->inetOutgoingPacketHandler->waitStop();
+			delete this->inetOutgoingPacketHandler;
+		}			
 
-	//-- stop sending packets
-	if (this->unixWritingThread!=0){
-		joinrs = pthread_join(this->unixWritingThread, NULL);		
-	}
+		//-- stop sending packets
+		if (this->unixWritingThread!=0){
+			joinrs = pthread_join(this->unixWritingThread, NULL);		
+		}
 	
-	if (this->inetWritingThread!=0){
-		joinrs = pthread_join(this->inetWritingThread, NULL);
-	}	
-	close(this->dmnSocket);
+		if (this->inetWritingThread!=0){
+			joinrs = pthread_join(this->inetWritingThread, NULL);
+		}	
+		close(this->dmnSocket);
 			
-	//-- remove instances
-	mpz_clear(this->randomX);
-	if (this->encryptedProof!=NULL) delete this->encryptedProof;
-	if (this->encryptedECPoint!=NULL) delete this->encryptedECPoint;
-	delete this->aesgcm;
-	delete this->curve;		
-	printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
+		//-- remove instances
+		mpz_clear(this->randomX);
+		if (this->encryptedProof!=NULL) delete this->encryptedProof;
+		if (this->encryptedECPoint!=NULL) delete this->encryptedECPoint;
+		delete this->aesgcm;
+		delete this->curve;		
+		printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
+	}
 }
 
 DaemonEndpoint::~DaemonEndpoint(){	
@@ -471,15 +475,6 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 	
-	/*uint8_t* iv;
-	uint32_t ivLen;
-	uint8_t* encrypted;
-	uint32_t encryptedLen;
-	uint8_t* tag;
-	uint32_t tagLen;
-	uint8_t* data;
-	uint32_t dataLen;*/
-	
 	//-- check for encryption
 	bool decryptSuccess = true;
 	if (((infoByte & SVC_ENCRYPTED) != 0x00) && (_this->aesgcm!=NULL)){
@@ -495,6 +490,13 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 			switch (cmd){
+				case SVC_CMD_SHUTDOWN_ENDPOINT:
+					//-- other end of connection has shutdown
+					_this->unixOutgoingQueue.enqueue(packet);
+					_this->working = false;
+					_this->isAuth = false;
+					break;
+					
 				case SVC_CMD_CONNECT_OUTER2:
 					pthread_mutex_lock(&_this->stateMutex);
 					if (_this->state < SVC_CMD_CONNECT_OUTER2){		
@@ -611,8 +613,16 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					
 		switch (cmd){			
 		
-			case SVC_CMD_SHUTDOWN_ENDPOINT:
-				delete packet;
+			case SVC_CMD_SHUTDOWN_ENDPOINT:				
+				if (_this->isAuth){
+					//-- send terminating command
+					packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
+					_this->inetOutgoingQueue.enqueue(packet);
+					_this->isAuth = false;
+				}
+				else{
+					delete packet;
+				}
 				_this->working = false;
 				break;
 			
@@ -1102,7 +1112,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 	
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 			if ((infoByte & SVC_ENCRYPTED)!=0x00){
-				if (endpoints[endpointID] != NULL){
+				if (endpoints[endpointID] != NULL && endpoints[endpointID]->working){
 					//-- forward packet if endpoint found
 					//printf("\nforwarding encrypted command packet (OUTER3)"); fflush(stdout);
 					endpoints[endpointID]->inetIncomingQueue.enqueue(packet);
@@ -1197,7 +1207,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		}
 		else{
 			//-- incoming data, discard if not encrypted or endpoint not found		
-			if ((endpoints[endpointID] == NULL) || ((infoByte & SVC_ENCRYPTED) == 0x00)){
+			if ((endpoints[endpointID] == NULL) || ((infoByte & SVC_ENCRYPTED) == 0x00) || (endpoints[endpointID] != NULL && !endpoints[endpointID]->working)){
 				delete packet;
 			}
 			else{

@@ -23,6 +23,7 @@
 			virtual std::string resolveChallenge(const std::string& challenge)=0;
 			virtual std::string generateProof(const std::string& challengeSecret)=0;
 			virtual bool verifyProof(const std::string& challengeSecret, const std::string& proof)=0;
+			virtual std::string getIdentity()=0;
 	};
 
 #endif
