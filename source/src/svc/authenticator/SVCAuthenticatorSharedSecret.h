@@ -1,6 +1,10 @@
 #ifndef __SVC_AUTHENTICATOR_PKI__
 #define __SVC_AUTHENTICATOR_PKI__
 
+	//#include <iostream>
+	#include <fstream>
+	#include <sstream>
+
 	#include "SVCAuthenticator.h"
 	#include "../../crypto/AESGCM.h"
 	#include "../../crypto/SHA256.h"
@@ -21,6 +25,7 @@
 			//--	inherited interface
 			std::string generateChallenge(const std::string& challengeSecret);			
 			std::string resolveChallenge(const std::string& challenge);
+			std::string getRemoteIdentity(const std::string& challengeSecret);
 			std::string generateProof(const std::string& challengeSecret);
 			bool verifyProof(const std::string& challengeSecret, const std::string& proof);
 	};

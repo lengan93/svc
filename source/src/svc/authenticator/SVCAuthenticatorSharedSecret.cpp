@@ -1,17 +1,12 @@
 #include "SVCAuthenticatorSharedSecret.h"
-#include <iostream>
-#include <fstream>
-#include <sstream>
 
-using namespace std;
+const std::string SVCAuthenticatorSharedSecret::NULL_STRING = "";
 
-const string SVCAuthenticatorSharedSecret::NULL_STRING = "";
-
-SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(string secretPath){	
-	//-- read shared secret in hex string format
+SVCAuthenticatorSharedSecret::SVCAuthenticatorSharedSecret(std::string secretPath){	
+	//-- read shared secret in hex std::string format
 	uint8_t sharedKey[KEY_LENGTH] = "";
-	ifstream key(secretPath);
-	stringstream buffer;
+	std::ifstream key(secretPath);
+	std::stringstream buffer;
 	buffer << key.rdbuf();
 	
 	//printf("\nread shared secret: %s", buffer.str().c_str());
@@ -29,17 +24,17 @@ SVCAuthenticatorSharedSecret::~SVCAuthenticatorSharedSecret(){
 	delete this->sha256;
 }
 
-string SVCAuthenticatorSharedSecret::getIdentity(){
+std::string SVCAuthenticatorSharedSecret::getRemoteIdentity(const std::string& challengeSecret){
 	return "";
 }
 
-string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSecret){
-	string rs;
-	//-- random iv string
+std::string SVCAuthenticatorSharedSecret::generateChallenge(const std::string& challengeSecret){
+	std::string rs;
+	//-- random iv std::string
 	uint16_t ivLen = KEY_LENGTH;
 	uint8_t iv[ivLen] = "";
 	generateRandomData(ivLen, iv);
-	//-- encrypt this string with aesgcm, shared key
+	//-- encrypt this std::string with aesgcm, shared key
 	uint32_t encryptedLen;
 	uint8_t* encrypted;
 	uint8_t* tag;
@@ -72,8 +67,8 @@ string SVCAuthenticatorSharedSecret::generateChallenge(const string& challengeSe
 	return rs;
 }
 
-string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challenge){
-	string rs;
+std::string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challenge){
+	std::string rs;
 	
 	uint8_t* challengeBuf = (uint8_t*)malloc(65535);
 	uint32_t challengeLen = stringToHex(challenge, challengeBuf);
@@ -101,7 +96,7 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 		tagLen = *((uint16_t*)p);
 				
 		if (this->aesGCM->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &challengeSecret, &challengeSecretLen)){
-			rs = string((char*)challengeSecret, challengeSecretLen);
+			rs = std::string((char*)challengeSecret, challengeSecretLen);
 			free(challengeSecret);
 		}
 		else{			
@@ -115,9 +110,9 @@ string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challen
 	return rs;
 }
 
-string SVCAuthenticatorSharedSecret::generateProof(const string& challengeSecret){
+std::string SVCAuthenticatorSharedSecret::generateProof(const std::string& challengeSecret){
 	//-- hash the solution HASH_TIME times
-	string rs;
+	std::string rs;
 	if (challengeSecret.size()>0){		
 		for (int i=0; i<HASH_TIME; i++){
 			rs = this->sha256->hash(challengeSecret);
@@ -129,8 +124,8 @@ string SVCAuthenticatorSharedSecret::generateProof(const string& challengeSecret
 	return rs;
 }
 
-bool SVCAuthenticatorSharedSecret::verifyProof(const string& challengeSecret, const string& proof){
-	string comparison;
+bool SVCAuthenticatorSharedSecret::verifyProof(const std::string& challengeSecret, const std::string& proof){
+	std::string comparison;
 	if (proof.size()>0){
 		for (int i=0; i<HASH_TIME; i++){
 			comparison = this->sha256->hash(challengeSecret);

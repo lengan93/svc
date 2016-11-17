@@ -321,6 +321,12 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 		uint64_t endpointID = *((uint64_t*)packet->packet);
 		
 		switch (cmd){
+		
+			case SVC_CMD_CHECK_ALIVE:
+				//-- just echo the packet to indicate that we are alive
+				_this->outgoingQueue.enqueue(packet);
+				break;
+		
 			case SVC_CMD_SHUTDOWN_ENDPOINT:
 				delete packet;
 				_this->isAuth = false;
@@ -429,7 +435,7 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 		if (packet!=NULL){
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
-			printf("\nsvc endpoint write packet: %d, error: %d ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//printf("\nsvc endpoint write packet: %d, error: %d ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			//-- TODO: on error: ECONNREFUSED with the first packet, then socket remove the connection. following packets will get ENOTCONN
 			delete packet;			
 			//-- call reconnection method, if fail then set isAuth = false, working = false
@@ -514,7 +520,7 @@ bool SVCEndpoint::negotiate(){
 		
 			//-- resolve this challenge to get challenge secret
 			this->challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeReceived);
-		
+			this->remoteIdentity = this->svc->authenticator->getRemoteIdentity(this->challengeSecretReceived);
 			//-- generate proof
 			this->proof = this->svc->authenticator->generateProof(this->challengeSecretReceived);		
 		
@@ -540,6 +546,10 @@ bool SVCEndpoint::negotiate(){
 		free(param);
 		return false;
 	}
+}
+
+std::string SVCEndpoint::getRemoteIdentity(){
+	return this->remoteIdentity;
 }
 
 void SVCEndpoint::shutdown(){

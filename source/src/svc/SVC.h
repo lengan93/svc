@@ -58,6 +58,7 @@
 			std::string challengeSent;
 			std::string challengeReceived;
 			std::string proof;
+			std::string remoteIdentity;
 		
 			SVCEndpoint(SVC* svc, uint64_t endpointID, bool isInitiator);	
 			
@@ -84,7 +85,7 @@
 			/*
 			 *
 			 * */
-			std::string getIdentity();
+			std::string getRemoteIdentity();
 						
 			/*
 			 * Send data over the connector to the other endpoint of communication.
@@ -160,7 +161,6 @@
 			 * 'listenConnection' reads in the connection request queue and returns immediately if a request is found
 			 * If there is no connection request, 'listenConnection' will wait for 'timeout' milisecond before return NULL		
 			 * On success, a pointer to SVCEndpoint is returned
-			 * Like 'establishConnection', the negotiation should be processed in a seperated thread
 			 * */
 			SVCEndpoint* listenConnection(int timeout);
 			

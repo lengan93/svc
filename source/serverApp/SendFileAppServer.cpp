@@ -24,13 +24,13 @@ int main(int argc, char** argv){
 				while (endpoint->isAlive()){
 					if (endpoint->readData(buffer, &dataLen, 1000) == 0){
 						text = string((char*)buffer, dataLen);
-						printf("\nReceived: %s", text.c_str());
+						printf("\nReceived: %s", text.c_str()); fflush(stdout);
 						//-- send pack packet to client
 						endpoint->sendData(buffer, dataLen);
 					}
-					printf("\n(input 'close' to terminate): ");
-					cin>>text;
-					if (text == "close") break;
+					//else{
+					//	printf("\nread failed"); fflush(stdout);
+					//}
 				}
 				endpoint->shutdown();
 				printf("\nProgram terminated!\n");

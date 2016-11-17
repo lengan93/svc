@@ -27,7 +27,9 @@
 	#define SVC_DEFAULT_TIMEOUT 				10000	
 	#define SVC_DEFAULT_BUFSIZ 					65535
 	#define	SVC_DAEPORT							1221
-	#define SVC_ENDPOINT_LIVETIME				5000
+	#define SVC_ENDPOINT_BEAT_LIVETIME			5
+	#define SVC_BEAT_CHECK_FREQ					5000
+	#define SVC_ENDPOINT_INIT_LIVETIME			3000
 	
 	static std::string SVC_DAEMON_PATH = 				"/tmp/svc-daemon";
 	static std::string SVC_CLIENT_PATH_PREFIX = 		"/tmp/svc-client-";
