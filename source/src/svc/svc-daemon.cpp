@@ -194,41 +194,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		this->shutdownCalled = false;
 }
 
-void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* packet, void* args){
-	DaemonEndpoint* _this = (DaemonEndpoint*)args;
-	uint8_t infoByte = packet->packet[infoByte];
-	if ((infoByte & SVC_COMMAND_FRAME) !=0x00){
-		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		switch(cmd){
-			case SVC_CMD_CHECK_ALIVE:
-				if (_this->beatUp){
-					_this->beatUp = false;
-					_this->unixToBeSentQueue.enqueue(packet);
-				}
-				else{
-					_this->beatLiveTime--;
-					if (_this->beatLiveTime == 0){
-						//-- notify other end that this endpoint has closed
-						packet->switchCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
-						packet->packet[INFO_BYTE] |= SVC_ENCRYPTED; //-- protect the command
-						_this->inetOutgoingQueue.enqueue(packet);
-						_this->working = false;
-					}
-					else{
-						_this->unixToBeSentQueue.enqueue(packet);
-					}
-				}
-				break;		
-			
-			default:
-				_this->unixToBeSentQueue.enqueue(packet);
-				break;
-		}
-	}
-	else{
-		_this->unixToBeSentQueue.enqueue(packet);
-	}	
-}
+
 
 void DaemonEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
@@ -350,6 +316,44 @@ void DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, sockle
 	this->remoteAddrLen = sockLen;
 }
 
+void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* packet, void* args){
+	DaemonEndpoint* _this = (DaemonEndpoint*)args;
+	uint8_t infoByte = packet->packet[INFO_BYTE];
+	if ((infoByte & SVC_COMMAND_FRAME) !=0x00){
+		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
+		switch(cmd){
+			case SVC_CMD_CHECK_ALIVE:
+				//printf("\nunix outgoing checkalive cmd recevied. packet 0x%08x: ", (void*)packet); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+				if (_this->beatUp){
+					_this->beatUp = false;
+					_this->unixToBeSentQueue.enqueue(packet);
+				}
+				else{
+					_this->beatLiveTime--;
+					//printf("\nbeatLiveTime--"); fflush(stdout);
+					if (_this->beatLiveTime == 0){
+						//-- notify other end that this endpoint has closed
+						//printf("\nsvc endpoint dead by beatLiveTime. shutdown daemon endpoint and notify other end"); fflush(stdout);
+						packet->switchCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
+						packet->packet[INFO_BYTE] |= SVC_ENCRYPTED; //-- protect the command
+						_this->inetOutgoingQueue.enqueue(packet);
+						_this->working = false;
+					}
+					else{
+						_this->unixToBeSentQueue.enqueue(packet);
+					}
+				}
+				break;		
+			
+			default:
+				_this->unixToBeSentQueue.enqueue(packet);
+				break;
+		}
+	}
+	else{
+		_this->unixToBeSentQueue.enqueue(packet);
+	}	
+}
 
 void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* packet, void* args){
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
@@ -381,7 +385,7 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 			sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
-			printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
 			//-- TODO: check send result here
 		};
@@ -499,7 +503,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 		if (packet!=NULL){
 			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
 			if (sendrs == -1){
-				printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
+				//printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
 			}
 			delete packet;		
 		}
@@ -515,7 +519,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 	
-	printf("\ndaemon inet (received) and processing packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+	//printf("\ndaemon inet (received) and processing packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 	
 	//-- check for encryption
 	bool decryptSuccess = true;
@@ -524,7 +528,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	}
 	
 	if (decryptSuccess){
-		printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+		//printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		//-- check sequence and address to be update
 		if (memcmp(&_this->remoteAddr, &packet->srcAddr, _this->remoteAddrLen)!=0){
 			_this->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
@@ -535,7 +539,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 			switch (cmd){
 				case SVC_CMD_SHUTDOWN_ENDPOINT:
 					//-- other end of connection has shutdown
-					printf("\nother end notify its shutdown"); fflush(stdout);
+					//printf("\nother end notifies its shutdown"); fflush(stdout);
 					_this->unixOutgoingQueue.enqueue(packet);
 					_this->working = false;
 					_this->isAuth = false;
@@ -661,13 +665,14 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				//-- reset beatLiveTime
 				_this->beatUp = true;
 				_this->beatLiveTime = SVC_ENDPOINT_BEAT_LIVETIME;
-				//printf("\nendpoint: "); printBuffer((uint8_t*)&_this->endpointID, ENDPOINTID_LENGTH); printf(" beat"); fflush(stdout);
+				//printf("\nendpoint echo beat, packet 0x%08x then removed", (void*)packet);  fflush(stdout);
 				delete packet;
 				break;
 				
 			case SVC_CMD_SHUTDOWN_ENDPOINT:				
 				if (_this->isAuth){
 					//-- send terminating command
+					//printf("\nsvc app send terminate CMD"); fflush(stdout);
 					packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 					_this->inetOutgoingQueue.enqueue(packet);
 					_this->isAuth = false;
@@ -1029,11 +1034,7 @@ void* daemon_unix_reading_loop(void* args){
 	ssize_t readrs;
 		
 	while (working){
-		do{
-			readrs = recv(daemonUnSocket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT);
-		}
-		while((readrs==-1) && working);
-		
+		readrs = recv(daemonUnSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
 		if (readrs>0){
 			//printf("\ndaemon_unix_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			daemonUnixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
@@ -1052,12 +1053,8 @@ void* daemon_inet_reading_loop(void* args){
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 	
 	while (working){
-		do{
-			srcAddrLen = sizeof(srcAddr);
-			readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT, (struct sockaddr*)&srcAddr, &srcAddrLen);			
-		}
-		while((readrs==-1) && working);
-		
+		srcAddrLen = sizeof(srcAddr);
+		readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
@@ -1068,7 +1065,7 @@ void* daemon_inet_reading_loop(void* args){
 	pthread_exit(EXIT_SUCCESS);
 }
 
-void shutdown(){
+void shutdownDaemon(){
 	if (working){		
 		working = false;
 		//-- request all daemon endpoint to shutdown
@@ -1082,6 +1079,8 @@ void shutdown(){
 		endpointChecker->stopWorking();
 		
 		//-- stop reading packets
+		shutdown(daemonUnSocket, SHUT_RD);
+		shutdown(daemonInSocket, SHUT_RD);
 		pthread_join(daemonInetReadingThread, NULL);
 		pthread_join(daemonUnixReadingThread, NULL);
 
@@ -1093,7 +1092,7 @@ void shutdown(){
 
 void signal_handler(int sig){
 	if (sig == SIGINT){
-		shutdown();
+		shutdownDaemon();
 	}	
 }
 
@@ -1289,10 +1288,10 @@ void checkEndpointLiveTime(void* args){
 				if (second >= SVC_BEAT_CHECK_FREQ){
 					second = 0;
 					//-- send check packet to check for socket
-					//printf("\nsend check alive");
 					SVCPacket* beat = new SVCPacket(ep->endpointID);
 					beat->setCommand(SVC_CMD_CHECK_ALIVE);
 					ep->unixOutgoingQueue.enqueue(beat);
+					printf("\nsend check alive, packet 0x%08x", (void*)beat); fflush(stdout);
 				}
 			}
 		}

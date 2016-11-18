@@ -32,7 +32,7 @@ int main(int argc, char** argv){
 					}
 				}
 				while (text != "close" && endpoint->isAlive());
-				endpoint->shutdown();
+				endpoint->shutdownEndpoint();
 				printf("\nProgram terminated.\n");
 			}
 			else{
@@ -40,7 +40,7 @@ int main(int argc, char** argv){
 			}
 			delete endpoint;
 		}
-		svc->shutdown();
+		svc->shutdownSVC();
 		delete svc;		
 	}
 	catch (const char* str){

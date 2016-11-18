@@ -101,7 +101,7 @@
 			/*
 			 * Close the communication endpoint and send terminate signals to underlayer
 			 * */
-			void shutdown();
+			void shutdownEndpoint();
 			
 			bool isAlive(){
 				return this->isAuth;
@@ -167,7 +167,7 @@
 			/*
 			 * try to shutdown all created instances of SVCEndpoint then shutdown itself
 			 * */
-			void shutdown();
+			void shutdownSVC();
 	};
 	
 #endif

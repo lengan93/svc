@@ -1,9 +1,17 @@
 #include <iostream>
+
+#include "../src/utils/PeriodicWorker.h"
 #include "../src/svc/SVC.h"
 #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
 using namespace std;
+
+void sendBeatToClient(void* args){
+	static uint8_t* beat = (uint8_t*)"server beat";
+	SVCEndpoint* ep = (SVCEndpoint*)args;
+	ep->sendData(beat, 12);
+}
 
 int main(int argc, char** argv){
 
@@ -17,6 +25,7 @@ int main(int argc, char** argv){
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
+				//PeriodicWorker* pw = new PeriodicWorker(1000, sendBeatToClient, endpoint);
 				//-- try to read some data
 				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
 				uint32_t dataLen;
@@ -25,14 +34,17 @@ int main(int argc, char** argv){
 					if (endpoint->readData(buffer, &dataLen, 1000) == 0){
 						text = string((char*)buffer, dataLen);
 						printf("\nReceived: %s", text.c_str()); fflush(stdout);
-						//-- send pack packet to client
+						//-- send echo packet to client
 						endpoint->sendData(buffer, dataLen);
 					}
 					//else{
 					//	printf("\nread failed"); fflush(stdout);
 					//}
 				}
-				endpoint->shutdown();
+				//pw->stopWorking();
+				//pw->waitStop();
+				//delete pw;
+				endpoint->shutdownEndpoint();
 				printf("\nProgram terminated!\n");
 			}
 			else{
@@ -40,7 +52,7 @@ int main(int argc, char** argv){
 			}
 			delete endpoint;
 		}
-		svc->shutdown();
+		svc->shutdownSVC();
 		delete svc;
 	}
 	catch (...){

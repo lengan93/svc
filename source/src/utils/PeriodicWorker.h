@@ -46,7 +46,7 @@
 				pthread_attr_t threadAttr;
 				pthread_attr_init(&threadAttr);
 				if (pthread_create(&this->worker, &threadAttr, handling, this)!=0){
-					throw SVC_ERROR_CRITICAL;
+					throw "Cant not create new thread";
 				}
 			}
 			

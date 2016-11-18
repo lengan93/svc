@@ -85,7 +85,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 	}
 }
 
-void SVC::shutdown(){
+void SVC::shutdownSVC(){
 
 	if (!this->shutdownCalled){
 		this->shutdownCalled = true;
@@ -101,6 +101,7 @@ void SVC::shutdown(){
 		this->working = false;
 		
 		//-- stop reading packets
+		shutdown(this->appSocket, SHUT_RD);
 		if (this->readingThread !=0) pthread_join(this->readingThread, NULL);
 		
 		//-- process residual incoming packets
@@ -114,6 +115,7 @@ void SVC::shutdown(){
 		delete this->outgoingPacketHandler;
 		
 		//-- stop writing packets
+		shutdown(this->appSocket, SHUT_WR);
 		if (this->writingThread!=0) pthread_join(this->writingThread, NULL);	
 		close(this->appSocket);
 				
@@ -123,7 +125,7 @@ void SVC::shutdown(){
 }
 
 SVC::~SVC(){
-	shutdown();
+	shutdownSVC();
 }
 
 void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
@@ -167,11 +169,7 @@ void* SVC::svc_reading_loop(void* args){
 	int readrs;
 		
 	while (_this->working){
-		do{
-			readrs = recv(_this->appSocket, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT);
-		}
-		while((readrs==-1) && _this->working);
-		
+		readrs = recv(_this->appSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
 		if (readrs>0){			
 			_this->incomingQueue.enqueue(new SVCPacket(buffer, readrs));
 		}
@@ -324,6 +322,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 		
 			case SVC_CMD_CHECK_ALIVE:
 				//-- just echo the packet to indicate that we are alive
+				printf("\ncheckalive received, echo back"); fflush(stdout);
 				_this->outgoingQueue.enqueue(packet);
 				break;
 		
@@ -412,11 +411,7 @@ void* SVCEndpoint::svc_endpoint_reading_loop(void* args){
 	int readrs;
 		
 	while (_this->working){
-		do{
-			readrs = recv(_this->sock, buffer, SVC_DEFAULT_BUFSIZ, MSG_DONTWAIT);
-		}
-		while((readrs==-1) && _this->working);
-		
+		readrs = recv(_this->sock, buffer, SVC_DEFAULT_BUFSIZ, 0);
 		if (readrs>0){
 			//printf("\nsvc endpoint read packet: %d: ", readrs); printBuffer(buffer, readrs); fflush(stdout);
 			_this->incomingQueue.enqueue(new SVCPacket(buffer, readrs));			
@@ -435,7 +430,7 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 		if (packet!=NULL){
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
-			//printf("\nsvc endpoint write packet: %d, error: %d ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//printf("\nsvc endpoint write packet %d, error %d:  ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			//-- TODO: on error: ECONNREFUSED with the first packet, then socket remove the connection. following packets will get ENOTCONN
 			delete packet;			
 			//-- call reconnection method, if fail then set isAuth = false, working = false
@@ -552,7 +547,7 @@ std::string SVCEndpoint::getRemoteIdentity(){
 	return this->remoteIdentity;
 }
 
-void SVCEndpoint::shutdown(){
+void SVCEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
 		this->shutdownCalled = true;
 		//-- send a shutdown packet to daemon		
@@ -564,6 +559,7 @@ void SVCEndpoint::shutdown(){
 		this->isAuth = false;
 		int joinrs;
 		//-- do not receive data anymore
+		shutdown(this->sock, SHUT_RD);
 		if (this->readingThread !=0) {
 			joinrs = pthread_join(this->readingThread, NULL);
 		}
@@ -582,7 +578,8 @@ void SVCEndpoint::shutdown(){
 			delete this->outgoingPacketHandler;
 		}	
 	
-		//-- stop writing		
+		//-- stop writing
+		shutdown(this->sock, SHUT_WR);
 		if (this->writingThread !=0) {
 			joinrs = pthread_join(this->writingThread, NULL);			
 		}			
@@ -597,7 +594,7 @@ void SVCEndpoint::shutdown(){
 }
 
 SVCEndpoint::~SVCEndpoint(){	
-	this->shutdown();
+	this->shutdownEndpoint();
 }
 
 int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
