@@ -74,6 +74,8 @@ class DaemonEndpoint{
 		
 		//-- private members
 		volatile bool shutdownCalled;
+		volatile bool svcShutdownCall;
+		volatile bool daemonShutdownCall;
 		volatile bool working;
 		bool isAuth;
 		
@@ -192,16 +194,32 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		this->recvSequence = 0;
 		this->isAuth = false;
 		this->shutdownCalled = false;
+		this->svcShutdownCall = false;
+		this->daemonShutdownCall = false;
+		this->remoteAddrLen = sizeof(this->remoteAddr);
+		memset(&this->remoteAddr, 0, this->remoteAddrLen);
 }
-
-
 
 void DaemonEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
-		this->shutdownCalled = true;
-		printf("\nendpoint shutdown called");
-		this->working = false;
+		this->shutdownCalled = true;		
+		
 		int joinrs;
+	
+		if (this->isAuth & !this->daemonShutdownCall){
+			SVCPacket* packet = new SVCPacket(this->endpointID);
+			packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
+			packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
+			this->inetOutgoingQueue.enqueue(packet);
+		}
+		
+		if (!this->svcShutdownCall){
+			SVCPacket* packet = new SVCPacket(this->endpointID);
+			packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
+			this->unixOutgoingQueue.enqueue(packet);
+		}
+		
+		this->working = false;
 	
 		shutdown(this->dmnSocket, SHUT_RD); //-- this will make recv return
 		//-- stop reading packets
@@ -251,7 +269,9 @@ void DaemonEndpoint::shutdownEndpoint(){
 		if (this->encryptedProof!=NULL) delete this->encryptedProof;
 		if (this->encryptedECPoint!=NULL) delete this->encryptedECPoint;
 		delete this->aesgcm;
-		delete this->curve;		
+		delete this->curve;
+		this->aesgcm = NULL;
+		this->curve = NULL;
 		printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	}
 }
@@ -321,29 +341,7 @@ void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* pac
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 	if ((infoByte & SVC_COMMAND_FRAME) !=0x00){
 		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		switch(cmd){
-			case SVC_CMD_CHECK_ALIVE:
-				//printf("\nunix outgoing checkalive cmd recevied. packet 0x%08x: ", (void*)packet); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
-				if (_this->beatUp){
-					_this->beatUp = false;
-					_this->unixToBeSentQueue.enqueue(packet);
-				}
-				else{
-					_this->beatLiveTime--;
-					//printf("\nbeatLiveTime--"); fflush(stdout);
-					if (_this->beatLiveTime == 0){
-						//-- notify other end that this endpoint has closed
-						//printf("\nsvc endpoint dead by beatLiveTime. shutdown daemon endpoint and notify other end"); fflush(stdout);
-						packet->switchCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
-						packet->packet[INFO_BYTE] |= SVC_ENCRYPTED; //-- protect the command
-						_this->inetOutgoingQueue.enqueue(packet);
-						_this->working = false;
-					}
-					else{
-						_this->unixToBeSentQueue.enqueue(packet);
-					}
-				}
-				break;		
+		switch(cmd){				
 			
 			default:
 				_this->unixToBeSentQueue.enqueue(packet);
@@ -503,7 +501,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 		if (packet!=NULL){
 			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
 			if (sendrs == -1){
-				//printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
+				printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
 			}
 			delete packet;		
 		}
@@ -518,8 +516,6 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	uint8_t infoByte = packet->packet[INFO_BYTE];
-	
-	//printf("\ndaemon inet (received) and processing packet: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 	
 	//-- check for encryption
 	bool decryptSuccess = true;
@@ -538,11 +534,10 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 			switch (cmd){
 				case SVC_CMD_SHUTDOWN_ENDPOINT:
-					//-- other end of connection has shutdown
-					//printf("\nother end notifies its shutdown"); fflush(stdout);
-					_this->unixOutgoingQueue.enqueue(packet);
+					//-- other end of connection has shutdown				
+					delete packet;
+					_this->daemonShutdownCall = true;
 					_this->working = false;
-					_this->isAuth = false;
 					break;
 					
 				case SVC_CMD_CONNECT_OUTER2:
@@ -659,27 +654,21 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];	
 		uint64_t endpointID = *((uint64_t*)packet->packet);
 					
-		switch (cmd){
-		
+		switch (cmd){		
 			case SVC_CMD_CHECK_ALIVE:
 				//-- reset beatLiveTime
 				_this->beatUp = true;
 				_this->beatLiveTime = SVC_ENDPOINT_BEAT_LIVETIME;
-				//printf("\nendpoint echo beat, packet 0x%08x then removed", (void*)packet);  fflush(stdout);
+				//printf("\nreceived svc beat"); fflush(stdout);	
 				delete packet;
 				break;
 				
 			case SVC_CMD_SHUTDOWN_ENDPOINT:				
 				if (_this->isAuth){
-					//-- send terminating command
-					//printf("\nsvc app send terminate CMD"); fflush(stdout);
-					packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
-					_this->inetOutgoingQueue.enqueue(packet);
-					_this->isAuth = false;
+					//-- send terminating command					
+					_this->svcShutdownCall = true;
 				}
-				else{
-					delete packet;
-				}
+				delete packet;
 				_this->working = false;
 				break;
 			
@@ -1051,9 +1040,9 @@ void* daemon_inet_reading_loop(void* args){
 	SVCPacket* packet;
 	
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
-	
+
 	while (working){
-		srcAddrLen = sizeof(srcAddr);
+		srcAddrLen = sizeof(srcAddr);		
 		readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
@@ -1084,7 +1073,7 @@ void shutdownDaemon(){
 		pthread_join(daemonInetReadingThread, NULL);
 		pthread_join(daemonUnixReadingThread, NULL);
 
-		//-- process residual packets
+		//-- process leftover packets
 		daemonUnixIncomingPacketHandler->stopWorking();
 		daemonInetIncomingPacketHandler->stopWorking();
 	}
@@ -1258,7 +1247,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 		}
 		else{
 			//-- incoming data, discard if not encrypted or endpoint not found		
-			if ((endpoints[endpointID] == NULL) || ((infoByte & SVC_ENCRYPTED) == 0x00) || (endpoints[endpointID] != NULL && !endpoints[endpointID]->working)){
+			if ((endpoints[endpointID] == NULL) || ((infoByte & SVC_ENCRYPTED) == 0x00) || !endpoints[endpointID]->working || (endpoints[endpointID]->aesgcm==NULL)){
 				delete packet;
 			}
 			else{
@@ -1274,25 +1263,31 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 }
 
 void checkEndpointLiveTime(void* args){
-	static int second = 0;
-	second+=1000;
+
 	for (auto& it : endpoints){		
 		if (it.second != NULL){
 			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
-			if ((!ep->working) || (!ep->isAuthenticated() && !ep->checkInitLiveTime(1000))){
-				//-- remove this endpoint, also remove it from endpoints
-				endpoints[ep->endpointID] = NULL;				
-				delete ep;
+			bool removeEndpoint = false;
+			if (!ep->working){
+				removeEndpoint = true;
 			}
 			else{
-				if (second >= SVC_BEAT_CHECK_FREQ){
-					second = 0;
-					//-- send check packet to check for socket
-					SVCPacket* beat = new SVCPacket(ep->endpointID);
-					beat->setCommand(SVC_CMD_CHECK_ALIVE);
-					ep->unixOutgoingQueue.enqueue(beat);
-					printf("\nsend check alive, packet 0x%08x", (void*)beat); fflush(stdout);
+				if (!ep->isAuth && !ep->checkInitLiveTime(1000)){
+					removeEndpoint = true;
 				}
+				else{
+					if (ep->beatUp){
+						ep->beatUp = false;
+					}
+					else{
+						ep->beatLiveTime--;
+					}
+					removeEndpoint = (ep->beatLiveTime < 0);
+				}
+			}			
+			if (removeEndpoint){
+				endpoints[ep->endpointID] = NULL;				
+				delete ep;
 			}
 		}
 	}

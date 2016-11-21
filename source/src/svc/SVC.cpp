@@ -269,9 +269,12 @@ SVCEndpoint::SVCEndpoint(SVC* svc, uint64_t endpointID,  bool isInitiator){
 	this->request = NULL;
 	this->incomingPacketHandler = NULL;
 	this->outgoingPacketHandler = NULL;
+	this->periodicWorker = NULL;
 	this->readingThread = 0;
 	this->writingThread = 0;
 	this->shutdownCalled = false;
+	this->reconnectFailed = false;
+	this->reconnectionTimeout = RECONNECTION_TIMEOUT;
 	
 	this->endpointID = endpointID;	
 	this->sock = socket(AF_LOCAL, SOCK_DGRAM, 0);
@@ -320,14 +323,16 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 		
 		switch (cmd){
 		
-			case SVC_CMD_CHECK_ALIVE:
-				//-- just echo the packet to indicate that we are alive
-				printf("\ncheckalive received, echo back"); fflush(stdout);
-				_this->outgoingQueue.enqueue(packet);
+			case SVC_CMD_DAEMON_RESTART:
+				if (packet->popCommandParam(param, &paramLen)){
+					_this->daemonRestartReason = string((char*)param, paramLen);
+				}
+				delete packet;	
 				break;
-		
+			
 			case SVC_CMD_SHUTDOWN_ENDPOINT:
 				delete packet;
+				printf("\ndaemon endpoint send shutdown cmd"); fflush(stdout);
 				_this->isAuth = false;
 				_this->working = false;
 				break;
@@ -399,8 +404,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 }
 
 void SVCEndpoint::svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args){
-	SVCEndpoint* _this = (SVCEndpoint*)args;		
-	//printf("\nsvc endpoint outgoing forwarding: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+	SVCEndpoint* _this = (SVCEndpoint*)args;	
 	_this->tobesentQueue.enqueue(packet);
 }
 
@@ -426,17 +430,73 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 	int sendrs;
 	SVCPacket* packet;
 	while (_this->working || _this->outgoingQueue.notEmpty() || _this->tobesentQueue.notEmpty()){
-		packet = _this->tobesentQueue.dequeueWait(1000);		
-		if (packet!=NULL){
+		//packet = _this->tobesentQueue.dequeueWait(1000);
+		if (_this->tobesentQueue.peakWait(&packet, 1000)){		
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
 			//printf("\nsvc endpoint write packet %d, error %d:  ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
-			//-- TODO: on error: ECONNREFUSED with the first packet, then socket remove the connection. following packets will get ENOTCONN
-			delete packet;			
-			//-- call reconnection method, if fail then set isAuth = false, working = false
+			if (sendrs == -1 && !_this->reconnectFailed && !_this->shutdownCalled){
+				if (errno == EPIPE || errno == ECONNREFUSED || errno == ENOTCONN){
+					//-- call reconnection method
+					string reason;
+					if (_this->reconnectDaemon()){
+						//-- TODO: log reason
+					}
+					else{
+						//-- reconnection failed, shutdown
+						_this->working = false;
+						_this->isAuth = false;
+						_this->reconnectFailed = true;
+					}
+				}
+				else{
+					//-- packet send failed with undefined error, TODO: log
+					delete packet;
+					_this->tobesentQueue.dequeue();
+				}
+			}
+			else{
+				//-- TODO: if log file declared then log these data
+				delete packet;
+				_this->tobesentQueue.dequeue();
+			}
 		}
 	}
 	pthread_exit(EXIT_SUCCESS);
+}
+
+void SVCEndpoint::setReconnectionTimeout(int timeout){
+	if (timeout>0){
+		this->reconnectionTimeout = timeout;
+	}
+}
+
+bool SVCEndpoint::reconnectDaemon(){
+	
+	printf("\nreconnectDaemon called"); fflush(stdout);
+	std::string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);
+	struct sockaddr_un dmnEndpointAddr;
+	memset(&dmnEndpointAddr, 0, sizeof(dmnEndpointAddr));
+	dmnEndpointAddr.sun_family = AF_LOCAL;
+	dmnEndpointAddr.sun_path[0]= '\0';
+	memcpy(dmnEndpointAddr.sun_path+1, endpointDmnSockPath.c_str(), endpointDmnSockPath.size());
+	
+	//-- connect wait for SVC_CMD_DAEMON_RESTART
+	int timeout = this->reconnectionTimeout;
+	int connectResult = -1;
+	do{
+		//printf("\ntry wait SVC_CMD_DAEMON_RESTART 1000"); fflush(stdout);
+		if (connectResult == -1) connectResult = connect(this->sock, (struct sockaddr*)&dmnEndpointAddr, sizeof(dmnEndpointAddr));
+		if (this->incomingPacketHandler->waitCommand(SVC_CMD_DAEMON_RESTART, this->endpointID, 1000)){
+			return true;
+		}
+		else{
+			timeout-=1000;
+		}
+	}
+	while(timeout>0);
+	
+	return false;
 }
 
 void SVCEndpoint::setRemoteHost(SVCHost* remoteHost){
@@ -449,6 +509,16 @@ void SVCEndpoint::changeEndpointID(uint64_t endpointID){
 	//-- update
 	this->svc->endpoints[endpointID] = this;
 	this->endpointID = endpointID;
+}
+
+void SVCEndpoint::liveCheck(void* args){
+	SVCEndpoint* _this = (SVCEndpoint*)args;
+	
+	if (_this->working){
+		SVCPacket* packet = new SVCPacket(_this->endpointID);
+		packet->setCommand(SVC_CMD_CHECK_ALIVE);
+		_this->outgoingQueue.enqueue(packet);				
+	}	
 }
 
 int SVCEndpoint::connectToDaemon(){
@@ -470,7 +540,9 @@ int SVCEndpoint::connectToDaemon(){
 		}		
 		else{
 			//-- create a packet handler to process incoming packets		
-			this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_endpoint_outgoing_packet_handler, this);		
+			this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_endpoint_outgoing_packet_handler, this);
+			//-- create a periodic worker to send beat to daemon endpoint
+			this->periodicWorker = new PeriodicWorker(1000, liveCheck, this);
 			return 0;
 		}
 	}
@@ -550,7 +622,7 @@ std::string SVCEndpoint::getRemoteIdentity(){
 void SVCEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
 		this->shutdownCalled = true;
-		//-- send a shutdown packet to daemon		
+		//-- send a shutdown packet to daemon
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
 		this->outgoingQueue.enqueue(packet);
@@ -558,6 +630,14 @@ void SVCEndpoint::shutdownEndpoint(){
 		this->working = false;
 		this->isAuth = false;
 		int joinrs;
+		
+		//-- stop sending beat
+		if (this->periodicWorker !=NULL){
+			this->periodicWorker->stopWorking();
+			this->periodicWorker->waitStop();
+			delete this->periodicWorker;
+		}
+		
 		//-- do not receive data anymore
 		shutdown(this->sock, SHUT_RD);
 		if (this->readingThread !=0) {
@@ -570,8 +650,6 @@ void SVCEndpoint::shutdownEndpoint(){
 			joinrs = this->incomingPacketHandler->waitStop();
 			delete this->incomingPacketHandler;
 		}
-	
-		//-- send out residual packets
 		if (this->outgoingPacketHandler != NULL){
 			this->outgoingPacketHandler->stopWorking();
 			joinrs = this->outgoingPacketHandler->waitStop();			

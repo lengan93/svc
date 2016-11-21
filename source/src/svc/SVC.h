@@ -8,6 +8,7 @@
 	#include "authenticator/SVCAuthenticator.h"
 	
 	#include "../utils/MutexedQueue.h"
+	#include "../utils/PeriodicWorker.h"
 	#include "../crypto/SHA256.h"
 	#include "../crypto/crypto-utils.h"
 	
@@ -15,27 +16,35 @@
 	#include <sys/un.h>
 	#include <sys/socket.h>	
 	#include <unordered_map>
+	
+	#define RECONNECTION_TIMEOUT	5000
 
 	//--	FORWARD DECLARATION		--//
 	class SVC;
 		
 	class SVCEndpoint{				
 		friend class SVC;
-		
-		static void endpoint_packet_handler(SVCPacket* packet, void* args);
+			
 
 		private:			
 		
 			SVC* svc;
 			bool isInitiator;
 			bool isAuth;
+			PeriodicWorker* periodicWorker;
 			
 			volatile bool working;
 			volatile bool shutdownCalled;
+			int reconnectionTimeout;			
+			bool reconnectFailed;
+			string daemonRestartReason;
+
+			static void liveCheck(void* args);		
 			static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
 			static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_endpoint_reading_loop(void* args);
 			static void* svc_endpoint_writing_loop(void* args);
+
 			
 			pthread_t readingThread;
 			pthread_t writingThread;			
@@ -65,8 +74,15 @@
 			/*
 			 * Connect the unix domain socket to the daemon endpoint address to send data
 			 * */
-			int connectToDaemon();	
-						
+			int connectToDaemon();
+			
+			/*
+			 * After a disconnection with daemon is detected, calling this method will try to reconnect with the daemon. 
+			 * If TRUE is returned,the reconnection succeeded. Otherwise, the reconnection
+			 * is failed and SVC must be shutdown. The default waiting time can be set via setReconnectionTimeout.
+			 * */
+			bool reconnectDaemon();
+			
 			/*
 			 * */
 			void setRemoteHost(SVCHost* remoteHost);
@@ -102,6 +118,11 @@
 			 * Close the communication endpoint and send terminate signals to underlayer
 			 * */
 			void shutdownEndpoint();
+			
+			/*
+			 * Set the timeout of reconnection method in case of losing connection with the daemon. 'timeout' default to 5s and cannot be set to negative.
+			 * */
+			void setReconnectionTimeout(int timeout = RECONNECTION_TIMEOUT);
 			
 			bool isAlive(){
 				return this->isAuth;

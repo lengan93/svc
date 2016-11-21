@@ -110,7 +110,7 @@
 				if ((*(this->first))==NULL){
 					haveData = waitData(timeout);
 				}
-				if (haveData){				
+				if (haveData){
 					T retVal = (*(this->first))->data;					
 					this->beforeLastNode = this->lastNode;
 					this->lastNode = *(this->first);		
@@ -142,8 +142,8 @@
 			
 			bool peak(T* data){
 				pthread_mutex_lock(&this->firstMutex);
-				if ((*(this->first)) == NULL){
-					pthread_mutex_unlock(&this->countMutex);
+				if (*(this->first) == NULL){
+					pthread_mutex_unlock(&this->firstMutex);
 					return false;					
 				}
 				else{
@@ -151,7 +151,20 @@
 					pthread_mutex_unlock(&this->firstMutex);
 					return true;
 				}
-			}						
+			}
+			
+			bool peakWait(T* data, int timeout){
+				pthread_mutex_lock(&this->firstMutex);
+				bool haveData = true;
+				if (*(this->first)==NULL){
+					haveData = waitData(timeout);
+				}
+				if (haveData){
+					*data = (*(this->first))->data;								
+				}				
+				pthread_mutex_unlock(&this->firstMutex);
+				return haveData;
+			}
 	};
 
 #endif
