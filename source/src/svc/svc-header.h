@@ -23,12 +23,10 @@
 	#define SVC_ERROR_SIGNAL_INTERRUPTED		"Execution interrupted by SIGINT"
 
 	/*	SVC CONFIG	*/
-
 	#define SVC_DEFAULT_TIMEOUT 				5000
-	#define SVC_DEFAULT_BUFSIZ 					65535
+	#define SVC_DEFAULT_BUFSIZ 					65536
 	#define	SVC_DAEPORT							1221
 	#define SVC_ENDPOINT_BEAT_LIVETIME			5
-	#define SVC_BEAT_CHECK_FREQ					5000
 	#define SVC_ENDPOINT_INIT_LIVETIME			2000
 	
 	static std::string SVC_DAEMON_PATH = 				"/tmp/svc-daemon";
@@ -41,10 +39,12 @@
 	#define APPID_LENGTH				4
 	#define SEQUENCE_LENGTH				4
 	#define ENDPOINTID_LENGTH			8
-	#define SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = ENDPOINTID_LENGTH + 1 (info byte) + SEQUENCE_LENGTH
-	#define	INFO_BYTE					ENDPOINTID_LENGTH
+	#define SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = 1 (info byte) + ENDPOINTID_LENGTH + SEQUENCE_LENGTH
+	#define	INFO_BYTE					0
 	#define	CMD_BYTE					SVC_PACKET_HEADER_LEN
 	
+	/*	SVC ENDPOINT OPTIONS	*/	
+	#define SVC_NOLOST		0x40
 
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80

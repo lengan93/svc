@@ -35,7 +35,7 @@
 			SVCPacket(SVCPacket* packet):SVCPacket(){		
 				if (packet!=NULL){
 					this->dataLen = packet->dataLen;
-					memcpy(this->packet, packet->packet, this->dataLen);
+					memcpy(this->packet, packet->packet, packet->dataLen);
 				}
 				else{
 					this->dataLen = 0;
@@ -50,7 +50,7 @@
 			SVCPacket(uint64_t endpointID):SVCPacket(){
 				this->dataLen = SVC_PACKET_HEADER_LEN;
 				memset(this->packet, 0, this->dataLen);
-				memcpy(this->packet, &endpointID, ENDPOINTID_LENGTH);
+				memcpy(this->packet+1, &endpointID, ENDPOINTID_LENGTH);
 			}
 			
 			~SVCPacket(){
@@ -67,7 +67,7 @@
 			}
 			
 			void setSequence(uint64_t sequence){
-				memcpy(this->packet+ENDPOINTID_LENGTH + 1, &sequence, SEQUENCE_LENGTH);
+				memcpy(this->packet+1+ENDPOINTID_LENGTH, &sequence, SEQUENCE_LENGTH);
 			}
 			
 			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){

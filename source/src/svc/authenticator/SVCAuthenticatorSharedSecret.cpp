@@ -70,7 +70,7 @@ std::string SVCAuthenticatorSharedSecret::generateChallenge(const std::string& c
 std::string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& challenge){
 	std::string rs;
 	
-	uint8_t* challengeBuf = (uint8_t*)malloc(65535);
+	uint8_t* challengeBuf = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);
 	uint32_t challengeLen = stringToHex(challenge, challengeBuf);
 	
 	uint8_t* iv;

@@ -24,7 +24,6 @@
 		
 	class SVCEndpoint{				
 		friend class SVC;
-			
 
 		private:			
 		
@@ -56,6 +55,7 @@
 			PacketHandler* outgoingPacketHandler;
 			
 			int sock;
+			int sockOption;
 			uint64_t endpointID;
 			uint32_t appID;			
 			SVCHost* remoteHost;
@@ -110,7 +110,7 @@
 			int sendData(const uint8_t* data, uint32_t dalalen);
 			
 			/*
-			 * Read data from the buffer. The data had already been decrypted.
+			 * Read data from the buffer. The data had already been decrypted by lower layer
 			 * */
 			int readData(uint8_t* data, uint32_t* len, int timeout);
 			
@@ -120,9 +120,9 @@
 			void shutdownEndpoint();
 			
 			/*
-			 * Set the timeout of reconnection method in case of losing connection with the daemon. 'timeout' default to 5s and cannot be set to negative.
+			 * Set the timeout of reconnection method in case of losing connection with the daemon. 'timeout' cannot be set to negative.
 			 * */
-			void setReconnectionTimeout(int timeout = RECONNECTION_TIMEOUT);
+			void setReconnectionTimeout(int timeout);
 			
 			bool isAlive(){
 				return this->isAuth;
@@ -141,6 +141,7 @@
 			static void* svc_reading_loop(void* args);
 			static void* svc_writing_loop(void* args);
 			
+			//-- private members
 			volatile bool working;
 			volatile bool shutdownCalled;
 			pthread_t readingThread;
@@ -152,14 +153,12 @@
 			
 			PacketHandler* incomingPacketHandler;
 			PacketHandler* outgoingPacketHandler;
-			
-									
-			//-- private members
+															
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
 			
 			SHA256* sha256;
 			int appSocket;
-						
+
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
 			

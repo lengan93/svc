@@ -136,7 +136,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		//-- incoming command
 		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		uint64_t endpointID = *((uint64_t*)packet->packet);
+		uint64_t endpointID = *((uint64_t*)(packet->packet+1));
 		switch(cmd){
 		
 			case SVC_CMD_CONNECT_INNER2:
@@ -205,7 +205,8 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 	endpointID<<=32;
 	endpointID |= this->appID;
 	try{
-		SVCEndpoint* endpoint = new SVCEndpoint(this, endpointID, true);	
+		SVCEndpoint* endpoint = new SVCEndpoint(this, endpointID, true);
+		endpoint->sockOption = option;
 		endpoint->setRemoteHost(remoteHost);
 		//-- add this endpoint to be handled
 		this->endpoints[endpoint->endpointID] = endpoint;
@@ -213,6 +214,7 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 		//-- send SVC_CMD_CREATE_ENDPOINT to daemon
 		SVCPacket* packet = new SVCPacket(endpoint->endpointID);
 		packet->setCommand(SVC_CMD_CREATE_ENDPOINT);
+		packet->pushCommandParam(&option, 1);
 		this->outgoingQueue.enqueue(packet);
 		
 		//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
@@ -239,7 +241,7 @@ SVCEndpoint* SVC::listenConnection(int timeout){
 	request=this->connectionRequests.dequeueWait(timeout);
 	if (request!=NULL){
 		//-- there is connection request, read for endpointID
-		uint64_t endpointID = *((uint64_t*)request->packet);
+		uint64_t endpointID = *((uint64_t*)(request->packet+1));
 		SVCEndpoint* ep;
 		try{
 			ep = new SVCEndpoint(this, endpointID, false);
@@ -319,7 +321,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		//-- process incoming command
 		SVCCommand cmd = (SVCCommand)packet->packet[CMD_BYTE];
-		uint64_t endpointID = *((uint64_t*)packet->packet);
+		uint64_t endpointID = *((uint64_t*)(packet->packet+1));
 		
 		switch (cmd){
 		
@@ -332,7 +334,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 			
 			case SVC_CMD_SHUTDOWN_ENDPOINT:
 				delete packet;
-				printf("\ndaemon endpoint send shutdown cmd"); fflush(stdout);
+				//printf("\ndaemon endpoint send shutdown cmd"); fflush(stdout);
 				_this->isAuth = false;
 				_this->working = false;
 				break;
@@ -342,7 +344,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				packet->popCommandParam(param, &paramLen);
 				_this->changeEndpointID(*((uint64_t*)param));
 				//-- replace packet endpointID with the new one
-				memcpy(packet->packet, param, ENDPOINTID_LENGTH);		
+				memcpy(packet->packet+1, param, ENDPOINTID_LENGTH);		
 				packet->popCommandParam(param, &paramLen);
 				_this->challengeReceived = std::string((char*)param, paramLen);
 				
@@ -473,7 +475,7 @@ void SVCEndpoint::setReconnectionTimeout(int timeout){
 
 bool SVCEndpoint::reconnectDaemon(){
 	
-	printf("\nreconnectDaemon called"); fflush(stdout);
+	//printf("\nreconnectDaemon called"); fflush(stdout);
 	std::string endpointDmnSockPath = SVC_ENDPOINT_DMN_PATH_PREFIX + hexToString((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH);
 	struct sockaddr_un dmnEndpointAddr;
 	memset(&dmnEndpointAddr, 0, sizeof(dmnEndpointAddr));
@@ -494,7 +496,7 @@ bool SVCEndpoint::reconnectDaemon(){
 			timeout-=1000;
 		}
 	}
-	while(timeout>0);
+	while(timeout>0 && !this->shutdownCalled);
 	
 	return false;
 }

@@ -2,6 +2,7 @@
 #define __SVC_AUTHENTICATOR__
 
 	#include <string>
+	#include "../svc-header.h"
 	#include "../../crypto/crypto-utils.h"
 	
 	#define MINIMUM_SECURITY_LENGTH 64
