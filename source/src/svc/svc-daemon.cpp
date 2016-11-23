@@ -6,6 +6,7 @@
 #include <pthread.h>
 
 #include "svc-utils.h"
+#include "../htp/HTP.h"
 #include "../utils/PeriodicWorker.h"
 #include "../crypto/crypto-utils.h"
 #include "../crypto/AES256.h"
@@ -26,7 +27,7 @@ unordered_map<uint64_t, DaemonEndpoint*> endpoints;
 struct sockaddr_un daemonSockUnAddress;
 struct sockaddr_in daemonSockInAddress;
 int daemonUnSocket;
-int daemonInSocket;
+HtpSocket* daemonInSocket;
 
 PacketHandler* daemonUnixIncomingPacketHandler;
 PacketHandler* daemonInetIncomingPacketHandler;
@@ -86,6 +87,7 @@ class DaemonEndpoint{
 		int beatLiveTime;
 		
 		int dmnSocket;
+		uint8_t socketOption;
 		struct sockaddr_in remoteAddr;
 		size_t remoteAddrLen;	
 
@@ -116,8 +118,7 @@ class DaemonEndpoint{
 		
 		int connectToAppSocket();
 		int startInetHandlingRoutine();		
-		void connectToAddress(uint32_t remoteAddress);
-		void connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen);
+		void connectToAddress(const struct sockaddr* sockAddr, socklen_t sockLen);
 		
 		void shutdownEndpoint();
 };
@@ -201,6 +202,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		this->daemonShutdownCall = false;
 		this->remoteAddrLen = sizeof(this->remoteAddr);
 		memset(&this->remoteAddr, 0, this->remoteAddrLen);
+		this->socketOption = 0x00;
 }
 
 void DaemonEndpoint::shutdownEndpoint(){
@@ -327,14 +329,7 @@ int DaemonEndpoint::startInetHandlingRoutine(){
 	return rs;
 }
 
-void DaemonEndpoint::connectToAddress(uint32_t remoteAddress){
-	this->remoteAddrLen = sizeof(this->remoteAddr);							
-	this->remoteAddr.sin_family = AF_INET;
-	this->remoteAddr.sin_port = htons(SVC_DAEPORT);
-	this->remoteAddr.sin_addr.s_addr = remoteAddress;	
-}
-
-void DaemonEndpoint::connectToAddress(const struct sockaddr_in* sockAddr, socklen_t sockLen){
+void DaemonEndpoint::connectToAddress(const struct sockaddr* sockAddr, socklen_t sockLen){
 	memcpy(&this->remoteAddr, sockAddr, sockLen);
 	this->remoteAddrLen = sockLen;
 }
@@ -374,7 +369,7 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 	while (_this->working || _this->inetOutgoingQueue.notEmpty() || _this->inetToBeSentQueue.notEmpty()){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
-			sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			sendrs = HtpSocket::sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 			printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
 			//-- TODO: check send result here
@@ -521,7 +516,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 		//printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		//-- check sequence and address to be update
 		if (memcmp(&_this->remoteAddr, &packet->srcAddr, _this->remoteAddrLen)!=0){
-			_this->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
+			_this->connectToAddress((struct sockaddr*)&packet->srcAddr, packet->srcAddrLen);
 		}
 		
 		if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
@@ -572,11 +567,20 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 			
 				case SVC_CMD_CONNECT_OUTER3:
 					pthread_mutex_lock(&_this->stateMutex);
-					if (_this->state < SVC_CMD_CONNECT_OUTER3){					
-						packet->switchCommand(SVC_CMD_CONNECT_INNER8);
-						_this->unixOutgoingQueue.enqueue(packet);
-						_this->state = SVC_CMD_CONNECT_OUTER3;
-						pthread_mutex_unlock(&_this->stateMutex);
+					if (_this->state < SVC_CMD_CONNECT_OUTER3){
+						uint8_t option;
+						uint16_t optionLen;
+						if (!packet->popCommandParam(&option, &optionLen)){
+							delete packet;
+							pthread_mutex_unlock(&_this->stateMutex);
+						}
+						else{
+							_this->socketOption = option;
+							packet->switchCommand(SVC_CMD_CONNECT_INNER8);
+							_this->unixOutgoingQueue.enqueue(packet);
+							_this->state = SVC_CMD_CONNECT_OUTER3;
+							pthread_mutex_unlock(&_this->stateMutex);
+						}
 					}
 					else{
 						delete packet;
@@ -670,12 +674,36 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER1){				
 					//-- extract remote address
-					if (!packet->popCommandParam(param, &paramLen)){															
+					if (!packet->popCommandParam(param, &paramLen)){
 						delete packet;
 						pthread_mutex_unlock(&_this->stateMutex);
 						break;
-					}		
-					_this->connectToAddress(*((uint32_t*)param));
+					}
+					
+					struct sockaddr_in addr;										
+					addr.sin_family = AF_INET;
+					addr.sin_port = htons(SVC_DAEPORT);
+					addr.sin_addr.s_addr = remoteAddress;					
+					_this->connectToAddress((struct sockaddr*) &addr, sizeof(addr));
+					
+					//-- connect and set option
+					HtpSocket::connect(daemonInSocket, (struct sockaddr*) &addr, sizeof(addr));
+					if (_this->socketOption & SVC_NOLOST){
+						HtpSocket::setsockopt(daemonInSocket, 0, HTP_SOCKET_NOLOST, &addr, sizeof(addr));
+					}
+					if (_this->socketOption & SVC_URGENT_PRIORITY){
+						HtpSocket::setsockopt(daemonInSocket, 0, HTP_SOCKET_URGENT_PRIORITY, &addr, sizeof(addr));
+					}
+					else if (_this->socketOption & SVC_HIGH_PRIORITY){
+						HtpSocket::setsockopt(daemonInSocket, 0, HTP_SOCKET_HIGH_PRIORITY, &addr, sizeof(addr));
+					}
+					else if (_this->socketOption & SVC_NORMAL_PRIORITY){
+						HtpSocket::setsockopt(daemonInSocket, 0, HTP_SOCKET_NORMAL_PRIORITY, &addr, sizeof(addr));
+					}
+					else if (_this->socketOption & SVC_LOW_PRIORITY){
+						HtpSocket::setsockopt(daemonInSocket, 0, HTP_SOCKET_LOW_PRIORITY, &addr, sizeof(addr));
+					}
+
 					if (_this->startInetHandlingRoutine()!=0){
 						delete packet;
 						_this->working = false;
@@ -982,6 +1010,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				_this->state = SVC_CMD_CONNECT_INNER7;
 				_this->isAuth = true;
 				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
+				packet->pushCommandParam(&_this->socketOption, 1);
 				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 				_this->inetOutgoingQueue.enqueue(packet);
 				pthread_mutex_unlock(&_this->stateMutex);
@@ -1037,7 +1066,7 @@ void* daemon_inet_reading_loop(void* args){
 
 	while (working){
 		srcAddrLen = sizeof(srcAddr);		
-		readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		readrs = HtpSocket::recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
@@ -1063,7 +1092,7 @@ void shutdownDaemon(){
 		
 		//-- stop reading packets
 		shutdown(daemonUnSocket, SHUT_RD);
-		shutdown(daemonInSocket, SHUT_RD);
+		HtpSocket::shutdown(daemonInSocket, SHUT_RD);
 		pthread_join(daemonInetReadingThread, NULL);
 		pthread_join(daemonUnixReadingThread, NULL);
 
@@ -1101,25 +1130,33 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 					delete packet;
 				}
 				else{
-					DaemonEndpoint* endpoint;
-					try{
-						endpoint = new DaemonEndpoint(endpointID);
-						endpoint->isInitiator = true;
-						if (endpoint->connectToAppSocket()==0){
-							endpoints[endpointID] = endpoint;
-							//-- send back the packet
-							endpoint->unixOutgoingQueue.enqueue(packet);
-							//-- add this endpoint to collection
-							endpoints[endpointID] = endpoint;
-						}
-						else{
-							delete packet;
-							delete endpoint;
-						}
-					}
-					catch(const char* err){
+					DaemonEndpoint* endpoint;					
+					uint8_t option;
+					uint16_t optionLen;
+					if (!packet->popCommandParam(&option, &optionLen)){
 						delete packet;
 					}
+					else{
+						try{
+							endpoint = new DaemonEndpoint(endpointID);
+							endpoint->socketOption = option;
+							endpoint->isInitiator = true;
+							if (endpoint->connectToAppSocket()==0){
+								endpoints[endpointID] = endpoint;
+								//-- send back the packet
+								endpoint->unixOutgoingQueue.enqueue(packet);
+								//-- add this endpoint to collection
+								endpoints[endpointID] = endpoint;
+							}
+							else{
+								delete packet;
+								delete endpoint;
+							}
+						}
+						catch(const char* err){
+							delete packet;
+						}
+					}					
 				}
 				break;
 			
@@ -1185,7 +1222,8 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						//-- create new daemonEndpoint for this endpointID
 						dmnEndpoint = new DaemonEndpoint(newEndpointID);
 						endpoints[newEndpointID] = dmnEndpoint;				
-						dmnEndpoint->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
+						dmnEndpoint->connectToAddress((struct sockaddr*)&packet->srcAddr, packet->srcAddrLen);												
+						
 						if (dmnEndpoint->startInetHandlingRoutine()!=0){
 							delete packet;
 							dmnEndpoint->working = false;
@@ -1334,12 +1372,13 @@ int startDaemonWithConfig(const char* configFile){
     
     //--TODO:	TO BE CHANGED TO HTP
     //--	create htp socket and bind to localhost
-    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    //daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    daemonInSocket = new HtpSocket();
     memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
     daemonSockInAddress.sin_family = AF_INET;
     daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
 	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
-    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
+    if (HtpSocket::bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
     	working = false;
     	pthread_join(daemonUnixReadingThread, NULL);
     	errorString = SVC_ERROR_BINDING;
@@ -1377,9 +1416,10 @@ int startDaemonWithConfig(const char* configFile){
 	}    
     
     error3:
-    	close(daemonInSocket);
+    	HtpSocket::close(daemonInSocket);
     error2:
     	close(daemonUnSocket);
+    	delete daemonInSocket;
     error1:
     	//printf("\nError: %s\n", errorString);
     	return EXIT_FAILURE;
@@ -1396,10 +1436,10 @@ int startDaemonWithConfig(const char* configFile){
     	delete daemonUnixIncomingPacketHandler;
     	delete daemonInetIncomingPacketHandler;
     	delete endpointChecker;
+    	delete daemonInSocket;
     	printf("\nSVC daemon stopped\n");
     	return EXIT_SUCCESS;
 }
-
 
 int startDaemonWithImage(const char* imageFile){
 }

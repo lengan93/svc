@@ -1,0 +1,19 @@
+HTP packet structure (inside UDP)
+
+- 2 bytes info
+  + 1st byte:
+	  +  0x80 : not used
+	  +  0x40 : not used
+	  +  0x20 : HIGH-bit PRIORITY
+	  +  0x10 : LOW-bit PRIORITY
+	  +  0x08 : HTP_NOLOST
+	  +  0x04 : HTP_NOLOST_BEFORE
+	  +  0x02 : HTP_ACK
+	  +  0x01 : not used
+  + 2nd byte: not used yet
+  
+- 4 bytes packetID
+  + each packet has it unique ID for a given address/connection. in case of changing of address in a same connection, packetID will not
+  be reset but continues with the last sent out packet of the connection.
+  
+- the rest: data

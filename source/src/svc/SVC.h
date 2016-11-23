@@ -55,7 +55,7 @@
 			PacketHandler* outgoingPacketHandler;
 			
 			int sock;
-			int sockOption;
+			//int sockOption;
 			uint64_t endpointID;
 			uint32_t appID;			
 			SVCHost* remoteHost;

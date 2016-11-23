@@ -206,7 +206,6 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 	endpointID |= this->appID;
 	try{
 		SVCEndpoint* endpoint = new SVCEndpoint(this, endpointID, true);
-		endpoint->sockOption = option;
 		endpoint->setRemoteHost(remoteHost);
 		//-- add this endpoint to be handled
 		this->endpoints[endpoint->endpointID] = endpoint;

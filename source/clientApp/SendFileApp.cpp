@@ -15,7 +15,7 @@ int main(int argc, char** argv){
 	
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
-		SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
+		SVCEndpoint* endpoint = svc->establishConnection(remoteHost, SVC_NOLOST | SVC_HIGH_PRIORITY);
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				string text;
