@@ -1,9 +1,4 @@
 #include "crypto-utils.h"
-#include <cstring>
-
-#include <iostream>
-
-using namespace std;
 
 void generateRandomData(uint32_t length, uint8_t* data){
 	uint32_t readByte = 0;
@@ -18,21 +13,36 @@ void generateRandomData(uint32_t length, uint8_t* data){
 	close(urandom);
 }
 
-string hexToString(const uint8_t* data, uint32_t len){
-	string rs = "";
-	uint8_t b;
-	for (int i=0;i<len;i++){
-		b = data[i];
-		rs += ((b&0xF0)>>4)<10? ((b&0xF0)>>4) + 48 : ((b&0xF0)>>4) + 55;
-		rs += (b&0x0F)<10? b&0xF0 + 48 : b&0x0F + 55;
-	}
-	return rs;
+void generateRandomNumber(mpz_t* number, int securityParam){
+	int byteLen = securityParam/8;
+	uint8_t* randomData = (uint8_t*)malloc(byteLen);	
+	generateRandomData(byteLen, randomData);
+	for (int i=0;i<byteLen;i++){
+		mpz_mul_ui(*number, *number, 256);
+		mpz_add_ui(*number, *number, randomData[i]);
+	}	
+	free(randomData);
 }
 
-uint32_t stringToHex(const string& hexString, uint8_t** data){
+std::string hexToString(const uint8_t* data, uint32_t len){
+	char buffer[len*2];
+	memset(buffer, 0, len*2);
+	uint8_t b;
+	uint8_t c1=0;
+	uint8_t c2=0;
+	for (int i=0;i<len;i++){
+		b = data[i];
+		c1 = (b&0xF0)>>4;
+		c2 = (b&0x0F);		
+		buffer[2*i] = c1<10? (c1 + 48) : (c1 + 55);
+		buffer[2*i+1] = c2<10? (c2 + 48) : (c2 + 55);
+	}	
+	return std::string(buffer, len*2);
+}
+
+uint32_t stringToHex(const std::string& hexString, uint8_t* data){
 	
-	if (hexString.size()>0){
-		*data = (uint8_t*)malloc(hexString.size()/2);
+	if (hexString.size()>0){		
 		uint8_t c1;
 		uint8_t c2;
 		
@@ -54,7 +64,7 @@ uint32_t stringToHex(const string& hexString, uint8_t** data){
 			else
 				c2-= 48;
 			//-- calculate value
-			(*data)[i/2] = (uint8_t)(c1*16 + c2);
+			data[i/2] = (uint8_t)(c1*16 + c2);
 		}
 		return hexString.size()/2;
 	}

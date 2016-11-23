@@ -3,11 +3,8 @@
 #include <iostream>
 using namespace std;
 
-AES256::AES256(const uint8_t* key)
-{
-	this->aesKey = (uint8_t*)malloc(KEY_LENGTH);
+AES256::AES256(const uint8_t* key){	
 	memcpy(this->aesKey, key, KEY_LENGTH);
-	this->state = (uint8_t*)malloc(Nb<<2);
 	keyExpansion();	
 }
 
@@ -234,7 +231,5 @@ AES256::~AES256(){
 	memset(this->aesKey, 0, KEY_LENGTH);
 	memset(this->state, 0, 4*Nb);
 	memset(this->exKey, 0, Nb*(Nr+1)*4);
-	delete this->aesKey;
-	delete this->state;	
-	delete this->exKey;
+	free(this->exKey);
 }

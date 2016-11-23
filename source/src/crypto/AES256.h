@@ -1,8 +1,8 @@
 #ifndef __TOM_AES256__
 #define __TOM_AES256__	
 
-	#include <cstdlib>
-	#include <cstring>
+	#include <cstdlib> 	//-- for 'malloc'
+	#include <cstring>	//-- for 'memcpy', 'memset'
 	#include "crypto-utils.h"
 
 	#define KEY_LENGTH 	32 
@@ -184,10 +184,10 @@
 	};
 
 	class AES256{
-		 
-		uint8_t* aesKey;
-		uint32_t* exKey;		
-		uint8_t* state;
+		
+		uint32_t* exKey;
+		uint8_t aesKey[KEY_LENGTH];			
+		uint8_t state[Nb<<2];
 		
 		private:
 			static uint32_t subWord(uint32_t word);
