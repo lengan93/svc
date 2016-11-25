@@ -7,13 +7,29 @@
 
 using namespace std;
 
-void sendBeatToClient(void* args){
-	static uint8_t* beat = (uint8_t*)"server beat";
+bool fileReceived = false;
+bool headerReceived = false;
+int fileSize;
+int readSize = 0;
+string fileName;
+
+int GetFileSize(std::string filename){
+    ifstream file(filename.c_str(), ios::binary | ios::ate);
+	return file.tellg();
+}
+
+void send_server_beat(void* args){
+	static uint8_t buffer[1] = {0x00};
 	SVCEndpoint* ep = (SVCEndpoint*)args;
-	ep->sendData(beat, 12);
+	ep->sendData(buffer, 10);
+	if (headerReceived &!fileReceived){
+		printf("\rReceived: %d/%d", readSize, fileSize); fflush(stdout);
+	}
 }
 
 int main(int argc, char** argv){
+
+	const int RETRY_TIME = 5;
 
 	string appID = string("SEND_FILE_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
@@ -25,26 +41,55 @@ int main(int argc, char** argv){
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
-				//PeriodicWorker* pw = new PeriodicWorker(1000, sendBeatToClient, endpoint);
-				//-- try to read some data
-				uint8_t buffer[SVC_DEFAULT_BUFSIZ]="";
-				uint32_t dataLen;
-				string text;
-				while (endpoint->isAlive()){
-					if (endpoint->readData(buffer, &dataLen, 1000) == 0){
-						text = string((char*)buffer, dataLen);
-						printf("\nReceived: %s", text.c_str()); fflush(stdout);
-						//-- send echo packet to client
-						endpoint->sendData(buffer, dataLen);
+				
+				//pw to sent beat
+				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
+				
+				uint32_t bufferSize = 1400;
+				uint8_t buffer[bufferSize];
+				
+				//-- try to read file size and name from the first message				
+				
+				while (!fileReceived){
+					if (endpoint->readData(buffer, &bufferSize, 3000) == 0){
+						switch (buffer[0]){
+							case 0x01:
+								if (!headerReceived){
+									fileSize = *((int*)(buffer+1));
+									fileName = string((char*)buffer+1+4, bufferSize-1-4);
+									headerReceived = true;
+									printf("\nReceiving file: %s, size: %d\n", fileName.c_str(), fileSize); fflush(stdout);
+								}
+								break;
+								
+							case 0x02:
+								if (headerReceived){
+									readSize+=bufferSize;
+								}
+								break;
+								
+							case 0x03:
+								fileReceived = true;
+								memcpy(buffer+1, &readSize, 4);
+								for (int i=0; i<RETRY_TIME; i++){
+									endpoint->sendData(buffer, 5);
+								}							
+								break;
+								
+							default:
+								break;
+						}
 					}
-					//else{
-					//	printf("\nread failed"); fflush(stdout);
-					//}
 				}
-				//pw->stopWorking();
-				//pw->waitStop();
-				//delete pw;
-				endpoint->shutdownEndpoint();
+								
+				pw->stopWorking();
+				pw->waitStop();
+				delete pw;
+				
+				if (fileReceived){
+					printf("\nFile received.");
+				}
+				endpoint->shutdownEndpoint();			
 				printf("\nProgram terminated!\n");
 			}
 			else{

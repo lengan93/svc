@@ -102,6 +102,7 @@ void* PacketHandler::processingLoop(void* args){
 			}						
 		}
 		//else{//--TODO: can count dequeue fails to predict the network status}
+		//TODO: implement only one thread??
 	}	
 	pthread_exit(EXIT_SUCCESS);
 }

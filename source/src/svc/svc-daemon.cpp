@@ -375,9 +375,9 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 			sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
-			printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
-			//-- TODO: check send result here
+			//printf("-"); fflush(stdout);
 		};
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -653,8 +653,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				//-- reset beatLiveTime
 				_this->beatUp = true;
 				_this->beatLiveTime = SVC_ENDPOINT_BEAT_LIVETIME;
-				//printf("\nreceived svc beat"); fflush(stdout);	
-				delete packet;
+				_this->inetOutgoingQueue.enqueue(packet);
+				//delete packet;
 				break;
 				
 			case SVC_CMD_SHUTDOWN_ENDPOINT:				
@@ -1043,6 +1043,7 @@ void* daemon_inet_reading_loop(void* args){
 			packet = new SVCPacket(buffer, readrs);
 			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
 			daemonInetIncomingQueue.enqueue(packet);
+			//printf("."); fflush(stdout);
 		}
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -1387,7 +1388,7 @@ int startDaemonWithConfig(const char* configFile){
     initSuccess:
 		//--	POST-SUCCESS JOBS	--//		
 		endpoints.clear();
-    	printf("\nSVC daemon is running..."); fflush(stdout);
+    	printf("\nSVC daemon is running\n"); fflush(stdout);
     	        	
         daemonUnixIncomingPacketHandler->waitStop();
         daemonInetIncomingPacketHandler->waitStop();

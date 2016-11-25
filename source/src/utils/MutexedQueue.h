@@ -6,7 +6,7 @@
 #ifndef __SVC_QUEUE__
 #define __SVC_QUEUE__
 
-	
+	#include <iostream>
 	#include <pthread.h>
 	#include <cstdint>
 	
@@ -54,7 +54,7 @@
 					timeoutSpec.tv_sec += addedSec;
 					rs = pthread_cond_timedwait(&this->waitCond, &this->waitMutex, &timeoutSpec);
 				}
-				pthread_mutex_unlock(&this->waitMutex);				
+				pthread_mutex_unlock(&this->waitMutex);
 				return rs==0;
 			}
 
@@ -77,9 +77,12 @@
 			}
 		
 			~MutexedQueue(){
+				pthread_mutex_lock(&this->waitMutex);
+				pthread_cond_signal(&this->waitCond);
+				pthread_mutex_unlock(&this->waitMutex);
 				while (this->notEmpty()){					
 					this->dequeue();
-				}			
+				}
 				delete this->lastNode;
 			}
 			
@@ -106,18 +109,30 @@
 			
 			T dequeueWait(int timeout){
 				pthread_mutex_lock(&this->firstMutex);
-				bool haveData = true;
+				bool haveData = false;
+				bool waitDataCalled = false;
 				if ((*(this->first))==NULL){
+					waitDataCalled = true;
 					haveData = waitData(timeout);
 				}
+				else{
+					haveData = true;
+				}
 				if (haveData){
-					T retVal = (*(this->first))->data;					
-					this->beforeLastNode = this->lastNode;
-					this->lastNode = *(this->first);		
-					this->first = &((*(this->first))->next);					
-					delete this->beforeLastNode;
-					pthread_mutex_unlock(&this->firstMutex);
-					return retVal;
+					//-- spurious wakeup might occur, need to check this->first again
+					if((*(this->first)) != NULL){					
+						T retVal = (*(this->first))->data;
+						this->beforeLastNode = this->lastNode;
+						this->lastNode = *(this->first);		
+						this->first = &((*(this->first))->next);					
+						delete this->beforeLastNode;
+						pthread_mutex_unlock(&this->firstMutex);
+						return retVal;
+					}
+					else{
+						pthread_mutex_unlock(&this->firstMutex);
+						return NULL;
+					}
 				}
 				else{
 					//-- waitData was interrupted by other signals
