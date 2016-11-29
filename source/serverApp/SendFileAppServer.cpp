@@ -5,6 +5,7 @@
 #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
+
 using namespace std;
 
 bool fileReceived = false;
@@ -19,9 +20,10 @@ int GetFileSize(std::string filename){
 }
 
 void send_server_beat(void* args){
-	static uint8_t buffer[1] = {0x00};
+	uint8_t buffer[1];
 	SVCEndpoint* ep = (SVCEndpoint*)args;
-	ep->sendData(buffer, 10);
+	buffer[0] = 0xFF;
+	ep->sendData(buffer, 1);
 	if (headerReceived &!fileReceived){
 		printf("\rReceived: %d/%d", readSize, fileSize); fflush(stdout);
 	}
@@ -29,7 +31,7 @@ void send_server_beat(void* args){
 
 int main(int argc, char** argv){
 
-	const int RETRY_TIME = 5;
+	int RETRY_TIME = atoi(argv[1]);
 
 	string appID = string("SEND_FILE_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
@@ -51,13 +53,14 @@ int main(int argc, char** argv){
 				//-- try to read file size and name from the first message				
 				
 				while (!fileReceived){
-					if (endpoint->readData(buffer, &bufferSize, 3000) == 0){
+					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
 						switch (buffer[0]){
 							case 0x01:
 								if (!headerReceived){
-									fileSize = *((int*)(buffer+1));
-									fileName = string((char*)buffer+1+4, bufferSize-1-4);
 									headerReceived = true;
+									fileSize = *((int*)(buffer+1));
+									fileName = string((char*)buffer+1+4, bufferSize-1-4);									
+									readSize = 0;
 									printf("\nReceiving file: %s, size: %d\n", fileName.c_str(), fileSize); fflush(stdout);
 								}
 								break;
@@ -69,11 +72,22 @@ int main(int argc, char** argv){
 								break;
 								
 							case 0x03:
-								fileReceived = true;
-								memcpy(buffer+1, &readSize, 4);
+								if (!fileReceived){
+									fileReceived = true;
+									if (fileSize>0){
+										printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
+									}
+									else{
+										printf("\nEmpty file received");
+									}
+								}												
+								//printf("\nsend back 0x03"); fflush(stdout);
 								for (int i=0; i<RETRY_TIME; i++){
-									endpoint->sendData(buffer, 5);
-								}							
+									buffer[1]=0xFF;						
+									endpoint->sendData(buffer, 2);
+									//printf(".");
+								}
+								fflush(stdout);
 								break;
 								
 							default:
@@ -85,10 +99,7 @@ int main(int argc, char** argv){
 				pw->stopWorking();
 				pw->waitStop();
 				delete pw;
-				
-				if (fileReceived){
-					printf("\nFile received.");
-				}
+								
 				endpoint->shutdownEndpoint();			
 				printf("\nProgram terminated!\n");
 			}

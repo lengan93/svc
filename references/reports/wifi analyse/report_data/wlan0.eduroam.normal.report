@@ -1,0 +1,170 @@
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2948 ms
+Authentication request
+002 ms
+Authentication response
+004 ms
+Association request
+004 ms
+Association response
+010 ms
+First EAP
+255 ms
+Last EAP
+026 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2937 ms
+Authentication request
+002 ms
+Authentication response
+005 ms
+Association request
+005 ms
+Association response
+001 ms
+First EAP
+174 ms
+Last EAP
+023 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+1908 ms
+Authentication request
+001 ms
+Authentication response
+001 ms
+Association request
+055 ms
+Association response
+002 ms
+First EAP
+048 ms
+Last EAP
+021 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+3149 ms
+Authentication request
+001 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+001 ms
+First EAP
+050 ms
+Last EAP
+017 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2996 ms
+Authentication request
+002 ms
+Authentication response
+005 ms
+Association request
+056 ms
+Association response
+001 ms
+First EAP
+115 ms
+Last EAP
+023 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2901 ms
+Authentication request
+002 ms
+Authentication response
+002 ms
+Association request
+004 ms
+Association response
+001 ms
+First EAP
+104 ms
+Last EAP
+023 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2982 ms
+Authentication request
+002 ms
+Authentication response
+002 ms
+Association request
+004 ms
+Association response
+001 ms
+First EAP
+094 ms
+Last EAP
+022 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+3145 ms
+Authentication request
+002 ms
+Authentication response
+003 ms
+Association request
+004 ms
+Association response
+010 ms
+First EAP
+094 ms
+Last EAP
+023 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+1910 ms
+Authentication request
+001 ms
+Authentication response
+004 ms
+Association request
+054 ms
+Association response
+001 ms
+First EAP
+5041 ms
+Last EAP
+022 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eduroam
+First probe response
+2924 ms
+Authentication request
+001 ms
+Authentication response
+001 ms
+Association request
+002 ms
+Association response
+001 ms
+First EAP
+052 ms
+Last EAP
+023 ms
+First data packet

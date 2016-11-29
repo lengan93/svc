@@ -1,0 +1,166 @@
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+025 ms
+Authentication request
+001 ms
+Authentication response
+004 ms
+Association request
+002 ms
+Association response
+280 ms
+First EAP
+008 ms
+Last EAP
+035 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+Authentication request
+000 ms
+Authentication response
+002 ms
+Association request
+002 ms
+Association response
+215 ms
+First EAP
+008 ms
+Last EAP
+024 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+026 ms
+Authentication request
+000 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+229 ms
+First EAP
+010 ms
+Last EAP
+033 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+026 ms
+Authentication request
+000 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+242 ms
+First EAP
+009 ms
+Last EAP
+030 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+027 ms
+Authentication request
+000 ms
+Authentication response
+002 ms
+Association request
+002 ms
+Association response
+212 ms
+First EAP
+010 ms
+Last EAP
+029 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+024 ms
+Authentication request
+000 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+216 ms
+First EAP
+009 ms
+Last EAP
+029 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+038 ms
+Authentication request
+000 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+235 ms
+First EAP
+008 ms
+Last EAP
+025 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+026 ms
+Authentication request
+000 ms
+Authentication response
+003 ms
+Association request
+002 ms
+Association response
+239 ms
+First EAP
+009 ms
+Last EAP
+026 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+First probe response
+026 ms
+Authentication request
+006 ms
+Authentication response
+005 ms
+Association request
+002 ms
+Association response
+303 ms
+First EAP
+008 ms
+Last EAP
+031 ms
+First data packet
+-----------------WIFI EVENT REPORT------------------
+Interface: wlan0 - network: eRISCS
+Authentication request
+000 ms
+Authentication response
+004 ms
+Association request
+002 ms
+Association response
+825 ms
+First EAP
+013 ms
+Last EAP
+025 ms
+First data packet

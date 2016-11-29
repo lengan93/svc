@@ -86,7 +86,7 @@
 			void extractData(uint8_t* data, uint32_t* dataLen){
 				*dataLen = *((uint32_t*)(this->packet+SVC_PACKET_HEADER_LEN));
 				//-- TODO: possible error
-				memcpy(data, this->packet + SVC_PACKET_HEADER_LEN + 4, *dataLen);
+				memcpy(data, this->packet + SVC_PACKET_HEADER_LEN + 4, this->dataLen - SVC_PACKET_HEADER_LEN - 4);
 			}			
 			
 			//-- public methods
