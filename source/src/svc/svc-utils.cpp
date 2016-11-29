@@ -1,17 +1,13 @@
 #include "svc-utils.h"
 
 
-//--	UTILS FUNCTION IMPLEMEMTATION	--//
-bool isEncryptedCommand(enum SVCCommand command){
-	return (command == SVC_CMD_CONNECT_OUTER3);
+//--	PACKET HANDLER CLASS	--//
+
+PacketHandler::PacketHandler(){
+	this->processingThread = -1;
 }
 
-//--	PACKET HANDLER CLASS	--//
-PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args){
-	this->packetHandler = handler;
-	this->packetHandlerArgs = args;
-	this->readingQueue = readingQueue;
-
+void PacketHandler::startProcessingLoop(){
 	this->working = true;
 	pthread_attr_t attr;
 	pthread_attr_init(&attr);
@@ -19,6 +15,13 @@ PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketPr
 	if (pthread_create(&this->processingThread, &attr, processingLoop, this) !=0){
 		throw SVC_ERROR_CRITICAL;
 	}
+}
+
+PacketHandler::PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args){
+	this->packetHandler = handler;
+	this->packetHandlerArgs = args;
+	this->readingQueue = readingQueue;
+	startProcessingLoop();
 }
 
 PacketHandler::~PacketHandler(){

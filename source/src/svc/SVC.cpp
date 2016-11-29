@@ -9,7 +9,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 	this->working = true;
 	this->shutdownCalled = false;
 	this->readingThread = 0;
-	this->writingThread = 0;
+	//this->writingThread = 0;
 	this->sha256 = new SHA256();		
 	
 	struct sockaddr_un appSockAddr;
@@ -46,9 +46,11 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 		}
 		else{
 			//-- then create reading thread
+			//this->incomingQueue = new MutexedQueue<SVCPacket*>();
 			if (pthread_create(&this->readingThread, &attr, svc_reading_loop, this) !=0){
 				close(this->appSocket);							
 				delete this->sha256;
+				//delete this->incomingQueue;
 				throw SVC_ERROR_CRITICAL;
 			}
 			else{			
@@ -57,28 +59,31 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 				dmnSockAddr.sun_family = AF_LOCAL;
 				dmnSockAddr.sun_path[0]='\0';
 				memcpy(dmnSockAddr.sun_path+1, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
-				if (connect(this->appSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr)) == -1){						
+				if (connect(this->appSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr)) == -1){				
 					this->working = false;
 					pthread_join(this->readingThread, NULL);
+					//delete this->incomingQueue;
 					close(this->appSocket);
 					delete this->sha256;
 					throw SVC_ERROR_CONNECTING;
 				}
 				else{	
 					//-- then create writing thread
-					if (pthread_create(&this->writingThread, &attr, svc_writing_loop, this) !=0){
+					/*if (pthread_create(&this->writingThread, &attr, svc_writing_loop, this) !=0){
 						this->working = false;
 						pthread_join(this->readingThread, NULL);
 						close(this->appSocket);
 						delete this->sha256;
 						throw SVC_ERROR_CRITICAL;
 					}
-					else{
+					else{*/
 						//-- svc successfully created
-						this->endpoints.clear();				
-						this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_incoming_packet_handler, this);		
-						this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_outgoing_packet_handler, this);
-					}
+						this->connectionRequests = new MutexedQueue<SVCPacket*>();
+						this->endpoints.clear();			
+						this->incomingPacketHandler = new PacketHandler();
+						//this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_incoming_packet_handler, this);		
+						//this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_outgoing_packet_handler, this);
+					//}
 				}
 			}
 		}
@@ -88,6 +93,7 @@ SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
 void SVC::shutdownSVC(){
 
 	if (!this->shutdownCalled){
+		printf("\nSVC shutdown called"); fflush(stdout);
 		this->shutdownCalled = true;
 		//-- send shutdown request to all SVCEndpoint instances	
 		for (auto& it : endpoints){
@@ -96,31 +102,37 @@ void SVC::shutdownSVC(){
 				this->endpoints[ep->endpointID] = NULL; //-- just remove reference, <key, NULL> still left
 				delete ep; //-- ep destructor calls shutdown
 			}
-		}
-			
+		}			
 		this->working = false;
 		
 		//-- stop reading packets
+		printf("\ncall shutdown socket"); fflush(stdout);
 		shutdown(this->appSocket, SHUT_RD);
+		//delete this->incomingQueue;
+		printf("\ncall join"); fflush(stdout);
 		if (this->readingThread !=0) pthread_join(this->readingThread, NULL);
 		
 		//-- process residual incoming packets
-		this->incomingPacketHandler->stopWorking();
-		this->incomingPacketHandler->waitStop();
+		//this->incomingPacketHandler->stopWorking();
+		//this->incomingPacketHandler->waitStop();
 		delete this->incomingPacketHandler;
 		
 		//-- process residual outgoing packets
-		this->outgoingPacketHandler->stopWorking();
+		/*this->outgoingPacketHandler->stopWorking();
 		this->outgoingPacketHandler->waitStop();
 		delete this->outgoingPacketHandler;
+		*/		
 		
 		//-- stop writing packets
 		shutdown(this->appSocket, SHUT_WR);
-		if (this->writingThread!=0) pthread_join(this->writingThread, NULL);	
+		//if (this->writingThread!=0) pthread_join(this->writingThread, NULL);	
 		close(this->appSocket);
-				
+		
+		printf("\nremove queues"); fflush(stdout);
 		//-- remove queues and intances
-		delete this->sha256;		
+		delete this->connectionRequests;
+		delete this->sha256;	
+		printf("\nsvc destructed"); fflush(stdout);	
 	}
 }
 
@@ -140,7 +152,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 		switch(cmd){
 		
 			case SVC_CMD_CONNECT_INNER2:
-				_this->connectionRequests.enqueue(packet);
+				_this->connectionRequests->enqueue(packet);
 				break;
 				
 			default:
@@ -155,11 +167,11 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 	}	
 }
 
-void SVC::svc_outgoing_packet_handler(SVCPacket* packet, void* args){
+/*void SVC::svc_outgoing_packet_handler(SVCPacket* packet, void* args){
 	SVC* _this = (SVC*)args;
 	//-- for now just forward
-	_this->tobesentQueue.enqueue(packet);	
-}
+	_this->tobesentQueue->enqueue(packet);	
+}*/
 
 void* SVC::svc_reading_loop(void* args){
 	SVC* _this = (SVC*)args;
@@ -171,20 +183,21 @@ void* SVC::svc_reading_loop(void* args){
 	while (_this->working){
 		readrs = recv(_this->appSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
 		if (readrs>0){			
-			_this->incomingQueue.enqueue(new SVCPacket(buffer, readrs));
+			//_this->incomingQueue->enqueue(new SVCPacket(buffer, readrs));
+			svc_incoming_packet_handler(new SVCPacket(buffer, readrs), _this);
 		}
 		//else: read received nothing
-	}	
+	}
 	pthread_exit(EXIT_SUCCESS);
 }
 
-void* SVC::svc_writing_loop(void* args){
+/*void* SVC::svc_writing_loop(void* args){
 	SVC* _this = (SVC*)args;
 	
 	int sendrs;
 	SVCPacket* packet;
 	while (_this->working || _this->outgoingQueue.notEmpty() || _this->tobesentQueue.notEmpty()){		
-		packet = _this->tobesentQueue.dequeueWait(1000); fflush(stdout);	
+		packet = _this->tobesentQueue->dequeueWait(1000); fflush(stdout);	
 		if (packet!=NULL){
 			sendrs = send(_this->appSocket, packet->packet, packet->dataLen, 0);		
 			//-- remove the packet after sending			
@@ -193,9 +206,14 @@ void* SVC::svc_writing_loop(void* args){
 		}		
 	}
 	pthread_exit(EXIT_SUCCESS);
-}
+}*/
+
 
 //--	SVC PUBLIC FUNCTION IMPLEMENTATION		--//
+
+void SVC::sendPacketToDaemon(SVCPacket* packet){
+	send(this->appSocket, packet->packet, packet->dataLen, 0);
+}
 
 SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 	
@@ -215,7 +233,8 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 		SVCPacket* packet = new SVCPacket(endpoint->endpointID);
 		packet->setCommand(SVC_CMD_CREATE_ENDPOINT);
 		packet->pushCommandParam(&option, 1);
-		this->outgoingQueue.enqueue(packet);
+		//this->outgoingQueue->enqueue(packet);
+		sendPacketToDaemon(packet);
 		
 		//-- wait for response from daemon endpoint then connect the app endpoint socket to daemon endpoint address
 		uint32_t responseLen;	
@@ -238,7 +257,7 @@ SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
 
 SVCEndpoint* SVC::listenConnection(int timeout){
 	SVCPacket* request;
-	request=this->connectionRequests.dequeueWait(timeout);
+	request=this->connectionRequests->dequeueWait(timeout);
 	if (request!=NULL){
 		//-- there is connection request, read for endpointID
 		uint64_t endpointID = *((uint64_t*)(request->packet+1));
@@ -270,7 +289,7 @@ SVCEndpoint::SVCEndpoint(SVC* svc, uint64_t endpointID,  bool isInitiator){
 	this->isInitiator = isInitiator;
 	this->request = NULL;
 	this->incomingPacketHandler = NULL;
-	this->outgoingPacketHandler = NULL;
+	//this->outgoingPacketHandler = NULL;
 	this->periodicWorker = NULL;
 	this->readingThread = 0;
 	this->writingThread = 0;
@@ -299,14 +318,17 @@ SVCEndpoint::SVCEndpoint(SVC* svc, uint64_t endpointID,  bool isInitiator){
 		if (pthread_create(&this->readingThread, &attr, svc_endpoint_reading_loop, this) !=0){
 			throw SVC_ERROR_CRITICAL;
 		}		
-		
 		//-- create a packet handler to process incoming packets
+		this->tobesentQueue = new MutexedQueue<SVCPacket*>();
+		this->dataholdQueue = new MutexedQueue<SVCPacket*>();		
+		this->incomingPacketHandler = new PacketHandler();
+		/*
 		try{	
 			this->incomingPacketHandler = new PacketHandler(&this->incomingQueue, svc_endpoint_incoming_packet_handler, this);
 		}
 		catch(...){
 			throw SVC_ERROR_CRITICAL;
-		}
+		}*/
 	}
 };
 
@@ -354,7 +376,8 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				//- packet updated with new endpointID
 				packet->switchCommand(SVC_CMD_CONNECT_INNER5);				
 				packet->pushCommandParam((uint8_t*)_this->challengeSecretReceived.c_str(), _this->challengeSecretReceived.size());
-				_this->outgoingQueue.enqueue(packet);				
+				//_this->outgoingQueue->enqueue(packet);
+				_this->tobesentQueue->enqueue(packet);
 				break;
 				
 			case SVC_CMD_CONNECT_INNER6:								
@@ -365,7 +388,8 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 					_this->proof = _this->svc->authenticator->generateProof(_this->challengeSecretReceived);
 					packet->switchCommand(SVC_CMD_CONNECT_INNER7);				
 					packet->pushCommandParam((uint8_t*)_this->proof.c_str(), _this->proof.size());
-					_this->outgoingQueue.enqueue(packet);
+					//_this->outgoingQueue->enqueue(packet);
+					_this->tobesentQueue->enqueue(packet);
 					//-- ok, connection established
 					_this->isAuth = true;
 				}
@@ -382,7 +406,8 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, std::string((char*)param, paramLen))){
 					//-- send confirm to daemon
 					packet->setCommand(SVC_CMD_CONNECT_INNER9);					
-					_this->outgoingQueue.enqueue(packet);
+					//_this->outgoingQueue->enqueue(packet);
+					_this->tobesentQueue->enqueue(packet);
 					_this->isAuth = true;
 				}
 				else{
@@ -401,14 +426,15 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 	}
 	else{
 		//-- processing incoming data
-		_this->dataholdQueue.enqueue(packet);
+		_this->dataholdQueue->enqueue(packet);
 	}
 }
 
-void SVCEndpoint::svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args){
+
+/*void SVCEndpoint::svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;	
-	_this->tobesentQueue.enqueue(packet);
-}
+	_this->tobesentQueue->enqueue(packet);
+}*/
 
 void* SVCEndpoint::svc_endpoint_reading_loop(void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;
@@ -420,7 +446,8 @@ void* SVCEndpoint::svc_endpoint_reading_loop(void* args){
 		readrs = recv(_this->sock, buffer, SVC_DEFAULT_BUFSIZ, 0);
 		if (readrs>0){
 			//printf("\nsvc endpoint read packet: %d: ", readrs); printBuffer(buffer, readrs); fflush(stdout);
-			_this->incomingQueue.enqueue(new SVCPacket(buffer, readrs));			
+			//_this->incomingQueue->enqueue();			
+			svc_endpoint_incoming_packet_handler(new SVCPacket(buffer, readrs), _this);
 		}
 		//else: read received nothing
 	}
@@ -431,9 +458,9 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 	SVCEndpoint* _this = (SVCEndpoint*)args;
 	int sendrs;
 	SVCPacket* packet;
-	while (_this->working || _this->outgoingQueue.notEmpty() || _this->tobesentQueue.notEmpty()){
-		//packet = _this->tobesentQueue.dequeueWait(1000);
-		if (_this->tobesentQueue.peakWait(&packet, 1000)){		
+	while (_this->working /*|| _this->outgoingQueue.notEmpty()*/ || _this->tobesentQueue->notEmpty()){
+		//packet = _this->tobesentQueue->dequeueWait(1000);
+		if (_this->tobesentQueue->peakWait(&packet, -1)){		
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
 			//printf("\nsvc endpoint write packet %d, error %d:  ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
@@ -454,13 +481,13 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 				else{
 					//-- packet send failed with undefined error, TODO: log
 					delete packet;
-					_this->tobesentQueue.dequeue();
+					_this->tobesentQueue->dequeue();
 				}
 			}
 			else{
 				//-- TODO: if log file declared then log these data
 				delete packet;
-				_this->tobesentQueue.dequeue();
+				_this->tobesentQueue->dequeue();
 			}
 		}
 	}
@@ -519,7 +546,8 @@ void SVCEndpoint::liveCheck(void* args){
 	if (_this->working){
 		SVCPacket* packet = new SVCPacket(_this->endpointID);
 		packet->setCommand(SVC_CMD_CHECK_ALIVE);
-		_this->outgoingQueue.enqueue(packet);				
+		//_this->outgoingQueue->enqueue(packet);
+		_this->tobesentQueue->enqueue(packet);
 	}	
 }
 
@@ -542,7 +570,7 @@ int SVCEndpoint::connectToDaemon(){
 		}		
 		else{
 			//-- create a packet handler to process incoming packets		
-			this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_endpoint_outgoing_packet_handler, this);
+			//this->outgoingPacketHandler = new PacketHandler(&this->outgoingQueue, svc_endpoint_outgoing_packet_handler, this);
 			//-- create a periodic worker to send beat to daemon endpoint
 			this->periodicWorker = new PeriodicWorker(1000, liveCheck, this);
 			return 0;
@@ -571,7 +599,8 @@ bool SVCEndpoint::negotiate(){
 			uint32_t remoteAddr = this->remoteHost->getHostAddress();
 			packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
 		
-			this->outgoingQueue.enqueue(packet);
+			//this->outgoingQueue->enqueue(packet);
+			this->tobesentQueue->enqueue(packet);
 		
 			if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, SVC_DEFAULT_TIMEOUT)){
 				this->isAuth = false;
@@ -602,8 +631,9 @@ bool SVCEndpoint::negotiate(){
 			packet->pushCommandParam((uint8_t*)this->proof.c_str(), this->proof.size());
 			packet->pushCommandParam((uint8_t*)this->challengeSecretSent.c_str(), this->challengeSecretSent.size());
 			packet->pushCommandParam((uint8_t*)this->challengeSecretReceived.c_str(),  this->challengeSecretReceived.size());
-			this->outgoingQueue.enqueue(packet);
-		
+			//this->outgoingQueue->enqueue(packet);
+			this->tobesentQueue->enqueue(packet);
+			
 			if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, SVC_DEFAULT_TIMEOUT)){
 				this->isAuth = false;
 			}
@@ -623,11 +653,13 @@ std::string SVCEndpoint::getRemoteIdentity(){
 
 void SVCEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
+		printf("\nendpoint shutdown called"); fflush(stdout);
 		this->shutdownCalled = true;
 		//-- send a shutdown packet to daemon
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setCommand(SVC_CMD_SHUTDOWN_ENDPOINT);
-		this->outgoingQueue.enqueue(packet);
+		//this->outgoingQueue->enqueue(packet);
+		this->tobesentQueue->enqueue(packet);
 
 		this->working = false;
 		this->isAuth = false;
@@ -652,11 +684,12 @@ void SVCEndpoint::shutdownEndpoint(){
 			joinrs = this->incomingPacketHandler->waitStop();
 			delete this->incomingPacketHandler;
 		}
-		if (this->outgoingPacketHandler != NULL){
+		
+		/*if (this->outgoingPacketHandler != NULL){
 			this->outgoingPacketHandler->stopWorking();
 			joinrs = this->outgoingPacketHandler->waitStop();			
 			delete this->outgoingPacketHandler;
-		}	
+		}*/	
 	
 		//-- stop writing
 		shutdown(this->sock, SHUT_WR);
@@ -670,6 +703,11 @@ void SVCEndpoint::shutdownEndpoint(){
 	
 		//-- unregister from endpoints collection
 		this->svc->endpoints[this->endpointID]= NULL;
+		
+		delete this->tobesentQueue;
+		delete this->dataholdQueue;
+		
+		printf("\nendpoint removed"); fflush(stdout);
 	}
 }
 
@@ -682,7 +720,8 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
 		//-- try to send		
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setData(data, dataLen);
-		this->outgoingQueue.enqueue(packet);
+		//this->outgoingQueue->enqueue(packet);
+		this->tobesentQueue->enqueue(packet);
 		return 0;
 	}
 	else{
@@ -692,7 +731,7 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
 
 int SVCEndpoint::readData(uint8_t* data, uint32_t* len, int timeout){
 	if (this->isAuth){
-		SVCPacket* packet = this->dataholdQueue.dequeueWait(timeout);
+		SVCPacket* packet = this->dataholdQueue->dequeueWait(timeout);
 		if (packet!=NULL){
 			packet->extractData(data, len);
 			delete packet;

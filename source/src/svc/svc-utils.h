@@ -9,10 +9,7 @@
 	#include <sys/socket.h>
 
 	//--	class pre-declaration
-	class SVCPacket;
-
-	//--	return if the command must be encrypted
-	bool isEncryptedCommand(enum SVCCommand command);
+	class SVCPacket;	
 	
 	typedef void (*SVCPacketProcessing)(SVCPacket* packet, void* args);
 	
@@ -155,16 +152,16 @@
 			MutexedQueue<SVCPacket*>* readingQueue;
 			
 			//--	members
-			volatile bool working;
-						
-			
+			volatile bool working;								
 			void* packetHandlerArgs;
 			SVCPacketProcessing packetHandler;
 			vector<CommandHandler*> commandHandlerRegistra;
-						
+			void startProcessingLoop();
+
 		public:
 			pthread_t processingThread;
-			//--	constructors/destructors
+			//--	constructors/destructors			
+			PacketHandler();
 			PacketHandler(MutexedQueue<SVCPacket*>* readingQueue, SVCPacketProcessing handler, void* args);
 			virtual ~PacketHandler();
 			

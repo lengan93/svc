@@ -23,7 +23,7 @@
 	#define SVC_ERROR_SIGNAL_INTERRUPTED		"Execution interrupted by SIGINT"
 
 	/*	SVC CONFIG	*/
-	#define SVC_DEFAULT_TIMEOUT 				5000
+	#define SVC_DEFAULT_TIMEOUT 				3000
 	#define SVC_DEFAULT_BUFSIZ 					65536
 	#define	SVC_DAEPORT							1221
 	#define SVC_ENDPOINT_BEAT_LIVETIME			5

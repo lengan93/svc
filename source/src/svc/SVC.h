@@ -40,19 +40,18 @@
 
 			static void liveCheck(void* args);		
 			static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
-			static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
+			//static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_endpoint_reading_loop(void* args);
 			static void* svc_endpoint_writing_loop(void* args);
-
 			
 			pthread_t readingThread;
-			pthread_t writingThread;			
-			MutexedQueue<SVCPacket*> incomingQueue;
-			MutexedQueue<SVCPacket*> outgoingQueue;
-			MutexedQueue<SVCPacket*> tobesentQueue;
-			MutexedQueue<SVCPacket*> dataholdQueue;
+			pthread_t writingThread;
+			//MutexedQueue<SVCPacket*> incomingQueue;
+			//MutexedQueue<SVCPacket*> outgoingQueue;
+			MutexedQueue<SVCPacket*>* tobesentQueue;
+			MutexedQueue<SVCPacket*>* dataholdQueue;
 			PacketHandler* incomingPacketHandler;
-			PacketHandler* outgoingPacketHandler;
+			//PacketHandler* outgoingPacketHandler;
 			
 			int sock;
 			int sockOption;
@@ -108,6 +107,7 @@
 			 * The data will be automatically encrypted by the under layer
 			 * */			 						 
 			int sendData(const uint8_t* data, uint32_t dalalen);
+			int sendData(const uint8_t* data, uint32_t datalen, uint8_t option);
 			
 			/*
 			 * Read data from the buffer. The data had already been decrypted by lower layer
@@ -137,28 +137,29 @@
 			static uint16_t endpointCounter;
 			
 			static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
-			static void svc_outgoing_packet_handler(SVCPacket* packet, void* args);
+			//static void svc_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_reading_loop(void* args);
-			static void* svc_writing_loop(void* args);
+			//static void* svc_writing_loop(void* args);
 			
 			//-- private members
+			inline void sendPacketToDaemon(SVCPacket* packet);
+			
 			volatile bool working;
 			volatile bool shutdownCalled;
 			pthread_t readingThread;
-			pthread_t writingThread;			
-			MutexedQueue<SVCPacket*> incomingQueue;
-			MutexedQueue<SVCPacket*> outgoingQueue;
-			MutexedQueue<SVCPacket*> tobesentQueue;
-			MutexedQueue<SVCPacket*> connectionRequests;			
+			//pthread_t writingThread;			
+			//MutexedQueue<SVCPacket*>* incomingQueue;
+			//MutexedQueue<SVCPacket*>* outgoingQueue;
+			//MutexedQueue<SVCPacket*>* tobesentQueue;
+			MutexedQueue<SVCPacket*>* connectionRequests;
 			
 			PacketHandler* incomingPacketHandler;
-			PacketHandler* outgoingPacketHandler;
+			//PacketHandler* outgoingPacketHandler;
 															
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
 			
 			SHA256* sha256;
 			int appSocket;
-
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
 			

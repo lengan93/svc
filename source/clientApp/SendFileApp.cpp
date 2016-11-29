@@ -91,15 +91,15 @@ int main(int argc, char** argv){
 						do{
 							if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
 								if (buffer[0] = 0x03 && buffer[1]==0xFF){
-									fileSent = true;									
-									printf("\nFile sent");
+									fileSent = true;																		
 								}
 							}
 						}
 						while (!fileSent);
 						
 						clock_gettime(CLOCK_REALTIME, &echelon);
-						printf("\n[%0.2f] ACK received", timeDistance(&echelon, &startingTime)); fflush(stdout);
+						float totalTime = timeDistance(&echelon, &startingTime);
+						printf("\n[%0.2f] File sent, average speed: %0.0f KB/s", totalTime, fileSize/totalTime/1024); fflush(stdout);
 					}
 					else{
 						printf("\nFile not valid\n");
