@@ -34,7 +34,7 @@ int main(int argc, char** argv){
 
 	if (argc>1){
 		string appID = string("SEND_FILE_APP");
-		SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
+		SVCHost* remoteHost = new SVCHostIP("SEND_FILE_APP_SERVER", "149.56.142.13");
 		SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 		try{

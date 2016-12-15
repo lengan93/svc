@@ -1,0 +1,32 @@
+﻿SVC README – v1.0
+
+This demo “client and server file sending application” demonstrates how to use SVC socket to send a file from client to server.
+
+- to build the solution:
+  + make sure build-essential is installed: sudo apt-get install build-essential
+  + make sure big number library is installed: sudo apt-get install libgmp3-dev
+  + from 'source' folder execute: Make full
+
+The build process will generate inside 'bin' folder 3 files: daemon.exe, server.exe, client.exe. This demo uses SVC with SVCAuthenticatorSharedSecret as authentication mechanism, which requires a secret key stored inside 'bin/private/sharedsecret'. This folder/file must be placed along with client.exe file.
+
+The client program opens the given file, reads it content chunk by chunk, then sends these data to server program. To notify the server program about file's info, the client will send several “init” packets (buffer starts with value 0x01), then continue with the data (buffer starts with value 0x02). To notify the EOF, the client program sends “close” packets (buffer starts with value 0x03), then waits for ACK (reflected “close” packets from server program).
+
+As SVC_NOLOST option is not (yet) available, server and client program will send RETRY_TIME (a positive integer – value of 10-15 recommended) “init” and “close” packets to avoid possible lost while using UDP. At the end, the server program displays lost rate, while client program shows average bit rate and elapsed time for each operation.
+
+This demon does not require administrator privilege. To run the solution:
+
+- run daemon.exe from both client and server (these daemon must be kept running during tests)
+  + execute: ./daemon.exe --start
+
+- run server.exe from server side:
+  + execute: ./server.exe <RETRY_TIME>
+
+- run client.exe from client side:
+  + execute: ./client.exe <file_name> <RETRY_TIME>
+
+
+
+Note: several networks prohibit or ignore UDP packets, which fails the demo. 
+
+----------------------------------------------------------------------------------
+For more information, please email to: dangxuanthong@gmail.com

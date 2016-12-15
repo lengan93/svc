@@ -1288,19 +1288,19 @@ void checkEndpointLiveTime(void* args){
 }
 
 void showHelp(){
-	//printf("\nsvc-daemon: daemon process for svc-based applications");
-	//printf("\nusage:");
-	//printf("\n\t--default-config config_file");
-	//printf("\n\t\tGenerate svc-daemon's default configuration and save it to config_file\n");
-	//printf("\n\t--help");
-	//printf("\n\t\tShow this help content\n");
-	//printf("\n\t--start -c config_file");
-	//printf("\n\t\tStart a new instance of svc-daemon using the configuration inside config_file\n");
-	//printf("\n\t--start -i image_file");
-	//printf("\n\t\tStart the svc-daemon using the previously saved infomation in image_file\n");
-	//printf("\n\t--stop [-i image_file]");
-	//printf("\n\t\tGracefully stop the running svc-daemon instance and (optionally) save \n\t\tall current endpoints' states to image_file. This is generally used \n\t\tin svc update/maintenance\n");
-	//printf("\n");
+	printf("\nsvc-daemon: daemon process for svc-based applications");
+	printf("\nusage:");
+	printf("\n\t--default-config config_file");
+	printf("\n\t\tGenerate svc-daemon's default configuration and save it to config_file\n");
+	printf("\n\t--help");
+	printf("\n\t\tShow this help content\n");
+	printf("\n\t--start -c config_file");
+	printf("\n\t\tStart a new instance of svc-daemon using the configuration inside config_file\n");
+	printf("\n\t--start -i image_file");
+	printf("\n\t\tStart the svc-daemon using the previously saved infomation in image_file\n");
+	printf("\n\t--stop [-i image_file]");
+	printf("\n\t\tGracefully stop the running svc-daemon instance and (optionally) save \n\t\tall current endpoints' states to image_file. This is generally used \n\t\tin svc update/maintenance\n");
+	printf("\n");
 	fflush(stdout);
 }
 

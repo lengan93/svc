@@ -43,16 +43,13 @@
 	#define	INFO_BYTE					0
 	#define	CMD_BYTE					SVC_PACKET_HEADER_LEN
 	
-	/*	SVC ENDPOINT OPTIONS	*/	
-	#define SVC_NOLOST		0x40
-
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80
-	//#define SVC_								0x40
-	//#define SVC_								0x20
+	#define SVC_NOLOST							0x40
+	#define SVC_SEQUENCE						0x20
 	//#define SVC_								0x10
 	#define SVC_ENCRYPTED						0x08
-	#define SVC_USING_TCP						0x04
+	//#define SVC_								0x04
 	
 	#define SVC_URGENT_PRIORITY 				0x03
 	#define	SVC_HIGH_PRIORITY					0x02

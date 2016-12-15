@@ -1,0 +1,78 @@
+﻿SVC FRAME FORMAT
+
+-------------------------------------------------
+- 1 byte info
+	0x80	: SVC_COMMAND_FRAME (1/0)
+	0x40 	: SVC_NOLOST
+	0x20	: SVC_SEQUENCE
+	0x10	: [pas d’usage]
+	0x08	: SVC_ENCRYPTED
+	0x04	: [pas d’usage]
+	0x03	: SVC_URGENT_PRIORITY
+	0x02	: SVC_HIGH_PRIORITY
+	0x01	: SVC_NORMAL_PRIORITY
+	0x00	: SVC_LOW_PRIORITY
+- endpointID : 8 bytes
+- 4 bytes sequence
+-------------------------------------------------
+- data packet structure
+	[encrypted]
+	+ data length: 4 byte	
+	+ data payload
+	+ HMAC
+
+- command packet structure
+	[encrypted]
+	+ command id: 1 byte
+		
+		° SVC_CMD_CREATE_ENDPOINT:
+		  +  app to daemon: options
+		  +  daemon to app: <no param>
+
+		° SVC_CMD_SHUTDOWN_ENDPOINT:			
+		  +  endpoint1 to daemon1 (and inverse): <no param>
+		  +  daemon1 to daemon2 (and inverse): <no param>
+		  +  daemon2 to endpoint2 (and inverse): <no param>
+
+		° SVC_CMD_CONNECT_INNER1: 
+		  +  endpoint1 to daemon1: challenge || appID || challengeSecret || remote address
+
+		° SVC_CMD_CONNECT_OUTER1:
+		  +  daemon1 to daemon2: challenge || appID || E_k1
+
+		° SVC_CMD_CONNECT_INNER2:
+		  +  daemon2 to ep2: challenge
+
+		° SVC_CMD_CONNECT_INNER3:
+		  +  ep2 to daemon2: challenge || proof_x ||  challengeSecret || challengeSecretReceived
+
+		° SVC_CMD_CONNECT_OUTER2:
+		  +  daemon2 to daemon1: challenge || E_k2 || E_Px
+
+		° SVC_CMD_CONNECT_INNER4:
+		  +  daemon1 to ep1: challenge
+
+		° SVC_CMD_CONNECT_INNER5:
+		  +  endpoint1 to daemon1: challengeSecret
+
+		° SVC_CMD_CONNECT_INNER6:
+		  +  daemon1 to endpoint1: proof_x
+
+		° SVC_CMD_CONNECT_INNER7:
+		  +  endpoint1 to daemon1: proof_y
+
+		° SVC_CMD_CONNECT_OUTER3:
+              +  daemon1 to daemon2: (encrypted) proof_y
+
+		° SVC_CMD_CONNECT_INNER8:
+          	  +  daemon2 to endpoint2: proof_y
+
+		° SVC_CMD_CONNECT_INNER9:
+		  + endpoint2 to daemon2: <no param>
+
+	+ [arguments arguments' followed by lengths in 2 bytes]
+	
+	+ HMAC (if encrypted)
+------------------------------------------------------	
+
+	
