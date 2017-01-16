@@ -50,6 +50,8 @@ int main(int argc, char** argv){
 				uint32_t bufferSize = 1400;
 				uint8_t buffer[bufferSize];
 				
+				ofstream* myFile;
+
 				//-- try to read file size and name from the first message				
 				
 				while (!fileReceived){
@@ -59,7 +61,10 @@ int main(int argc, char** argv){
 								if (!headerReceived){
 									headerReceived = true;
 									fileSize = *((int*)(buffer+1));
-									fileName = string((char*)buffer+1+4, bufferSize-1-4);									
+									fileName = string((char*)buffer+1+4, bufferSize-1-4);
+
+									myFile = new ofstream(fileName.c_str());
+									
 									readSize = 0;
 									printf("\nReceiving file: %s, size: %d\n", fileName.c_str(), fileSize); fflush(stdout);
 								}
@@ -68,12 +73,17 @@ int main(int argc, char** argv){
 							case 0x02:
 								if (headerReceived){
 									readSize+=bufferSize;
+									//save to file
+									myFile->write((char*)buffer+1, bufferSize-1);
 								}
 								break;
 								
 							case 0x03:
 								if (!fileReceived){
 									fileReceived = true;
+
+									myFile->close();
+
 									if (fileSize>0){
 										printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
 									}
