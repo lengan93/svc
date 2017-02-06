@@ -72,7 +72,7 @@ int main(int argc, char** argv){
 								
 							case 0x02:
 								if (headerReceived){
-									readSize+=bufferSize;
+									readSize+=bufferSize-1;
 									//save to file
 									myFile->write((char*)buffer+1, bufferSize-1);
 								}
