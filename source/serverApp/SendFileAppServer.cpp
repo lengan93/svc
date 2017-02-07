@@ -121,8 +121,8 @@ int main(int argc, char** argv){
 		svc->shutdownSVC();
 		delete svc;
 	}
-	catch (...){
-		printf("\nError: cannot create an instance of SVC\n");
+	catch (const char* str){
+		printf("\nError: %s\n", str);
 	}
 	
 	delete authenticator;
