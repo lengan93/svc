@@ -54,7 +54,7 @@ int main(int argc, char** argv){
 				printf("\nConnection established!");
 				
 				//pw to sent beat
-				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
+				// PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
 				
 				// uint32_t bufferSize = 1400;
 				// uint8_t buffer[bufferSize];
@@ -68,7 +68,7 @@ int main(int argc, char** argv){
 				uint8_t imgData[imgSize];
 				fill(imgData, imgData+imgSize, 0);
 
-   				uint32_t bufferSize = 1400;				
+   				uint32_t bufferSize = 5400;				
    				uint8_t buffer[bufferSize];
 
    				int blocs = imgSize/(bufferSize-1);
@@ -85,6 +85,7 @@ int main(int argc, char** argv){
 
 				while (trytimes < 3){
 					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
+						printf("\n%x\t%d\t%d",buffer[0], bufferSize, index);
 						switch (buffer[0]){
 							case 0x01:
 								if(!firstPacketReceived) {
@@ -113,6 +114,8 @@ int main(int argc, char** argv){
 								if(!lastPacketReceived) {
 									lastPacketReceived = true;
 									firstPacketReceived = false;
+									framesReceived++;
+									printf("\nframe %d received", framesReceived);
 									// img = Mat(Size(HEIGHT, WIDTH), CV_8UC3, imgData).clone();
         							int ptr=0;        							
 									for (int i = 0;  i < img.rows; i++) {
@@ -123,7 +126,6 @@ int main(int argc, char** argv){
 									}
 
         							imshow("MyVideo", img); //show the frame in "MyVideo" window
-									// printf("\nimage received %d", index);
 
 								}
 								break;
@@ -144,9 +146,9 @@ int main(int argc, char** argv){
 					}
 				}
 
-				pw->stopWorking();
-				pw->waitStop();
-				delete pw;
+				// pw->stopWorking();
+				// pw->waitStop();
+				// delete pw;
 								
 				endpoint->shutdownEndpoint();			
 				printf("\nProgram terminated!\n");

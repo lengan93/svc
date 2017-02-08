@@ -47,7 +47,7 @@ void *sendImgThread(void *arg)
     }
 		printf("1");
 
-	uint32_t bufferSize = 1400;
+	uint32_t bufferSize = 5400;
 	uint8_t buffer[bufferSize] = "";
 
     Mat frame;
@@ -119,13 +119,18 @@ void *sendImgThread(void *arg)
 int main(int argc, char** argv){
 
 	//int RETRY_TIME = atoi(argv[2]);
-
-	if (argc>1){
+	SVCHost* remoteHost;
+	
 		// string appID = string("CAMERA_APP");
 		string appID = string("SEND_FILE_APP");
 		// SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
-		SVCHost* remoteHost = new SVCHostIP(argv[1]);
-		
+		if (argc>1){
+			remoteHost = new SVCHostIP(argv[1]);
+		}
+		else {
+			remoteHost = new SVCHostIP("192.168.43.149");
+		}
+
 		SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 		try{
@@ -170,6 +175,6 @@ int main(int argc, char** argv){
 		
 		delete authenticator;
 		delete remoteHost;
-	}
+	
 		
 }
