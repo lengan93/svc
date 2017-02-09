@@ -6,6 +6,8 @@
 #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
+#define RETRY_TIME 5
+
 #define HEIGHT 480
 #define WIDTH 640
 
@@ -13,34 +15,28 @@ using namespace cv;
 
 using namespace std;
 
-// bool fileReceived = false;
-// bool headerReceived = false;
-// int fileSize;
-// int readSize = 0;
-// string fileName;
+int frameSeq = 0;
 
-int framesReceived = 0;
+// int GetFileSize(std::string filename){
+//     ifstream file(filename.c_str(), ios::binary | ios::ate);
+// 	return file.tellg();
+// }
 
-int GetFileSize(std::string filename){
-    ifstream file(filename.c_str(), ios::binary | ios::ate);
-	return file.tellg();
-}
-
-void send_server_beat(void* args){
-	uint8_t buffer[1];
-	SVCEndpoint* ep = (SVCEndpoint*)args;
-	buffer[0] = 0xFF;
-	ep->sendData(buffer, 1);
-	if (framesReceived > 0){
-		printf("\rReceived: %d frames", framesReceived); fflush(stdout);
-	}
-}
+// void send_server_beat(void* args){
+// 	uint8_t buffer[1];
+// 	SVCEndpoint* ep = (SVCEndpoint*)args;
+// 	buffer[0] = 0xFF;
+// 	ep->sendData(buffer, 1);
+// 	if (frameSeq > 0){
+// 		printf("\rReceived: %d frames", frameSeq); fflush(stdout);
+// 	}
+// }
 
 int main(int argc, char** argv){
 
 	// int RETRY_TIME = atoi(argv[1]);
 
-	string appID = string("SEND_FILE_APP");	
+	string appID = string("CAMERA_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	try{
@@ -55,23 +51,15 @@ int main(int argc, char** argv){
 				
 				//pw to sent beat
 				// PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
-				
-				// uint32_t bufferSize = 1400;
-				// uint8_t buffer[bufferSize];
-				
-				// ofstream* myFile;
 
-				//-- try to read file size and name from the first message
+				Mat  img = Mat::zeros( HEIGHT,WIDTH, CV_8UC3);;
 
-				Mat  img = Mat::zeros( HEIGHT,WIDTH, CV_8UC3);
-				int  imgSize = img.total()*img.elemSize();
-				uint8_t imgData[imgSize];
-				fill(imgData, imgData+imgSize, 0);
+				unsigned char* imgData;
+				int imgSize;
+				int blocs; //number of blocs of an image
 
    				uint32_t bufferSize = 5400;				
    				uint8_t buffer[bufferSize];
-
-   				int blocs = imgSize/(bufferSize-1);
 
      			namedWindow("MyVideo",CV_WINDOW_AUTOSIZE); //create a window called "MyVideo"
         		imshow("MyVideo", img); //show the frame in "MyVideo" window
@@ -81,52 +69,61 @@ int main(int argc, char** argv){
 				int index = 0;
 				bool firstPacketReceived = false;
 				bool lastPacketReceived = false;
-				int lastPacketSize = imgSize % (bufferSize-1);
+				int receivedBytes = 0;
 
 				while (trytimes < 3){
 					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
-						printf("\n%x\t%d\t%d",buffer[0], bufferSize, index);
+						// printf("\n%x\t%d\t%d",buffer[0], bufferSize, index);
 						switch (buffer[0]){
 							case 0x01:
 								if(!firstPacketReceived) {
 									firstPacketReceived = true;
 									lastPacketReceived = false;
 									index = 0;
+									receivedBytes = 0;
+
+									imgSize = *((int*)(buffer+1));
+									frameSeq = *((int*)(buffer+1+4));
+									imgData = new unsigned char[imgSize];
 									// printf("\nreceiving image");
 								}
 								break;
 								
 							case 0x02:
-								if(index < blocs) {
-									memcpy(imgData+index*(bufferSize-1), buffer+1, bufferSize-1);
+								if(receivedBytes < imgSize) {
+									memcpy(imgData+receivedBytes, buffer+1, bufferSize-1);
+
+									// printf("\n");
+									// for (int i = receivedBytes; i < receivedBytes+bufferSize-1; ++i)
+									// {
+									// 	printf("%2x ", imgData[i]);
+									// }
+									// printf("\n");
+
+									receivedBytes += bufferSize-1;
+
 									index++;
 								}
-								else if(index == blocs) { //last bloc
-									memcpy(imgData+index*(bufferSize-1), buffer+1, lastPacketSize);
-									index++;
-								}
-
-								// printf("\nreceive bloc %d", index);
-
 								break;
 								
 							case 0x03:
 								if(!lastPacketReceived) {
 									lastPacketReceived = true;
 									firstPacketReceived = false;
-									framesReceived++;
-									printf("\nframe %d received", framesReceived);
-									// img = Mat(Size(HEIGHT, WIDTH), CV_8UC3, imgData).clone();
-        							int ptr=0;        							
-									for (int i = 0;  i < img.rows; i++) {
-										for (int j = 0; j < img.cols; j++) {                                     
-											img.at<cv::Vec3b>(i,j) = cv::Vec3b(buffer[ptr+ 0],buffer[ptr+1],buffer[ptr+2]);
-											ptr=ptr+3;
-										}
-									}
+									printf("\nframe %d received, frameSize = %d", frameSeq, imgSize);
 
+									//decode the image received
+        							vector<unsigned char> encodeImg(imgData, imgData+imgSize) ;
+        							img = imdecode(encodeImg, CV_LOAD_IMAGE_COLOR);
+        							encodeImg.clear();
+									delete [] imgData;
         							imshow("MyVideo", img); //show the frame in "MyVideo" window
 
+        							buffer[0] = 0x03;
+									memcpy(buffer+1, &frameSeq, 4);
+									for (int i=0;i<RETRY_TIME;i++){
+										endpoint->sendData(buffer, 1+4);
+									}
 								}
 								break;
 								

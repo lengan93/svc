@@ -32,7 +32,7 @@ float timeDistance(const struct timespec* greater, const struct timespec* smalle
 	return sec;
 }
 
-void *sendImgThread(void *arg)
+void sendStream(void *arg)
 {
 		printf("0");
 	SVCEndpoint* endpoint = (SVCEndpoint*) arg;
@@ -52,41 +52,47 @@ void *sendImgThread(void *arg)
 
     Mat frame;
     uint8_t* imgData;
+    vector<unsigned char> encodebuff;
 
     namedWindow("MyVideo",CV_WINDOW_AUTOSIZE); //create a window called "MyVideo"
 
+    if (!capture.read(frame)) //if not success, break loop
+    {
+       cout << "Cannot read the frame from video file" << endl;
+       return;
+    }
+
+    // imshow("MyVideo", frame); //show the frame in "MyVideo" window
+    // frame = (frame.reshape(0,1)); // to make it continuous
+
+	int  imgSize;// = frame.total()*frame.elemSize();
+	int frameSeq = 0;
 	while(1)
     {
-        // for (int i = 0; i < 10; ++i)
-        // {
-        // 	bool bSuccess = capture.read(frame); // read a new frame from video
-
-	       //   if (!bSuccess) //if not success, break loop
-	       //  {
-	       //                 cout << "Cannot read the frame from video file" << endl;
-	       //                 // break;
-	       //                 return NULL;
-	       //  }
-        // }
 
         // read a new frame from video
 
-        if (!capture.read(frame)) //if not success, break loop
-        {
-           cout << "Cannot read the frame from video file" << endl;
-           break;
-        }
-
+        capture.read(frame);
         imshow("MyVideo", frame); //show the frame in "MyVideo" window
-        frame = (frame.reshape(0,1)); // to make it continuous
 
-		int  imgSize = frame.total()*frame.elemSize();
-		imgData = frame.data;
+        imencode(".jpg", frame, encodebuff);
+
+		imgData = &encodebuff[0];
+		imgSize = encodebuff.size();
+
+		// printf("\n");
+		// for (int i = 0; i < imgSize; ++i)
+		// {
+		// 	printf("%2x ", imgData[i]);
+		// }
+		// printf("\n");
 
 		int packets = imgSize/(bufferSize-1);
 		buffer[0] = 0x01;
+		memcpy(buffer+1, &imgSize, 4);
+		memcpy(buffer+1+4, &frameSeq, 4);
 		for (int i=0;i<RETRY_TIME;i++){
-			endpoint->sendData(buffer, 1);
+			endpoint->sendData(buffer, 1+4+4);
 		}
 
 		buffer[0] = 0x02;
@@ -106,7 +112,21 @@ void *sendImgThread(void *arg)
 		for (int i=0;i<RETRY_TIME;i++){
 			endpoint->sendData(buffer, 1);
 		}
-		// printf(".");
+		printf("\nFrame %d sent, framesize = %d, lastPacketSize = %d", frameSeq, imgSize, lastPacketSize);
+
+		bool goOn = false;
+		uint32_t s;
+		while(!goOn) {
+			if (endpoint->readData(buffer, &s, 40) == 0){
+				if (buffer[0] = 0x03 && frameSeq==*((int*)(buffer+1))){
+					goOn = true;																		
+				}
+			}
+			capture.read(frame);
+        	imshow("MyVideo", frame);
+		}
+
+		frameSeq++;
         if(waitKey(30) == 27) //wait for 'esc' key press for 30 ms. If 'esc' key is pressed, break loop
 		{
 		    cout << "esc key is pressed by user" << endl; 
@@ -122,7 +142,7 @@ int main(int argc, char** argv){
 	SVCHost* remoteHost;
 	
 		// string appID = string("CAMERA_APP");
-		string appID = string("SEND_FILE_APP");
+		string appID = string("CAMERA_APP");
 		// SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
 		if (argc>1){
 			remoteHost = new SVCHostIP(argv[1]);
@@ -147,8 +167,8 @@ int main(int argc, char** argv){
 
 					//pthread_t my_thread;
 
-   					//pthread_create(&my_thread, NULL, sendImgThread, endpoint);
-					sendImgThread(endpoint);
+   					//pthread_create(&my_thread, NULL, sendStream, endpoint);
+					sendStream(endpoint);
    					// printf("\nPress any key to exit!\n");
    					// getchar();
 
