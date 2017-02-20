@@ -5,6 +5,7 @@
 #include <csignal>
 #include <pthread.h>
 
+#include "../htp/HTP.h"
 #include "svc-utils.h"
 #include "../utils/PeriodicWorker.h"
 #include "../crypto/crypto-utils.h"
@@ -25,8 +26,11 @@ class DaemonEndpoint;
 unordered_map<uint64_t, DaemonEndpoint*> endpoints;
 struct sockaddr_un daemonSockUnAddress;
 struct sockaddr_in daemonSockInAddress;
+
 int daemonUnSocket;
-int daemonInSocket;
+//int daemonInSocket;
+
+HtpSocket* daemonHtpSocket;
 
 PacketHandler* daemonUnixIncomingPacketHandler;
 PacketHandler* daemonInetIncomingPacketHandler;
@@ -374,7 +378,10 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 	while (_this->working || _this->inetOutgoingQueue.notEmpty() || _this->inetToBeSentQueue.notEmpty()){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
-			sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			// sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+
+			daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+
 			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
 			//printf("-"); fflush(stdout);
@@ -1037,7 +1044,9 @@ void* daemon_inet_reading_loop(void* args){
 
 	while (working){
 		srcAddrLen = sizeof(srcAddr);		
-		readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		// readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		
+		readrs = daemonHtpSocket->recvfrom(buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
@@ -1064,7 +1073,7 @@ void shutdownDaemon(){
 		
 		//-- stop reading packets
 		shutdown(daemonUnSocket, SHUT_RD);
-		shutdown(daemonInSocket, SHUT_RD);
+		// shutdown(daemonInSocket, SHUT_RD);
 		pthread_join(daemonInetReadingThread, NULL);
 		pthread_join(daemonUnixReadingThread, NULL);
 
@@ -1335,17 +1344,27 @@ int startDaemonWithConfig(const char* configFile){
     
     //--TODO:	TO BE CHANGED TO HTP
     //--	create htp socket and bind to localhost
-    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
-    daemonSockInAddress.sin_family = AF_INET;
-    daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
-	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
-    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
-    	working = false;
+ //    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
+ //    memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
+ //    daemonSockInAddress.sin_family = AF_INET;
+ //    daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
+	// daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
+ //    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
+ //    	working = false;
+ //    	pthread_join(daemonUnixReadingThread, NULL);
+ //    	errorString = SVC_ERROR_BINDING;
+ //    	goto error2;
+ //    }
+	try {
+		daemonHtpSocket = new HtpSocket(SVC_DAEPORT);
+	}
+	catch(...) {
+		working = false;
     	pthread_join(daemonUnixReadingThread, NULL);
     	errorString = SVC_ERROR_BINDING;
     	goto error2;
-    }
+	}
+
     //-- then create a reading thread
 	if (pthread_create(&daemonInetReadingThread, &attr, daemon_inet_reading_loop, NULL) != 0){		
 		working = false;
@@ -1378,7 +1397,8 @@ int startDaemonWithConfig(const char* configFile){
 	}    
     
     error3:
-    	close(daemonInSocket);
+    	// close(daemonInSocket);
+    	daemonHtpSocket->close();
     error2:
     	close(daemonUnSocket);
     error1:
