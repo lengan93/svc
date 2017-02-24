@@ -380,7 +380,7 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		if (packet!=NULL){
 			// sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 
-			daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 
 			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
