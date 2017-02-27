@@ -48,9 +48,10 @@ int main(int argc, char** argv){
 				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
 				
 				uint32_t bufferSize = 1400;
-				uint8_t buffer[bufferSize];
+				uint8_t buffer[bufferSize+1];
 				
 				ofstream* myFile;
+				int blocs = 0;
 
 				//-- try to read file size and name from the first message				
 				
@@ -73,6 +74,9 @@ int main(int argc, char** argv){
 							case 0x02:
 								if (headerReceived){
 									readSize+=bufferSize-1;
+									blocs++;
+									// printf("%d\n", bufferSize);
+
 									//save to file
 									myFile->write((char*)buffer+1, bufferSize-1);
 								}
@@ -86,6 +90,7 @@ int main(int argc, char** argv){
 
 									if (fileSize>0){
 										printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
+										printf("\nblocs = %d", blocs);
 									}
 									else{
 										printf("\nEmpty file received");

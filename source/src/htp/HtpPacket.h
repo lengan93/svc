@@ -56,6 +56,12 @@ class HtpPacket{
 				memcpy(this->packet+1, &sequence, HTP_SEQUENCE_LENGTH);
 			}
 			
+			uint32_t getSequence() {
+				uint32_t rs;
+				rs = *((uint32_t*)(packet+1));
+				return rs;
+			}
+
 			void setDstAddr(const struct sockaddr_storage* dstAddr, socklen_t addrLen){
 				memset(&this->dstAddr, 0, sizeof(this->dstAddr));
 				memcpy(&this->dstAddr, dstAddr, addrLen);
@@ -68,6 +74,17 @@ class HtpPacket{
 				this->srcAddrLen = addrLen;
 			}
 			
+			bool isData() {
+				return (packet[0] == HTP_DATA);
+			}
+
+			bool isACK() {
+				return (packet[0] == HTP_ACK);
+			}
+
+			bool isNACK() {
+				return (packet[0] == HTP_NACK);
+			}
 			// void setData(const uint8_t* data, uint32_t packetLen){
 			// 	memcpy(this->packet + HTP_HEADER_LENGTH, &packetLen, 4);
 			// 	memcpy(this->packet + HTP_HEADER_LENGTH + 4, data, packetLen);

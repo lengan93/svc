@@ -75,10 +75,16 @@ int main(int argc, char** argv){
 						//-- then send the content
 						if (fileSize>0){
 							ifstream bigFile(argv[1]);
+							int blocsize;
 							buffer[0] = 0x02;
 							while (bigFile && endpoint->isAlive()){
-								bigFile.read((char*)buffer+1, bufferSize);							
-								endpoint->sendData(buffer, bufferSize);
+								blocsize = bufferSize;
+								bigFile.read((char*)buffer+1, blocsize);
+								if(bigFile.eof()) {
+									blocsize = bigFile.gcount();
+								}
+
+								endpoint->sendData(buffer, blocsize+1);
 							}													
 							bigFile.close();
 						}

@@ -9,7 +9,7 @@ HtpSocket::HtpSocket() throw(){
 
 	UDPSocket = socket(AF_INET, SOCK_DGRAM, 0);
 
-
+	currentSeq = 0;
 }
 
 HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
@@ -54,11 +54,23 @@ void* HtpSocket::htp_reading_loop(void* args) {
 		readbytes = ::recvfrom(_this->UDPSocket, packet->packet, HTP_DEFAULT_BUFSIZ, 0, 
 			(sockaddr*) &(packet->srcAddr), &(packet->srcAddrLen));
 		
-		//TODO: Check if the received packet is data packet or control packet
-		if(readbytes>HTP_HEADER_LENGTH) {
-			packet->packetLen = readbytes;
-		
-			_this->inComingQueue.enqueue(packet);
+		if(readbytes >= HTP_HEADER_LENGTH) {
+			switch (packet->packet[0]) {
+				case HTP_DATA:
+					packet->packetLen = readbytes;
+				
+					_this->inComingQueue.enqueue(packet);
+
+					_this->sendACK(packet);
+					break;
+
+				case HTP_ACK:
+					printf("%d sent success\n", packet->getSequence());
+					break;
+
+				case HTP_NACK:
+					break;
+			}							
 		}
 		else {
 			delete packet;
@@ -84,12 +96,25 @@ void* HtpSocket::htp_writing_loop(void* args) {
 			::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
 				(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
 			// ::sendto(UDPSocket, htp_frame, len, flags, to, tolen);
-
-			_this->sentQueue.enqueue(packet);
+			if(packet->isData()) {
+				_this->sentQueue.enqueue(packet);
+			}
 		}
 	}
 }
 
+void HtpSocket::sendACK(HtpPacket* packet) {
+	uint8_t htp_frame[HTP_HEADER_LENGTH];
+	htp_frame[0] = HTP_ACK;
+	memcpy(htp_frame+1, packet->packet + 1, HTP_SEQUENCE_LENGTH);
+
+	HtpPacket* ack_packet = new HtpPacket(htp_frame, HTP_HEADER_LENGTH);
+	ack_packet->setDstAddr(&(packet->srcAddr), packet->srcAddrLen);
+	this->outGoingQueue.enqueue(ack_packet);
+}
+
+
+//======== HTP INTERFACE ==========
 int HtpSocket::bind(struct sockaddr *my_addr, socklen_t addrlen) {
 	printf("htp_bind\n");
 	return ::bind(UDPSocket, my_addr, addrlen);
@@ -102,18 +127,19 @@ int HtpSocket::close() {
 
 int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) {
 
-	printf("htp_sento\n");
+	// printf("htp_sento\n");
 
 	//create a htp frame
 	uint8_t* htp_frame = new uint8_t[HTP_HEADER_LENGTH + len];
-	htp_frame[0] = 0x00;
+	htp_frame[0] = HTP_DATA;
  	memcpy(htp_frame + 1, &currentSeq, HTP_SEQUENCE_LENGTH);
 	memcpy(htp_frame + HTP_HEADER_LENGTH, msg, len);
 
 	//create a htp packet
 	HtpPacket* packet = new HtpPacket(htp_frame, HTP_HEADER_LENGTH + len);
 	packet->setDstAddr((sockaddr_storage*)to, tolen);
-	
+	packet->setSequence(currentSeq);
+	currentSeq++;
 	// return ::sendto(UDPSocket, htp_frame, len, flags, to, tolen);
 
 	//enqueue the packet to the outgoing queue
@@ -126,7 +152,7 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen) {
 	// TODO: get the first data packet from the incoming queue
 
-	printf("htp_recvfrom\n");
+	// printf("htp_recvfrom\n");
 
 	int r = 0;
 
@@ -138,6 +164,8 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 		*fromlen = packet->srcAddrLen;
 		memset(from, 0, sizeof(*from));
 		memcpy(from, &(packet->srcAddr), packet->srcAddrLen);
+
+		printf("%d\n", packet->getSequence());
 	}
 	return r;
 

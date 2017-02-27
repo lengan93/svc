@@ -41,6 +41,7 @@ class HtpSocket {
 
 		uint32_t currentSeq;							//Sequence counter
 
+		void sendACK(HtpPacket* packet);
 	public:
 
 		HtpSocket() throw();
