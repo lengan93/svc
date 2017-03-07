@@ -47,7 +47,7 @@ int main(int argc, char** argv){
 				//pw to sent beat
 				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
 				
-				uint32_t bufferSize = 100000;
+				uint32_t bufferSize = 1400;
 				uint8_t buffer[bufferSize];
 				
 				ofstream* myFile;

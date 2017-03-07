@@ -55,7 +55,7 @@ int main(int argc, char** argv){
 					clock_gettime(CLOCK_REALTIME, &echelon);
 					printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
 					
-					uint32_t bufferSize = 100000;
+					uint32_t bufferSize = 1400;
 					uint8_t buffer[bufferSize+1] = "";
 										
 					//-- send the file throw this connection
