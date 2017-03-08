@@ -1,4 +1,3 @@
-#include <opencv2/highgui/highgui.hpp>
 #include <iostream>
 
 #include "../src/utils/PeriodicWorker.h"
@@ -10,11 +9,6 @@
 
 #define RETRY_TIME 5
 
-#define HEIGHT 480
-#define WIDTH 640
-
-using namespace cv;
-
 using namespace std;
 
 int frameSeq = 0;
@@ -24,6 +18,27 @@ void receiveStream(SVCEndpoint* endpoint) {
 
 	uint32_t bufferSize = 1400;				
 	uint8_t buffer[bufferSize];
+
+	/* Get the camera resolution */
+	int width = 0;
+	int height = 0;
+	for (int i = 0; i < 3; ++i)
+	{
+		endpoint->readData(buffer,&bufferSize, 1000);
+		if(bufferSize == 9 && buffer[0] == 0x00) {
+			for (int j = 0; j < 9; ++j)
+			{
+				printf("%d ", buffer[j]);
+			}
+			width = *((int*)(buffer+1));
+			height = *((int*)(buffer+1+4));
+			break;
+		}
+	}
+	if(width==0 || height==0) {
+		printf("Could not get camera resolution\n");
+		return;
+	}
 
 	unsigned char* imgData;
 	int imgSize;
@@ -36,12 +51,12 @@ void receiveStream(SVCEndpoint* endpoint) {
 	int frameFinished;
 
 	AVCodecContext* decoderCtx;
-	initDecoderContext(&decoderCtx, WIDTH, HEIGHT);
+	initDecoderContext(&decoderCtx, width, height);
 
 	AVFrame* decodedFrame = NULL;
 	decodedFrame = av_frame_alloc();
 
-	Graphics* g = new Graphics(WIDTH,  WIDTH, "My Window");
+	Graphics* g = new Graphics(width,  height, "My Window");
 	if(strcmp(g->getError(), "") != 0) {
 		printf("SDL error: %s\n", g->getError());
 		return;
@@ -52,8 +67,8 @@ void receiveStream(SVCEndpoint* endpoint) {
 	SDL_Rect sdlRect;  
     sdlRect.x = 0;  
     sdlRect.y = 0;  
-    sdlRect.w = WIDTH;  
-    sdlRect.h = HEIGHT;
+    sdlRect.w = width;  
+    sdlRect.h = height;
 
     AVPacket rcvPacket;
 
@@ -71,15 +86,18 @@ void receiveStream(SVCEndpoint* endpoint) {
 						imgSize = *((int*)(buffer+1));
 						frameSeq = *((int*)(buffer+1+4));
 						imgData = new unsigned char[imgSize];
+						memset(imgData, 0, imgSize);
 						// printf("\nreceiving image");
 					}
 					break;
 					
 				case 0x02:
 					if(receivedBytes < imgSize) {
-						memcpy(imgData+receivedBytes, buffer+1, bufferSize-1);
+						// if(index != 0) {
+							memcpy(imgData+receivedBytes, buffer+1, bufferSize-1);
 
-						receivedBytes += bufferSize-1;
+							receivedBytes += bufferSize-1;
+						// }
 
 						index++;
 					}
@@ -92,6 +110,8 @@ void receiveStream(SVCEndpoint* endpoint) {
 						printf("\nframe %d received, frameSize = %d", frameSeq, imgSize);
 
 						//decode the image received
+						// if(frameSeq == 50)
+							// memset(imgData+imgSize/2, 0, imgSize-imgSize/2);
 						av_init_packet(&rcvPacket);
 	          			rcvPacket.data = imgData;
 	          			rcvPacket.size = imgSize;
@@ -99,6 +119,12 @@ void receiveStream(SVCEndpoint* endpoint) {
 	          			avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, &rcvPacket);
 				    	if(frameFinished) {
 				    		g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
+				    		SDL_Delay(50);
+							SDL_PollEvent(&event);
+					        if(event.type == SDL_QUIT) {
+								SDL_Quit();
+								break;
+							}
 				    	}
 						delete [] imgData;
 

@@ -1,4 +1,3 @@
-#include <opencv2/highgui/highgui.hpp>
 #include <iostream>
 #include <time.h>
 
@@ -9,8 +8,6 @@
 #include "../src/utils/camera-util.h"
 
 #define RETRY_TIME 5
-
-using namespace cv;
 
 using namespace std;
 
@@ -114,6 +111,21 @@ void sendStream(SVCEndpoint* endpoint)
 		return;
 	}
 
+	/* Send the camera resolution */
+	uint8_t buff[9];
+	buff[0] = 0x00;
+	memcpy(buff+1, &(pCodecCtx->width), 4);
+	memcpy(buff+1+4, &(pCodecCtx->height), 4);
+	for (int i = 0; i < 9; ++i)
+	{
+		printf("%d ", buff[i]);
+	}
+	for (int i = 0; i < RETRY_TIME; ++i)
+	{
+		endpoint->sendData(buff, 9);
+	}
+
+	/* Prepare for the main loop */
 	SDL_Event       event;
 
 	SDL_Rect sdlRect;  
@@ -158,10 +170,14 @@ void sendStream(SVCEndpoint* endpoint)
 			    if(gotOutput) {
 			    	//send outPacket
 			    	sendPacket(endpoint, outPacket.data, outPacket.size, frameSeq);
+
 			    }
+
+			    av_free_packet(&outPacket);
 			}
         }
 
+        av_free_packet(&packet);
 		SDL_Delay(50);
 		SDL_PollEvent(&event);
         if(event.type == SDL_QUIT) {
