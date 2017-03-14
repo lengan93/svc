@@ -14,7 +14,6 @@ using namespace std;
 int frameSeq = 0;
 
 void receiveStream(SVCEndpoint* endpoint) {
-	initFFmpeg();
 
 	uint32_t bufferSize = 1400;				
 	uint8_t buffer[bufferSize];
@@ -22,14 +21,14 @@ void receiveStream(SVCEndpoint* endpoint) {
 	/* Get the camera resolution */
 	int width = 0;
 	int height = 0;
-	for (int i = 0; i < 3; ++i)
+	for (int i = 0; i < 10; ++i)
 	{
 		endpoint->readData(buffer,&bufferSize, 1000);
 		if(bufferSize == 9 && buffer[0] == 0x00) {
-			for (int j = 0; j < 9; ++j)
-			{
-				printf("%d ", buffer[j]);
-			}
+			// for (int j = 0; j < 9; ++j)
+			// {
+			// 	printf("%d ", buffer[j]);
+			// }
 			width = *((int*)(buffer+1));
 			height = *((int*)(buffer+1+4));
 			break;
@@ -140,44 +139,70 @@ void receiveStream(SVCEndpoint* endpoint) {
 				default:
 					break;
 			}
-
 		}
 		else {
 			trytimes++;
 		}
 	}
+
+	SDL_Quit();
+	av_free(decodedFrame);
 }
 
-int main(int argc, char** argv){
+void* process(void* arg) {
+	SVCEndpoint* endpoint = (SVCEndpoint*) arg;
+	if (endpoint->negotiate()){
+		printf("\nConnection established!");
+		
+		receiveStream(endpoint);
 
-	// int RETRY_TIME = atoi(argv[1]);
+		endpoint->shutdownEndpoint();			
+		// printf("\nProgram terminated!\n");
+	}
+	else{
+		printf("\nCannot establish connection!\n");
+	}
+}
 
+void* mainLoop(void* arg) {
 	string appID = string("CAMERA_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
 		printf("\nserver is listenning..."); fflush(stdout);
-		SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT);
-		// printf("1\n");
-		if (endpoint!=NULL){
-			// printf("2\n");
-			if (endpoint->negotiate()){
-				printf("\nConnection established!");
-				
-				receiveStream(endpoint);
+		
+		initFFmpeg();
 
-				endpoint->shutdownEndpoint();			
-				printf("\nProgram terminated!\n");
+		while(1) {
+			SVCEndpoint* endpoint = svc->listenConnection(-1);
+			// printf("1\n");
+			if (endpoint!=NULL){
+				// create a thread to process
+				pthread_t thread_id;
+
+				pthread_create (&thread_id, NULL, &process, endpoint);
 			}
-			else{
-				printf("\nCannot establish connection!\n");
-			}
-			delete endpoint;
 		}
-		else {
-			printf("\nCannot create endpoint!\n");
-		}
+		
+			// printf("2\n");
+		// 	if (endpoint->negotiate()){
+		// 		printf("\nConnection established!");
+		// 		if(argc == 1) {
+		// 			receiveStream(endpoint);
+		// 		}
+
+		// 		endpoint->shutdownEndpoint();			
+		// 		printf("\nProgram terminated!\n");
+		// 	}
+		// 	else{
+		// 		printf("\nCannot establish connection!\n");
+		// 	}
+		// 	delete endpoint;
+		// }
+		// else {
+		// 	printf("\nCannot create endpoint!\n");
+		// }
 		svc->shutdownSVC();
 		delete svc;
 	}
@@ -186,4 +211,17 @@ int main(int argc, char** argv){
 	}
 	
 	delete authenticator;
+}
+
+int main(int argc, char** argv){
+
+	// int RETRY_TIME = atoi(argv[1]);
+	pthread_t tid;
+
+	pthread_create (&tid, NULL, &mainLoop, NULL);
+	char c;
+	do{
+		c = getchar();		
+	} while(c != 'q');
+	
 }

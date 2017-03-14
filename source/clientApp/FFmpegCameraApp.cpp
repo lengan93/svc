@@ -11,6 +11,9 @@
 
 using namespace std;
 
+const uint32_t bufferSize = 1400;
+uint8_t buffer[bufferSize] = "";
+
 float timeDistance(const struct timespec* greater, const struct timespec* smaller){
 	float sec = greater->tv_sec - smaller->tv_sec;
 	float nsec;
@@ -33,8 +36,9 @@ void sendPacket(SVCEndpoint* endpoint, uint8_t* imgData, int imgSize, int frameS
 		return;
 	}
 
-	static const uint32_t bufferSize = 1400;
-	static uint8_t buffer[bufferSize] = "";
+	// static const uint32_t bufferSize = 1400;
+	// static uint8_t buffer[bufferSize] = "";
+	// printf("1");
 
 	int packets = imgSize/(bufferSize-1);
 	buffer[0] = 0x01;
@@ -62,7 +66,7 @@ void sendPacket(SVCEndpoint* endpoint, uint8_t* imgData, int imgSize, int frameS
 		endpoint->sendData(buffer, 1);
 	}
 
-	printf("\nFrame %d sent, framesize = %d", frameSeq, imgSize);
+	printf("Frame %d sent, framesize = %d\n", frameSeq, imgSize);
 }
 
 void sendStream(SVCEndpoint* endpoint)
@@ -143,16 +147,16 @@ void sendStream(SVCEndpoint* endpoint)
 	while(1)
     {
         av_read_frame(inFormatCtx, &packet);
-
+        
         if(packet.stream_index==videoStream) {
 	    	
 	    	avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
-
+	    	
 	    	if(frameFinished) {	    
 				sws_scale(sws_ctx_YUV420P, (uint8_t const * const *)pFrame->data,
 				  pFrame->linesize, 0, pCodecCtx->height,
 				  pFrameYUV420->data, pFrameYUV420->linesize);
-
+				
 				g->displayFFmpegYUVFrame(pFrameYUV420, &sdlRect);
 
 				//encode frame to video
@@ -166,11 +170,12 @@ void sendStream(SVCEndpoint* endpoint)
 			        fprintf(stderr, "Failed to encode frame\n");
 			        continue;
 			    }
+				
 
 			    if(gotOutput) {
 			    	//send outPacket
-			    	sendPacket(endpoint, outPacket.data, outPacket.size, frameSeq);
 
+			    	sendPacket(endpoint, outPacket.data, outPacket.size, frameSeq);
 			    }
 
 			    av_free_packet(&outPacket);
@@ -188,6 +193,7 @@ void sendStream(SVCEndpoint* endpoint)
     }
 		// printf("\nimage sended!\n");
 }
+
 
 int main(int argc, char** argv){
 
@@ -216,24 +222,24 @@ int main(int argc, char** argv){
 		if (endpoint!=NULL){
 			if (endpoint->negotiate()){
 				clock_gettime(CLOCK_REALTIME, &echelon);
-				printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
+				printf("[%0.2f] Connection established.\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
 
 				sendStream(endpoint);
 
 			}
 			else{
-				printf("\nCannot establish connection. Program terminated.\n");
+				printf("Cannot establish connection. Program terminated.\n");
 			}
 			delete endpoint;
 		}
 		else {
-			printf("\nCannot create the endpoint. Program terminated.\n");
+			printf("Cannot create the endpoint. Program terminated.\n");
 		}
 		svc->shutdownSVC();
 		delete svc;
 		
-		clock_gettime(CLOCK_REALTIME, &echelon);
-		printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
+		// clock_gettime(CLOCK_REALTIME, &echelon);
+		// printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
 	}
 	catch (const char* str){
 		printf("\nError: %s\n", str);
@@ -242,6 +248,5 @@ int main(int argc, char** argv){
 	delete authenticator;
 	delete remoteHost;
 	
-		
 }
 

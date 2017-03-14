@@ -178,7 +178,7 @@ bool initEncoderContext(AVCodecContext **encoderCtx, int width, int height) {
     (*encoderCtx)->width 		= 	width;;
     (*encoderCtx)->height 		= 	height;
     (*encoderCtx)->time_base 	= 	(AVRational){1,25};
-    (*encoderCtx)->gop_size 	=	10;
+    (*encoderCtx)->gop_size 	=	5;
     (*encoderCtx)->max_b_frames = 	1;
     (*encoderCtx)->pix_fmt 		= 	AV_PIX_FMT_YUV420P;
 

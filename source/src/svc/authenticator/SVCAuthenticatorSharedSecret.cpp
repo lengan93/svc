@@ -112,10 +112,12 @@ std::string SVCAuthenticatorSharedSecret::resolveChallenge(const std::string& ch
 
 std::string SVCAuthenticatorSharedSecret::generateProof(const std::string& challengeSecret){
 	//-- hash the solution HASH_TIME times
+	SHA256 sha;
 	std::string rs;
 	if (challengeSecret.size()>0){		
 		for (int i=0; i<HASH_TIME; i++){
-			rs = this->sha256->hash(challengeSecret);
+			rs = sha.hash(challengeSecret);
+			// rs = this->sha256->hash(challengeSecret);
 		}
 	}
 	else{
@@ -126,10 +128,14 @@ std::string SVCAuthenticatorSharedSecret::generateProof(const std::string& chall
 
 bool SVCAuthenticatorSharedSecret::verifyProof(const std::string& challengeSecret, const std::string& proof){
 	std::string comparison;
+	SHA256 sha;
 	if (proof.size()>0){
 		for (int i=0; i<HASH_TIME; i++){
-			comparison = this->sha256->hash(challengeSecret);
+			comparison = sha.hash(challengeSecret);
+			// comparison = this->sha256->hash(challengeSecret);
 		}
+		// std::cout << "comparison: " << comparison <<endl;
+		// std::cout << "proof: " << proof <<endl;
 		return (comparison == proof);
 	}
 	else{
