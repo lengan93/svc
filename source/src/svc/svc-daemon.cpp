@@ -1,19 +1,342 @@
+// #include "../crypto/crypto-utils.h"
+// #include "../crypto/AES256.h"
+// #include "../crypto/SHA256.h"
+// #include "../crypto/ECCurve.h"
+// #include "../crypto/AESGCM.h"
 
-#include <netinet/in.h>
-#include <sys/un.h>
-#include <unordered_map>
-#include <csignal>
-#include <pthread.h>
+#include <errno.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <exception>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
+#include "svc-header.h"
 #include "svc-utils.h"
-#include "../utils/PeriodicWorker.h"
-#include "../crypto/crypto-utils.h"
-#include "../crypto/AES256.h"
-#include "../crypto/SHA256.h"
-#include "../crypto/ECCurve.h"
-#include "../crypto/AESGCM.h"
+#include "../utils/NamedPipe.h"
+
+using namespace std;
+using namespace svc_utils;
+
+//================================ TYPE DEFINITION =================
+struct SVCDaemonConfig{
+};
+
+struct SVCDaemonImage{
+	struct SVCDaemonConfig config;
+};
+
+//================================= GLOBAL CONSTANT  ===============
+const string ARG_DEFAULT_CONFIG = "--default-config";
+const string ARG_HELP = "--help";
+const string ARG_START = "--start";
+const string ARG_SHUTDOWN = "--shutdown";
+const string ARG_CONFIG = "-c";
+const string ARG_IMAGE = "-i";
+const string ARG_CONFIG_PATH = "config_file_path";
+const string ARG_IMAGE_PATH = "image_file_path";
+
+const string svcDefaultConfigFilename = "svcdaemon.conf";
+struct SVCDaemonConfig svcDefaultConfig;
+
+//================================= GLOBAL VARIABLE ================
+NamedPipe* daemonPipe;
+MutexedQueue<SVCPacket*>* localInputQueue;
+SVCPacketReader* localInputReader;
+SVCPacketHandler* localPacketHandler;
+mutex stopMutex;
+condition_variable stopCV;
+bool working;
+
+//================================= FUNCTIONS' DECLARATION ===========
+void stopWorking();
+void waitStop();
+int exitWithError(string err);
+int showHelp();
+int startDaemon(const struct SVCDaemonImage* image);
+int shutdownDaemon(bool saveImage, const string& imagePath);
+int saveDefaultConfig(const string& configPath);
+bool loadConfig(const char* filename, struct SVCDaemonConfig* config);
+bool loadImage(const char* filename, struct SVCDaemonImage* image);
+
+void daemon_local_packet_handler(SVCPacket* packet, void* args);
+
+//================================= MAIN =============================
+int main(int argc, char* argv[]){
+
+	//-- parse arguments
+	if (argc == 1){
+		return showHelp();
+	}
+	else{
+		for (int i=1; i<argc; i++){
+			if (argv[i] == ARG_HELP){
+				return showHelp();
+			}
+			else if (argv[i] == ARG_START){
+				if (i+2 < argc){
+					struct SVCDaemonImage image;
+					if (argv[i+1] == ARG_CONFIG){
+						if (loadConfig(argv[i+2], &image.config)){
+							return startDaemon(&image);
+						}
+						else{
+							return exitWithError(ERR_NOCONFIG);
+						}
+					}
+					else if (argv[i+1] == ARG_IMAGE){
+						if (loadImage(argv[i+2], &image)){
+							return startDaemon(&image);
+						}
+						else{
+							return exitWithError(ERR_NOIMAGE);
+						}
+					}
+					else {
+						return exitWithError(ERR_PARAM);
+					}
+				}
+				else if (i == argc-1){
+					if (saveDefaultConfig(svcDefaultConfigFilename) == 0){
+						struct SVCDaemonImage image;
+						image.config = svcDefaultConfig;
+						return startDaemon(&image);
+					}
+					else{
+						return exitWithError(ERR_PERM);
+					}
+				}
+				else{
+					return exitWithError(ERR_PARAM);
+				}
+			}
+			else if (argv[i] == ARG_SHUTDOWN){
+				if (i+2 < argc){
+					if (argv[i+1] == ARG_IMAGE){
+						return shutdownDaemon(true, argv[i+2]);
+					}
+					else{
+						return exitWithError(ERR_PARAM);
+					}
+				}
+				else if (i == argc-1){
+					return shutdownDaemon(false, "");
+				}
+				else{
+					return exitWithError(ERR_PARAM);
+				}
+			}
+			else if (argv[i] == ARG_DEFAULT_CONFIG){
+				if (i+1 < argc){
+					return saveDefaultConfig(argv[i+1]);
+				}
+				else{
+					return saveDefaultConfig(svcDefaultConfigFilename);
+				}
+			}
+			else{
+				return exitWithError(ERR_PARAM);
+			}
+		}
+	}
+}
+
+//================================= BUSINESS FUNCTIONS' DEFINITION ===
+void daemon_local_packet_handler(SVCPacket* packet, void* args){
+	uint8_t infoByte = packet->packet[INFO_BYTE];
+	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
+		uint64_t endpointID = *((uint64_t*)(packet->packet+1));
+		bool existed = false;
+		switch (cmd){
+			case SVC_CMD_STOP_DAEMON:
+				delete packet;
+				if (endpointID == 0){
+					//-- shutdown only with specific request, check to save image
+					stopWorking();
+				}
+				break;
+
+			// case SVC_CMD_CREATE_ENDPOINT:
+			// 	//-- check if this endpointID is used before to create an endpoint that is working				
+			// 	for (auto& it : endpoints){
+			// 		if (it.second != NULL){
+			// 			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
+			// 			if (endpointID == (ep->endpointID & 0x0000FFFFFFFFFFFF)){
+			// 				existed = true;
+			// 				break;
+			// 			}
+			// 		}
+			// 	}
+			// 	if (existed){
+			// 		delete packet;
+			// 	}
+			// 	else{
+			// 		DaemonEndpoint* endpoint;
+			// 		try{
+			// 			endpoint = new DaemonEndpoint(endpointID);
+			// 			endpoint->isInitiator = true;
+			// 			if (endpoint->connectToAppSocket()==0){
+			// 				endpoints[endpointID] = endpoint;
+			// 				//-- send back the packet
+			// 				endpoint->unixOutgoingQueue.enqueue(packet);
+			// 				//-- add this endpoint to collection
+			// 				endpoints[endpointID] = endpoint;
+			// 			}
+			// 			else{
+			// 				delete packet;
+			// 				delete endpoint;
+			// 			}
+			// 		}
+			// 		catch(const char* err){
+			// 			delete packet;
+			// 		}
+			// 	}
+			// 	break;
+			
+			default:
+				delete packet;
+				break;
+		}
+	}
+	else{
+		//-- ingore data frame
+		delete packet;
+	}
+}
+
+//================================= GLOBAL FUNCTIONS' DEFINITION =====
+void stopWorking(){
+	stopMutex.lock();
+	working = false;
+	stopMutex.unlock();
+    stopCV.notify_all();
+}
+
+void waitStop(){
+	unique_lock<mutex> ul(stopMutex);
+	//-- suspend and wait for working to be FALSE
+	stopCV.wait(ul, []{return !working;});
+}
+
+int exitWithError(string err){
+	cout<<err<<" (errno: "<<errno<<")"<<endl;
+	return -1;
+}
+
+int showHelp(){
+	cout<<"\nsvc-daemon: daemon process for svc-based applications";
+	cout<<"\nusage:";
+	
+	cout<<"\n\t "<<ARG_DEFAULT_CONFIG<<" "<<ARG_CONFIG_PATH;
+	cout<<"\n\t\t Generate svc-daemon's default configuration and save it to a file located at \""<<ARG_CONFIG_PATH<<"\".";
+	cout<<"\n\t\t If \""<<ARG_CONFIG_PATH<<"\" is omitted then default to \"./"<<svcDefaultConfigFilename<<"\".\n";
+
+	cout<<"\n\t "<<ARG_HELP;
+	cout<<"\n\t\t Show this help content.\n";
+	
+	cout<<"\n\t "<<ARG_START<<" "<<ARG_CONFIG<<" "<<ARG_CONFIG_PATH;
+	cout<<"\n\t\t Start a new instance of svc-daemon using the configuration inside \""<<ARG_CONFIG_PATH<<"\".";
+	cout<<"\n\t\t If \""<<ARG_CONFIG<<" "<<ARG_CONFIG_PATH<<"\" is omitted then this command is equivalent as running";
+	cout<<"\n\t\t\t "<<ARG_DEFAULT_CONFIG;
+	cout<<"\n\t\t and then";
+	cout<<"\n\t\t\t "<<ARG_START<<" "<<ARG_CONFIG<<" ./"<<svcDefaultConfigFilename<<"\n";
+
+	cout<<"\n\t "<<ARG_START<<" "<<ARG_IMAGE<<" "<<ARG_IMAGE_PATH;
+	cout<<"\n\t\t Start the svc-daemon using the previously saved information in \""<<ARG_IMAGE_PATH<<"\".\n";
+	
+	cout<<"\n\t "<<ARG_SHUTDOWN<<" ["<<ARG_IMAGE<<" "<<ARG_IMAGE_PATH<<"]";
+	cout<<"\n\t\t Gracefully stop the running svc-daemon instance and (optionally) save";
+	cout<<"\n\t\t all current endpoints' states to a file located at \""<<ARG_IMAGE_PATH<<"\".";
+	cout<<"\n\t\t Using this command in combination with \""<<ARG_START<<" "<<ARG_IMAGE<<"\" for svc update/maintenance.\n";
+	cout<<"\n";
+	fflush(stdout);
+	return 0;
+}
+
+int startDaemon(const struct SVCDaemonImage* image){
+	try{
+		//-- create a pipe to receive local data
+		daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_READ);
+		localInputQueue = new MutexedQueue<SVCPacket*>();
+
+		//-- create reading thread to read local data
+		localInputReader = new SVCPacketReader(daemonPipe, localInputQueue);
+
+		//-- create thread to handler local data
+		localPacketHandler = new SVCPacketHandler(localInputQueue, daemon_local_packet_handler, NULL);
+		
+		working = true;
+		cout<<"SVC daemon is running..."<<endl;
+		waitStop();
+		
+		//-- SVC_CMD_STOP_DAEMON received
+		//-- close daemonPipe so localInputReader will not block
+		daemonPipe->close();
+		delete localInputReader;
+		delete daemonPipe;
+	
+		//-- close inputQueue so packetHandler will not block
+		localInputQueue->close();
+		delete localPacketHandler;
+		delete localInputQueue;
+	
+		cout<<"SVC daemon stopped."<<endl;
+		return 0;
+	}
+	catch (std::string& e){
+		return exitWithError(e);
+	}
+}
+
+int shutdownDaemon(bool saveImage, const string& imagePath){
+	//-- send a specific command to current instance
+	try{
+		daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_WRITE);
+		SVCPacket* packet = new SVCPacket();
+		packet->setCommand(SVC_CMD_STOP_DAEMON);
+		uint8_t save = saveImage? 0x01 : 0x00;
+		packet->pushCommandParam(&save, 1);
+		if (saveImage) {
+			packet->pushCommandParam((uint8_t*)imagePath.c_str(), imagePath.size());
+		}
+		daemonPipe->write(packet->packet, packet->dataLen);
+		
+		delete packet;
+		delete daemonPipe;
+		return 0;
+	}
+	catch (string& e){
+		cout<<ERR_NOT_RUNNING<<endl;
+		return -1;
+	}
+}
+
+int saveDefaultConfig(const string& configPath){
+	ofstream configFile;
+	configFile.open(configPath);
+	if (configFile.is_open()){
+		// configFile<<"This is a config";
+		configFile.close();
+		return 0;
+	}
+	else{
+		return -1;
+	}
+}
+
+bool loadConfig(const char* filename, struct SVCDaemonConfig* config){
+	return true;
+}
+
+bool loadImage(const char* filename, struct SVCDaemonImage* image){
+	return true;
+}
 
 
+/*
 #define SVC_VERSION 0x01
 
 using namespace std;
@@ -27,6 +350,7 @@ struct sockaddr_un daemonSockUnAddress;
 struct sockaddr_in daemonSockInAddress;
 int daemonUnSocket;
 int daemonInSocket;
+
 
 PacketHandler* daemonUnixIncomingPacketHandler;
 PacketHandler* daemonInetIncomingPacketHandler;
@@ -156,7 +480,7 @@ DaemonEndpoint::DaemonEndpoint(uint64_t endpointID){
 		error = SVC_ERROR_BINDING;
 		goto endpoint_error;
 	}
-	else{		
+	else{
 		//-- create a reading thread
 		pthread_attr_t attr;
 		pthread_attr_init(&attr);
@@ -275,7 +599,7 @@ void DaemonEndpoint::shutdownEndpoint(){
 		delete this->curve;
 		this->aesgcm = NULL;
 		this->curve = NULL;
-		printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
+		cout<<"\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	}
 }
 
@@ -375,9 +699,9 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 			sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
-			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+			//cout<<"\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
-			//printf("-"); fflush(stdout);
+			//cout<<"-"); fflush(stdout);
 		};
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -410,18 +734,18 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//-- set infoByte
 	packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 	
-	/*//printf("\nencrypt packet with:");
-	//printf("\niv: "); printBuffer(iv, ivLen); fflush(stdout);
-	//printf("\naad: "); printBuffer(packet->packet, SVC_PACKET_HEADER_LEN); fflush(stdout);
-	//printf("\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
-	*/
+	//cout<<"\nencrypt packet with:");
+	//cout<<"\niv: "); printBuffer(iv, ivLen); fflush(stdout);
+	//cout<<"\naad: "); printBuffer(packet->packet, SVC_PACKET_HEADER_LEN); fflush(stdout);
+	//cout<<"\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
+	
 	
 	this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
 	
-	/*//printf("\ngot:");
-	//printf("\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
-	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
-	*/
+	//cout<<"\ngot:");
+	//cout<<"\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
+	//cout<<"\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
+	
 	
 	//-- set body to be encrypted
 	packet->setBody(encrypted, encryptedLen);
@@ -446,16 +770,16 @@ bool DaemonEndpoint::decryptPacket(SVCPacket* packet){
 	uint32_t decryptedLen;
 	
 		
-	/*//printf("\ndecrypt packet with:");
-	//printf("\niv: "); printBuffer(iv, ivLen); fflush(stdout);
-	//printf("\naad: "); printBuffer(aad, aadLen); fflush(stdout);
-	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
-	//printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);*/
+	//cout<<"\ndecrypt packet with:");
+	//cout<<"\niv: "); printBuffer(iv, ivLen); fflush(stdout);
+	//cout<<"\naad: "); printBuffer(aad, aadLen); fflush(stdout);
+	//cout<<"\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
+	//cout<<"\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
 	
 	rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
 	
-	/*//printf("\ngot:");
-	//printf("\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);*/
+	//cout<<"\ngot:");
+	//cout<<"\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);
 		
 	//-- set body to be decrypted
 	if (rs){
@@ -475,11 +799,11 @@ void* DaemonEndpoint::daemon_endpoint_unix_reading_loop(void* args){
 		readrs = recv(_this->dmnSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);				
 		if (readrs>0){	
 			_this->unixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
-			//printf("\ndaemon endpoint unix reads packet:"); printBuffer(buffer, readrs); fflush(stdout);
+			//cout<<"\ndaemon endpoint unix reads packet:"); printBuffer(buffer, readrs); fflush(stdout);
 		}
-		/*else{
-			//printf("\ndaemon endpoint unix reads fail, errno: %d", errno);
-		}*/
+		else{
+			//cout<<"\ndaemon endpoint unix reads fail, errno: %d", errno);
+		}
 	}
 	pthread_exit(EXIT_SUCCESS);
 }
@@ -493,7 +817,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 		if (packet!=NULL){
 			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
 			if (sendrs == -1){
-				//printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
+				//cout<<"\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
 			}
 			delete packet;		
 		}
@@ -518,7 +842,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	}
 	
 	if (decryptSuccess){
-		//printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
+		//cout<<"\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		//-- check sequence and address to be update
 		if (memcmp(&_this->remoteAddr, &packet->srcAddr, _this->remoteAddrLen)!=0){
 			_this->connectToAddress((struct sockaddr_in*)&packet->srcAddr, packet->srcAddrLen);
@@ -528,7 +852,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 			enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
 			switch (cmd){
 				case SVC_CMD_SHUTDOWN_ENDPOINT:
-					printf("\nother end of connection has shutdown"); fflush(stdout);
+					cout<<"\nother end of connection has shutdown"); fflush(stdout);
 					delete packet;
 					_this->daemonShutdownCall = true;
 					_this->working = false;
@@ -595,7 +919,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 		}
 	}
 	else{
-		//printf("\npacket decrypted failed. removed."); fflush(stdout);
+		//cout<<"\npacket decrypted failed. removed."); fflush(stdout);
 		delete packet;
 	}	
 	
@@ -1019,7 +1343,7 @@ void* daemon_unix_reading_loop(void* args){
 	while (working){
 		readrs = recv(daemonUnSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
 		if (readrs>0){
-			//printf("\ndaemon_unix_reading_loop read a packet: "); printBuffer(buffer, readrs);
+			//cout<<"\ndaemon_unix_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			daemonUnixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
 		}
 		//else: read received nothing
@@ -1039,11 +1363,11 @@ void* daemon_inet_reading_loop(void* args){
 		srcAddrLen = sizeof(srcAddr);		
 		readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
 		if (readrs>0){
-			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
+			//cout<<"\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
 			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
 			daemonInetIncomingQueue.enqueue(packet);
-			//printf("."); fflush(stdout);
+			//cout<<"."); fflush(stdout);
 		}
 	}
 	pthread_exit(EXIT_SUCCESS);
@@ -1080,60 +1404,7 @@ void signal_handler(int sig){
 	}	
 }
 
-void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
-	uint8_t infoByte = packet->packet[INFO_BYTE];
-	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
-		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		uint64_t endpointID = *((uint64_t*)(packet->packet+1));
-		bool existed = false;
-		switch (cmd){
-			case SVC_CMD_CREATE_ENDPOINT:
-				//-- check if this endpointID is used before to create an endpoint that is working				
-				for (auto& it : endpoints){
-					if (it.second != NULL){
-						DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
-						if (endpointID == (ep->endpointID & 0x0000FFFFFFFFFFFF)){
-							existed = true;
-							break;
-						}
-					}
-				}
-				if (existed){
-					delete packet;
-				}
-				else{
-					DaemonEndpoint* endpoint;
-					try{
-						endpoint = new DaemonEndpoint(endpointID);
-						endpoint->isInitiator = true;
-						if (endpoint->connectToAppSocket()==0){
-							endpoints[endpointID] = endpoint;
-							//-- send back the packet
-							endpoint->unixOutgoingQueue.enqueue(packet);
-							//-- add this endpoint to collection
-							endpoints[endpointID] = endpoint;
-						}
-						else{
-							delete packet;
-							delete endpoint;
-						}
-					}
-					catch(const char* err){
-						delete packet;
-					}
-				}
-				break;
-			
-			default:
-				delete packet;
-				break;
-		}
-	}
-	else{
-		//-- ingore data frame
-		delete packet;
-	}
-}
+
 
 void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 
@@ -1148,7 +1419,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 			if ((infoByte & SVC_ENCRYPTED)!=0x00){
 				if (endpoints[endpointID] != NULL && endpoints[endpointID]->working){
 					//-- forward packet if endpoint found
-					//printf("\nforwarding encrypted command packet (OUTER3)"); fflush(stdout);
+					//cout<<"\nforwarding encrypted command packet (OUTER3)"); fflush(stdout);
 					endpoints[endpointID]->inetIncomingQueue.enqueue(packet);
 				}
 				else{
@@ -1288,19 +1559,19 @@ void checkEndpointLiveTime(void* args){
 }
 
 void showHelp(){
-	printf("\nsvc-daemon: daemon process for svc-based applications");
-	printf("\nusage:");
-	printf("\n\t--default-config config_file");
-	printf("\n\t\tGenerate svc-daemon's default configuration and save it to config_file\n");
-	printf("\n\t--help");
-	printf("\n\t\tShow this help content\n");
-	printf("\n\t--start -c config_file");
-	printf("\n\t\tStart a new instance of svc-daemon using the configuration inside config_file\n");
-	printf("\n\t--start -i image_file");
-	printf("\n\t\tStart the svc-daemon using the previously saved infomation in image_file\n");
-	printf("\n\t--stop [-i image_file]");
-	printf("\n\t\tGracefully stop the running svc-daemon instance and (optionally) save \n\t\tall current endpoints' states to image_file. This is generally used \n\t\tin svc update/maintenance\n");
-	printf("\n");
+	cout<<"\nsvc-daemon: daemon process for svc-based applications");
+	cout<<"\nusage:");
+	cout<<"\n\t--default-config config_file");
+	cout<<"\n\t\tGenerate svc-daemon's default configuration and save it to config_file\n");
+	cout<<"\n\t--help");
+	cout<<"\n\t\tShow this help content\n");
+	cout<<"\n\t--start -c config_file");
+	cout<<"\n\t\tStart a new instance of svc-daemon using the configuration inside config_file\n");
+	cout<<"\n\t--start -i image_file");
+	cout<<"\n\t\tStart the svc-daemon using the previously saved infomation in image_file\n");
+	cout<<"\n\t--stop [-i image_file]");
+	cout<<"\n\t\tGracefully stop the running svc-daemon instance and (optionally) save \n\t\tall current endpoints' states to image_file. This is generally used \n\t\tin svc update/maintenance\n");
+	cout<<"\n");
 	fflush(stdout);
 }
 
@@ -1382,13 +1653,13 @@ int startDaemonWithConfig(const char* configFile){
     error2:
     	close(daemonUnSocket);
     error1:
-    	//printf("\nError: %s\n", errorString);
+    	//cout<<"\nError: %s\n", errorString);
     	return EXIT_FAILURE;
     	
     initSuccess:
 		//--	POST-SUCCESS JOBS	--//		
 		endpoints.clear();
-    	printf("\nSVC daemon is running\n"); fflush(stdout);
+    	cout<<"\nSVC daemon is running\n"); fflush(stdout);
     	        	
         daemonUnixIncomingPacketHandler->waitStop();
         daemonInetIncomingPacketHandler->waitStop();
@@ -1397,7 +1668,7 @@ int startDaemonWithConfig(const char* configFile){
     	delete daemonUnixIncomingPacketHandler;
     	delete daemonInetIncomingPacketHandler;
     	delete endpointChecker;
-    	printf("\nSVC daemon stopped\n");
+    	cout<<"\nSVC daemon stopped\n");
     	return EXIT_SUCCESS;
 }
 
@@ -1419,8 +1690,7 @@ int main(int argc, char** argv){
 	}
 	else{	
 		return startDaemonWithConfig(NULL);
-		
 	}
 }
-
+*/
 

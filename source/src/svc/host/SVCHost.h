@@ -7,7 +7,6 @@
 			SVCHost(){}
 			virtual ~SVCHost(){};
 			virtual uint32_t getHostAddress()=0;
-			virtual std::string getAppID()=0;
 	};
 
 #endif

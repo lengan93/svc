@@ -6,13 +6,11 @@
 #ifndef __SVC_QUEUE__
 #define __SVC_QUEUE__
 
-	#include <iostream>
-	#include <pthread.h>
-	#include <cstdint>
-	
-	#include "Node.h"
+	#include <thread>
+	#include <mutex>
+	#include <condition_variable>
 
-	using namespace std;
+	#include "Node.h"
 
 	template <class T>
 	class MutexedQueue{	
@@ -22,40 +20,32 @@
 			Node<T>* e;		
 			Node<T>* lastNode;
 			Node<T>* beforeLastNode;
-			pthread_t waitDataThread;
 			
-			pthread_mutexattr_t mutexAttr;
-			pthread_condattr_t condAttr;
-			pthread_mutex_t firstMutex;
-			pthread_mutex_t lastMutex;
-			pthread_mutex_t waitMutex;		
-			pthread_cond_t waitCond;
-						
-			//--	waitData used in mutex lock, not need to lock again
+			std::mutex firstMutex;
+			std::mutex lastMutex;
+			std::mutex waitMutex;		
+			std::condition_variable waitCond;
+			bool working;
+			bool haveData;
+
 			bool waitData(int timeout){
-				int rs;
-				pthread_mutex_lock(&this->waitMutex);
-				if (timeout<0){		
-					rs = pthread_cond_wait(&this->waitCond, &this->waitMutex);
+				bool rs;
+				cv_status cv;
+				unique_lock<std::mutex> uLock(waitMutex);
+				this->haveData = false;
+				if (timeout<0){
+					// std::cout<<"waiting for data with timeout = "<<timeout<<endl;
+					//-- spurious awake may occur but we had "haveData" to check this
+					waitCond.wait(uLock, [this]{return !this->working || this->haveData;});
+					// std::cout<<"waiting for data returned, working = "<<this->working<<" and haveData = "<<this->haveData<<endl;
+					rs = this->haveData;
 				}
-				else{				
-					struct timespec timeoutSpec;
-					clock_gettime(CLOCK_REALTIME, &timeoutSpec);
-					//-- add timeout to timeoutSpec
-					uint32_t addedSec = timeout/1000;
-					uint32_t addedNsec = (timeout%1000)*1000000;
-					if (addedNsec + timeoutSpec.tv_nsec >= 1000000000){
-						timeoutSpec.tv_nsec = addedNsec + timeoutSpec.tv_nsec - 1000000000;
-						addedSec +=1;
-					}
-					else{
-						timeoutSpec.tv_nsec = addedNsec + timeoutSpec.tv_nsec;
-					}
-					timeoutSpec.tv_sec += addedSec;
-					rs = pthread_cond_timedwait(&this->waitCond, &this->waitMutex, &timeoutSpec);
+				else{
+					cv = waitCond.wait_for(uLock, std::chrono::milliseconds(timeout));
+					rs = (cv == cv_status::no_timeout);
 				}
-				pthread_mutex_unlock(&this->waitMutex);
-				return rs==0;
+				this->waitMutex.unlock();
+				return rs;
 			}
 
 		public:
@@ -66,119 +56,122 @@
 				this->e = NULL;
 				this->first = &this->e;
 				this->last = &this->e;
-				
-				pthread_mutexattr_init(&this->mutexAttr);
-				pthread_mutex_init(&this->firstMutex, &this->mutexAttr);
-				pthread_mutex_init(&this->lastMutex, &this->mutexAttr);
-				pthread_mutex_init(&this->waitMutex, &this->mutexAttr);
-				
-				pthread_condattr_init(&this->condAttr);
-				pthread_cond_init(&this->waitCond, &this->condAttr); 
+				this->working = true;
+			}
+
+			void close(){
+				// std::cout<<"MutexedQueue close called"<<endl;
+				this->waitMutex.lock();
+				this->working = false;
+				// std::cout<<"MutexedQueue working set to false"<<endl;
+				this->waitMutex.unlock();
+				// std::cout<<"MutexedQueue notify for any waiting thread"<<endl;
+				waitCond.notify_all();
 			}
 		
 			~MutexedQueue(){
-				pthread_mutex_lock(&this->waitMutex);
-				pthread_cond_signal(&this->waitCond);
-				pthread_mutex_unlock(&this->waitMutex);
+				// std::cout<<"MutexedQueue is being destroyed"<<endl;
+				if (this->working){
+					this->close();
+				}
 				while (this->notEmpty()){					
 					this->dequeue();
 				}
 				delete this->lastNode;
+				// std::cout<<"MutexedQueue destructor finished"<<endl;
 			}
 			
 			bool notEmpty(){
 				bool rs;
-				pthread_mutex_lock(&this->firstMutex);
+				this->firstMutex.lock();
 				rs = (*(this->first))!=NULL;
-				pthread_mutex_unlock(&this->firstMutex);
+				this->firstMutex.unlock();
 				return rs;
 			}			
 
 			void enqueue(T data){
-				pthread_mutex_lock(&this->lastMutex);				
+				this->lastMutex.lock();		
 				Node<T>* node = new Node<T>();
 				node->data = data;
 				node->next = NULL;
 				(*(this->last)) = node;
 				this->last = &(node->next);
-				pthread_mutex_lock(&this->waitMutex);
-				pthread_cond_signal(&this->waitCond);
-				pthread_mutex_unlock(&this->waitMutex);
-				pthread_mutex_unlock(&this->lastMutex);
+				this->haveData = true;
+				this->waitCond.notify_all();
+				this->lastMutex.unlock();
 			}
 			
 			T dequeueWait(int timeout){
-				pthread_mutex_lock(&this->firstMutex);
-				bool haveData = false;
-				bool waitDataCalled = false;
+				this->firstMutex.lock();
+				bool isData = false;
 				if ((*(this->first))==NULL){
-					waitDataCalled = true;
-					haveData = waitData(timeout);
+					isData = waitData(timeout);
 				}
 				else{
-					haveData = true;
+					isData = true;
 				}
-				if (haveData){
-					//-- spurious wakeup might occur, need to check this->first again
-					if((*(this->first)) != NULL){					
+				if (isData){
+					//-- spurious wakeup might occur, but waitData handled it
+					// if((*(this->first)) != NULL){					
 						T retVal = (*(this->first))->data;
 						this->beforeLastNode = this->lastNode;
 						this->lastNode = *(this->first);		
 						this->first = &((*(this->first))->next);					
 						delete this->beforeLastNode;
-						pthread_mutex_unlock(&this->firstMutex);
+						this->firstMutex.unlock();
 						return retVal;
-					}
-					else{
-						pthread_mutex_unlock(&this->firstMutex);
-						return NULL;
-					}
+					// }
+					// else{
+					// 	this->firstMutex.unlock();
+					// 	return NULL;
+					// }
 				}
 				else{
 					//-- waitData was interrupted by other signals
-					pthread_mutex_unlock(&this->firstMutex);
+					this->firstMutex.unlock();
 					return NULL;
 				}				
 			}
 			
 			void dequeue(){
-				pthread_mutex_lock(&this->firstMutex);				
+				this->firstMutex.lock();				
 				if (*(this->first)==NULL){
-					pthread_mutex_unlock(&this->firstMutex);
+					this->firstMutex.unlock();
 				}
 				else{					
 					this->beforeLastNode = this->lastNode;
 					this->lastNode = *(this->first);			
 					this->first = &((*(this->first))->next);					
 					delete this->beforeLastNode;
-					pthread_mutex_unlock(&this->firstMutex);
+					this->firstMutex.unlock();
 				}
 			}
 			
 			bool peak(T* data){
-				pthread_mutex_lock(&this->firstMutex);
+				this->firstMutex.lock();
 				if (*(this->first) == NULL){
-					pthread_mutex_unlock(&this->firstMutex);
+					this->firstMutex.unlock();
 					return false;					
 				}
 				else{
 					*data = (*(this->first))->data;
-					pthread_mutex_unlock(&this->firstMutex);
+					this->firstMutex.unlock();
 					return true;
 				}
 			}
 			
 			bool peakWait(T* data, int timeout){
-				pthread_mutex_lock(&this->firstMutex);
-				bool haveData = true;
+				this->firstMutex.lock();
+				bool isData = false;
 				if (*(this->first)==NULL){
-					haveData = waitData(timeout);
+					isData = waitData(timeout);
 				}
-				if (haveData){
-					*data = (*(this->first))->data;								
+				if (isData){
+					// if ((*(this->first)) != NULL)
+						*data = (*(this->first))->data;								
 				}				
-				pthread_mutex_unlock(&this->firstMutex);
-				return haveData;
+				this->firstMutex.unlock();
+				return isData;
 			}
 	};
 

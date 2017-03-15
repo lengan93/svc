@@ -3,6 +3,7 @@
 
 	#include <string>
 	#include "../svc-header.h"
+	#include "../../utils/utils.h"
 	#include "../../crypto/crypto-utils.h"
 	
 	#define MINIMUM_SECURITY_LENGTH 64
@@ -15,8 +16,8 @@
 			
 			virtual std::string generateChallengeSecret(){
 				uint8_t* randomData = (uint8_t*)malloc(MINIMUM_SECURITY_LENGTH);
-				generateRandomData(MINIMUM_SECURITY_LENGTH, randomData);
-				std::string result = hexToString(randomData, MINIMUM_SECURITY_LENGTH);
+				crypto::generateRandomData(MINIMUM_SECURITY_LENGTH, randomData);
+				std::string result = utils::hexToString(randomData, MINIMUM_SECURITY_LENGTH);
 				free(randomData);
 				return result;
 			}

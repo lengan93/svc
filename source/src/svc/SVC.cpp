@@ -1,80 +1,49 @@
 #include "SVC.h"
 
-//--	SVC IMPLEMENTATION	--//
+using namespace svc_utils::SVCPacket;
 
-uint16_t SVC::endpointCounter = 0;
+SVC::SVC(const std::string& appIdentity, const SVCAuthenticator* authenticator){
 
-SVC::SVC(std::string appID, SVCAuthenticator* authenticator){
-
-	this->working = true;
-	this->shutdownCalled = false;
-	this->readingThread = 0;
-	this->sha256 = new SHA256();		
-	
-	struct sockaddr_un appSockAddr;
-	struct sockaddr_un dmnSockAddr;	
-	
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	
-	//--	copy param
+	SHA256 sha256;
+	string appIDHashed = sha256->hash(appID);
+	stringToHex(appIDHashed.substr(0, 8), (uint8_t*)&this->appID);
 	this->authenticator = authenticator;
+
+	//-- create svc pipe
+	char buffer[32];
+	utils::generateRandomData(32, buffer);
+	string svcPipeName = sha256.hash(string(buffer));
+	cout<<"create svc pipe named: "<<svcPipeName<<endl;
+	this->svcPipe = new NamedPipe(svcPipeName, NamedPipe::NP_READ);
+
+	//-- connect to daemon pipe
+	this->daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipe::NP_WRITE);
+
+	//-- create reading thread to read from pipe
+	this->incomingQueue = new MutexedQueue<SVCPacket*>();
+	this->packetReader = new SVCPacketReader(this->daemonPipe, this->incomingQueue);
+
+	//-- create thread to handler incoming packet
+	this->packetHandler = new SVCPacketHandler(this->incomingQueue, svc_incoming_packet_handler, this);
 	
-	//--	check if the app is running
-	std::string appIDHashed = this->sha256->hash(appID);
-	stringToHex(appIDHashed.substr(0, 8), (uint8_t*)&this->appID); //-- extract first 32 bits of hash string
-	
-	//--	BLOCK ALL KIND OF SIGNAL
-	sigset_t sig;
-	sigfillset(&sig);
-	if (pthread_sigmask(SIG_BLOCK, &sig, NULL)!=0){		
-		delete this->sha256;
-		throw SVC_ERROR_CRITICAL;
-	}	
-	else{
-		string appSockPath = std::string(SVC_CLIENT_PATH_PREFIX) + to_string(this->appID);	
-		//- bind app socket
-		this->appSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
-		memset(&appSockAddr, 0, sizeof(appSockAddr));
-		appSockAddr.sun_family = AF_LOCAL;
-		appSockAddr.sun_path[0] = '\0';
-		memcpy(appSockAddr.sun_path+1, appSockPath.c_str(), appSockPath.size());
-		if (bind(this->appSocket, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr))==-1){			
-			delete this->sha256;
-			throw SVC_ERROR_BINDING;
-		}
-		else{
-			//-- then create reading thread
-			if (pthread_create(&this->readingThread, &attr, svc_reading_loop, this) !=0){
-				close(this->appSocket);							
-				delete this->sha256;
-				throw SVC_ERROR_CRITICAL;
-			}
-			else{			
-				//-- connect to daemon socket
-				memset(&dmnSockAddr, 0, sizeof(dmnSockAddr));
-				dmnSockAddr.sun_family = AF_LOCAL;
-				dmnSockAddr.sun_path[0]='\0';
-				memcpy(dmnSockAddr.sun_path+1, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());
-				if (connect(this->appSocket, (struct sockaddr*) &dmnSockAddr, sizeof(dmnSockAddr)) == -1){				
-					this->working = false;
-					pthread_join(this->readingThread, NULL);
-					close(this->appSocket);
-					delete this->sha256;
-					throw SVC_ERROR_CONNECTING;
-				}
-				else{	
-					//-- svc successfully created
-					this->connectionRequests = new MutexedQueue<SVCPacket*>();
-					this->endpoints.clear();			
-					this->incomingPacketHandler = new PacketHandler();
-				}
-			}
-		}
+	//-- send SVC_CMD_REGISTER
+	SVCPacket* packet = new SVCPacket(0);
+	packet->setCommand(SVC_CMD_REGISTER);
+	packet->pushCommandParam(svcPipename.c_str(), svcPipeName.size());
+	if (this->daemonPipe->write(packet->packet, packet->dataLen)) < 0){
+		throw ERR_NOT_CONNECTED;
 	}
+	delete packet;
+	this->packetHandler->waitCommand();
+	if (!this->packetHandler->waitCommand()){
+		throw ERR_TIMEOUT;
+	}
+
+	this->connectionRequests = new MutexedQueue<SVCPacket*>();
+	this->endpoints.clear();
 }
 
-void SVC::shutdownSVC(){
+void SVC::shutdown(){
 
 	if (!this->shutdownCalled){
 		printf("\nSVC shutdown called"); fflush(stdout);
@@ -141,22 +110,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 	}	
 }
 
-void* SVC::svc_reading_loop(void* args){
-	SVC* _this = (SVC*)args;
-	
-	//-- read from unix socket then enqueue to incoming queue
-	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
-	int readrs;
-		
-	while (_this->working){
-		readrs = recv(_this->appSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);		
-		if (readrs>0){			
-			svc_incoming_packet_handler(new SVCPacket(buffer, readrs), _this);
-		}
-		//else: read received nothing
-	}
-	pthread_exit(EXIT_SUCCESS);
-}
+
 
 
 //--	SVC PUBLIC FUNCTION IMPLEMENTATION		--//
@@ -165,7 +119,7 @@ void SVC::sendPacketToDaemon(SVCPacket* packet){
 	send(this->appSocket, packet->packet, packet->dataLen, 0);
 }
 
-SVCEndpoint* SVC::establishConnection(SVCHost* remoteHost, uint8_t option){
+SVCEndpoint* SVC::establishConnection(int timeout, SVCHost* remoteHost, uint8_t option){
 	
 	//-- create new endpoint to handle further packets
 	uint64_t endpointID = 0;	
@@ -507,6 +461,10 @@ int SVCEndpoint::connectToDaemon(){
 			return 0;
 		}
 	}
+}
+
+string SVCEndpoint::getEndpointID(){
+	return this->endpointID;
 }
 
 bool SVCEndpoint::negotiate(){
