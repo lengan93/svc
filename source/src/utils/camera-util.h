@@ -77,8 +77,23 @@ public:
 		return error;
 	}
 
+	void close() {
+		if(sdlWindow != NULL){
+			SDL_DestroyWindow(sdlWindow);
+		}
+
+		if(sdlRenderer != NULL){
+			SDL_DestroyRenderer(sdlRenderer);
+		}
+		
+		if(sdlTexture != NULL){
+			SDL_DestroyTexture(sdlTexture);
+		}
+
+	}
+
 	~Graphics() {
-		SDL_Quit();
+		this->close();
 	}
 	
 };

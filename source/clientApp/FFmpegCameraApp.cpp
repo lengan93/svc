@@ -14,6 +14,8 @@ using namespace std;
 const uint32_t bufferSize = 1400;
 uint8_t buffer[bufferSize] = "";
 
+bool working = true;
+
 float timeDistance(const struct timespec* greater, const struct timespec* smaller){
 	float sec = greater->tv_sec - smaller->tv_sec;
 	float nsec;
@@ -109,11 +111,11 @@ void sendStream(SVCEndpoint* endpoint)
 	    NULL
 	    );
 
-	Graphics* g = new Graphics(pCodecCtx->width,  pCodecCtx->height, "My Window");
-	if(strcmp(g->getError(), "") != 0) {
-		printf("SDL error: %s\n", g->getError());
-		return;
-	}
+	// Graphics* g = new Graphics(pCodecCtx->width,  pCodecCtx->height, "My Window");
+	// if(strcmp(g->getError(), "") != 0) {
+	// 	printf("SDL error: %s\n", g->getError());
+	// 	return;
+	// }
 
 	/* Send the camera resolution */
 	uint8_t buff[9];
@@ -144,7 +146,7 @@ void sendStream(SVCEndpoint* endpoint)
 	int frameFinished;
 	
 	int frameSeq = 1;
-	while(1)
+	while(working)
     {
         av_read_frame(inFormatCtx, &packet);
         
@@ -157,7 +159,7 @@ void sendStream(SVCEndpoint* endpoint)
 				  pFrame->linesize, 0, pCodecCtx->height,
 				  pFrameYUV420->data, pFrameYUV420->linesize);
 				
-				g->displayFFmpegYUVFrame(pFrameYUV420, &sdlRect);
+				// g->displayFFmpegYUVFrame(pFrameYUV420, &sdlRect);
 
 				//encode frame to video
 				av_init_packet(&outPacket);
@@ -184,31 +186,22 @@ void sendStream(SVCEndpoint* endpoint)
 
         av_free_packet(&packet);
 		SDL_Delay(50);
-		SDL_PollEvent(&event);
-        if(event.type == SDL_QUIT) {
-			SDL_Quit();
-			break;
-		}
-        
+		// SDL_PollEvent(&event);
+  //       if(event.type == SDL_QUIT) {
+		// 	SDL_Quit();
+		// 	break;
+		// }
     }
 		// printf("\nimage sended!\n");
 }
 
-
-int main(int argc, char** argv){
-
-	//int RETRY_TIME = atoi(argv[2]);
+void* mainLoop(void* arg) {
 	SVCHost* remoteHost;
 	
 	// string appID = string("CAMERA_APP");
 	string appID = string("CAMERA_APP");
 	// SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
-	if (argc>1){
-		remoteHost = new SVCHostIP(argv[1]);
-	}
-	else {
-		remoteHost = new SVCHostIP("192.168.43.149");
-	}
+	remoteHost = new SVCHostIP((char*)arg);
 
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 
@@ -247,6 +240,28 @@ int main(int argc, char** argv){
 	
 	delete authenticator;
 	delete remoteHost;
+}
+
+int main(int argc, char** argv){
+
+	//int RETRY_TIME = atoi(argv[2]);
+
+	char host_addr[16];
+
+	if (argc>1){
+		strcpy(host_addr, argv[1]);
+	}
+	else {
+		strcpy(host_addr, "192.168.43.43");
+	}
+
+	pthread_t tid;
+
+	pthread_create (&tid, NULL, &mainLoop, host_addr);
+	getchar();
+
+	working = false;
+	pthread_join(tid, NULL);
 	
 }
 

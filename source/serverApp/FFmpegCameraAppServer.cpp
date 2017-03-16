@@ -13,6 +13,8 @@ using namespace std;
 
 int frameSeq = 0;
 
+bool working = true;
+
 void receiveStream(SVCEndpoint* endpoint) {
 
 	uint32_t bufferSize = 1400;				
@@ -121,7 +123,7 @@ void receiveStream(SVCEndpoint* endpoint) {
 				    		SDL_Delay(50);
 							SDL_PollEvent(&event);
 					        if(event.type == SDL_QUIT) {
-								SDL_Quit();
+								g->close();
 								break;
 							}
 				    	}
@@ -145,7 +147,7 @@ void receiveStream(SVCEndpoint* endpoint) {
 		}
 	}
 
-	SDL_Quit();
+	g->close();
 	av_free(decodedFrame);
 }
 
@@ -174,7 +176,7 @@ void* mainLoop(void* arg) {
 		
 		initFFmpeg();
 
-		while(1) {
+		while(working) {
 			SVCEndpoint* endpoint = svc->listenConnection(-1);
 			// printf("1\n");
 			if (endpoint!=NULL){
@@ -223,5 +225,9 @@ int main(int argc, char** argv){
 	do{
 		c = getchar();		
 	} while(c != 'q');
+
+	working = false;
+
+	pthread_join(tid, NULL);
 	
 }

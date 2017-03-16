@@ -362,7 +362,7 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				break;
 						
 			case SVC_CMD_CONNECT_INNER4:
-				printf("\n0\n");				
+				// printf("\n0\n");				
 				//--	new endpointID
 				packet->popCommandParam(param, &paramLen);
 				_this->changeEndpointID(*((uint64_t*)param));
@@ -382,11 +382,11 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 				break;
 				
 			case SVC_CMD_CONNECT_INNER6:		
-				printf("\n1\n");						
+				// printf("\n1\n");						
 				//-- pop solution proof and check
 				packet->popCommandParam(param, &paramLen);
-				cout << "SVC_CMD_CONNECT_INNER6 proof: " <<std::string((char*)param, paramLen) <<endl;
-				cout << "SVC_CMD_CONNECT_INNER6 challenge: " <<_this->challengeSecretSent <<endl;
+				// cout << "SVC_CMD_CONNECT_INNER6 proof: " <<std::string((char*)param, paramLen) <<endl;
+				// cout << "SVC_CMD_CONNECT_INNER6 challenge: " <<_this->challengeSecretSent <<endl;
 				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, std::string((char*)param, paramLen))){
 					//-- proof verified, generate proof then send back to daemon
 					_this->proof = _this->svc->authenticator->generateProof(_this->challengeSecretReceived);
@@ -395,19 +395,19 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 					//_this->outgoingQueue->enqueue(packet);
 					_this->tobesentQueue->enqueue(packet);
 					//-- ok, connection established
-					printf("\n2\n");						
+					// printf("\n2\n");						
 					_this->isAuth = true;
 				}
 				else{					
 					//-- proof verification failed
 					delete packet;
-					printf("\n3\n");						
+					// printf("\n3\n");						
 					_this->isAuth = false;
 				}
 				break;
 				
 			case SVC_CMD_CONNECT_INNER8:				
-				printf("\n4\n");						
+				// printf("\n4\n");						
 				//-- verify the client's proof
 				packet->popCommandParam(param, &paramLen);
 				if (_this->svc->authenticator->verifyProof(_this->challengeSecretSent, std::string((char*)param, paramLen))){
@@ -415,13 +415,13 @@ void SVCEndpoint::svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* 
 					packet->setCommand(SVC_CMD_CONNECT_INNER9);					
 					//_this->outgoingQueue->enqueue(packet);
 					_this->tobesentQueue->enqueue(packet);
-					printf("\n5\n");						
+					// printf("\n5\n");						
 					_this->isAuth = true;
 				}
 				else{
 					//-- proof verification failed
 					delete packet;
-					printf("\n6\n");						
+					// printf("\n6\n");						
 					_this->isAuth = false;
 				}
 				break;
@@ -601,11 +601,11 @@ bool SVCEndpoint::negotiate(){
 			packet->setCommand(SVC_CMD_CONNECT_INNER1);
 			//-- get challenge secret and challenge		
 			this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
-			cout << "challengeSecretSent: " <<this->challengeSecretSent << endl;
+			// cout << "challengeSecretSent: " <<this->challengeSecretSent << endl;
 
-			SHA256 sha;
-			std::string dg = sha.hash(this->challengeSecretSent);
-			cout << "expected hash: " << dg <<endl;
+			// SHA256 sha;
+			// std::string dg = sha.hash(this->challengeSecretSent);
+			// cout << "expected hash: " << dg <<endl;
 
 			this->challengeSent = this->svc->authenticator->generateChallenge(challengeSecretSent);		
 			packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
@@ -628,18 +628,18 @@ bool SVCEndpoint::negotiate(){
 		}
 		else{
 			//-- read challenge from request packet
-			printf("negotiate server\n");
+			// printf("negotiate server\n");
 			this->request->popCommandParam(param, &paramLen);
 			this->challengeReceived = std::string((char*)param, paramLen);
 			
 			//-- resolve this challenge to get challenge secret
 			this->challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeReceived);
 			this->remoteIdentity = this->svc->authenticator->getRemoteIdentity(this->challengeSecretReceived);
-			cout << "challengeSecretReceived: " << this->challengeSecretReceived << endl;
+			// cout << "challengeSecretReceived: " << this->challengeSecretReceived << endl;
 
 			//-- generate proof
 			this->proof = this->svc->authenticator->generateProof(this->challengeSecretReceived);		
-			cout << "proof: " << this->proof <<endl;
+			// cout << "proof: " << this->proof <<endl;
 
 			//-- generate challenge
 			this->challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
