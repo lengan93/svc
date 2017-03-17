@@ -3,22 +3,17 @@
 #ifndef __SVC__
 #define __SVC__
 
-	// #include <csignal>
-	// #include <sys/un.h>
-	// #include <sys/socket.h>
-	// #include <unordered_map>
-
-	// #include "svc-utils.h"
+	#include "svc-utils.h"
 	#include "host/SVCHost.h"
 	#include "authenticator/SVCAuthenticator.h"
 	
+	#include "../crypto/SHA256.h"
+	#include "../crypto/crypto-utils.h"
 	#include "../utils/NamedPipe.h"
 	#include "../utils/MutexedQueue.h"
-	// #include "../utils/PeriodicWorker.h"
-	// #include "../crypto/SHA256.h"
-	// #include "../crypto/crypto-utils.h"
-	
-	// #define RECONNECTION_TIMEOUT	5000
+
+	using namespace svc_utils;
+	using namespace crypto;
 
 	class SVC;
 		
@@ -55,7 +50,7 @@
 			
 			// int sock;
 			// int sockOption;
-			// uint64_t endpointID;
+			uint64_t endpointID;
 			// uint32_t appID;			
 			// SVCHost* remoteHost;
 			// SVCPacket* request;
@@ -68,7 +63,7 @@
 			// std::string proof;
 			// std::string remoteIdentity;
 		
-			// SVCEndpoint(SVC* svc, uint64_t endpointID, bool isInitiator);	
+			SVCEndpoint(SVC* svc, uint64_t endpointID, bool isInitiator);	
 			
 			// /*
 			//  * Connect the unix domain socket to the daemon endpoint address to send data
@@ -93,9 +88,9 @@
 		public:
 			~SVCEndpoint();
 			bool negotiate();
-			std::string getEndpointID();
-			int sendData(const uint8_t* data, uint32_t datalen, uint8_t option);
-			int readData(uint8_t* data, uint32_t* len, int timeout);
+			uint64_t getEndpointID();
+			int sendData(const uint8_t* data, uint16_t datalen, uint8_t option);
+			int readData(uint8_t* data, uint16_t* len, int timeout);
 			void shutdown();
 	};
 	
@@ -109,32 +104,20 @@
 			NamedPipe* daemonPipe;
 			NamedPipe* svcPipe;
 			
-			pthread_t readingThread;
+			SVCPacketReader* packetReader;
 			MutexedQueue<SVCPacket*>* incomingQueue;
-			PacketHandler* incomingPacketHandler;
+			MutexedQueue<SVCPacket*>* connectionRequests;
+			SVCPacketHandler* packetHandler;
 			static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
 
-			// static void* svc_reading_loop(void* args);
-			// //static void* svc_writing_loop(void* args);
-			
-			// //-- private members
-			// inline void sendPacketToDaemon(SVCPacket* packet);
-			
-			// volatile bool working;
-			// volatile bool shutdownCalled;
-			
-			// //pthread_t writingThread;
-			
-			// //MutexedQueue<SVCPacket*>* outgoingQueue;
-			// //MutexedQueue<SVCPacket*>* tobesentQueue;
-			// MutexedQueue<SVCPacket*>* connectionRequests;
-			// //PacketHandler* outgoingPacketHandler;
-															
-			// unordered_map<uint128_t, SVCEndpoint*> endpoints;	
+			volatile bool working;
+			volatile bool shutdownCalled;
+			void cleanUp();
 			
 		public:
-			SVC(const std::string& appIdentity, const SVCAuthenticator* authenticator);
+			SVC(const std::string& appIdentity, SVCAuthenticator* authenticator);
 			~SVC();
+			void shutdown();
 			SVCEndpoint* establishConnection(int timeout, SVCHost* remoteHost, uint8_t option);
 			SVCEndpoint* listenConnection(int timeout, SVCHost* remoteHost);
 	};

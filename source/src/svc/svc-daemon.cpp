@@ -51,7 +51,7 @@ condition_variable stopCV;
 bool working;
 
 //================================= FUNCTIONS' DECLARATION ===========
-void stopWorking();
+void stopWorking(bool saveImage, const string& saveImagePath);
 void waitStop();
 int exitWithError(string err);
 int showHelp();
@@ -145,17 +145,19 @@ int main(int argc, char* argv[]){
 
 //================================= BUSINESS FUNCTIONS' DEFINITION ===
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
-	uint8_t infoByte = packet->packet[INFO_BYTE];
+	// cout<<"processing packet";
+	uint8_t infoByte = packet->getInfoByte();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
-		enum SVCCommand cmd = (enum SVCCommand)packet->packet[CMD_BYTE];
-		uint64_t endpointID = *((uint64_t*)(packet->packet+1));
+		enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
+		uint64_t endpointID = packet->getEndpointID();
 		bool existed = false;
 		switch (cmd){
 			case SVC_CMD_STOP_DAEMON:
 				delete packet;
 				if (endpointID == 0){
 					//-- shutdown only with specific request, check to save image
-					stopWorking();
+					// cout<<"shutdown request received, calling stop working"<<endl;
+					stopWorking(false, "");
 				}
 				break;
 
@@ -208,7 +210,8 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 }
 
 //================================= GLOBAL FUNCTIONS' DEFINITION =====
-void stopWorking(){
+void stopWorking(bool saveImage, const string& imagePath){
+	
 	stopMutex.lock();
 	working = false;
 	stopMutex.unlock();
@@ -292,26 +295,35 @@ int startDaemon(const struct SVCDaemonImage* image){
 }
 
 int shutdownDaemon(bool saveImage, const string& imagePath){
-	//-- send a specific command to current instance
+	
+	//-- try to connect to the running daemon
 	try{
 		daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_WRITE);
-		SVCPacket* packet = new SVCPacket();
-		packet->setCommand(SVC_CMD_STOP_DAEMON);
-		uint8_t save = saveImage? 0x01 : 0x00;
-		packet->pushCommandParam(&save, 1);
-		if (saveImage) {
-			packet->pushCommandParam((uint8_t*)imagePath.c_str(), imagePath.size());
-		}
-		daemonPipe->write(packet->packet, packet->dataLen);
-		
-		delete packet;
-		delete daemonPipe;
-		return 0;
 	}
 	catch (string& e){
 		cout<<ERR_NOT_RUNNING<<endl;
 		return -1;
 	}
+
+	//-- send a specific command to current daemon instance
+	SVCPacket* packet = new SVCPacket();
+	packet->setCommand(SVC_CMD_STOP_DAEMON);
+	uint8_t save = saveImage? 0x01 : 0x00;
+	packet->pushDataChunk(&save, 1);
+	if (saveImage) {
+		packet->pushDataChunk((uint8_t*)imagePath.c_str(), imagePath.size());
+	}
+	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+	uint16_t packetLen;
+	packet->serialize(buffer, &packetLen);
+	daemonPipe->write(buffer, packetLen);
+	// cout<<"send svc packet: ";
+	// utils::printHexBuffer(buffer, packetLen);
+	
+	delete packet;
+	delete daemonPipe;
+	return 0;
+	
 }
 
 int saveDefaultConfig(const string& configPath){

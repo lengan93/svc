@@ -1,11 +1,11 @@
 #ifndef __TOM_CRYPTO_UTILS__
 #define __TOM_CRYPTO_UTILS__
-	
-	
-		#include <fcntl.h>		//-- For O_RDWR
-		#include <unistd.h>		//-- For open(), creat()
+
+		#include <fcntl.h>		//-- for O_RDONLY
+		#include <cstdio>
+		#include <fstream>
 		#include <gmp.h>	
-		#include <string>		
+		#include <cstdlib>		
 		#include <cstring>		//-- for 'memcpy'
 
 	namespace crypto{	
@@ -18,7 +18,24 @@
 					(a)[3] = (uint8_t) (((uint32_t) (val)) & 0xff);           \
 			} while (0)
 
-		extern void generateRandomData(uint32_t length, uint8_t* data);
-		extern void generateRandomNumber(mpz_t* number, int securityParam);
+		static void generateRandomData(uint32_t length, void* data){
+			std::ifstream urandom;
+			urandom.open("/dev/urandom");
+			if (urandom.is_open()){
+				urandom.read((char*)data, length);
+				urandom.close();
+			}
+		}
+
+		static void generateRandomNumber(mpz_t* number, int securityParam){
+			int byteLen = securityParam/8;
+			uint8_t* randomData = (uint8_t*)malloc(byteLen);	
+			generateRandomData(byteLen, randomData);
+			for (int i=0;i<byteLen;i++){
+				mpz_mul_ui(*number, *number, 256);
+				mpz_add_ui(*number, *number, randomData[i]);
+			}	
+			free(randomData);
+		}
 	}
 #endif // UTILS_H

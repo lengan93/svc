@@ -19,6 +19,8 @@
         NP_WRITE
     };
 
+    using namespace utils;
+
     class NamedPipe{
 
         NamedPipeMode mode;

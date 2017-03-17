@@ -1,5 +1,3 @@
-#include <cstring>
-#include <fstream>
 #include "SHA256.h"
  
 const uint32_t SHA256::sha256_k[64] = {
@@ -112,18 +110,15 @@ void SHA256::final(uint8_t* digest){
     }
 }
  
-std::string SHA256::hash(std::string input){
+void SHA256::hash(const void* input, uint16_t inputLength, uint8_t* output){
     uint8_t digest[SHA256::DIGEST_SIZE];
     memset(digest,0,SHA256::DIGEST_SIZE);
  
-    update((uint8_t*)input.c_str(), input.length());
+    init();
+    update((uint8_t*)input, inputLength);
     final(digest);
- 
-    char buf[2*SHA256::DIGEST_SIZE+1];
-    buf[2*SHA256::DIGEST_SIZE] = 0;
-    for (int i = 0; i < SHA256::DIGEST_SIZE; i++)
-        sprintf(buf+i*2, "%02x", digest[i]);
-    return std::string(buf);
+
+    memcpy(output, digest, SHA256::DIGEST_SIZE);
 }
 
 SHA256::SHA256(){

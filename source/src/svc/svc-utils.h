@@ -11,121 +11,165 @@
 	#include <thread>
 	#include <vector>
 	#include <cstring>
-	#include <sys/socket.h>
 	
 	namespace svc_utils{
 
 		class SVCPacket{
-			public:
-				//-- public members
-				uint8_t* packet;
-				uint32_t dataLen;
-				struct sockaddr_storage srcAddr;
-				socklen_t srcAddrLen;
-				
-				//-- constructors/destructors
-				
-				SVCPacket(){
-					packet = (uint8_t*)malloc(SVC_DEFAULT_BUFSIZ);	
-					this->dataLen = 0;	
+			class DataChunk{
+					
+				public:
+					void* chunk;
+					uint16_t chunkLen;
+
+					DataChunk(const void* chunk, uint16_t chunkLen){
+						this->chunk = malloc(chunkLen);
+						if (this->chunk == NULL){
+							throw ERR_NO_MEMORY;
+						}
+						this->chunkLen = chunkLen;
+					}
+					~DataChunk(){
+						free(this->chunk);
+					}
+			};
+			private:
+				uint8_t packetHeader[SVC_PACKET_HEADER_LEN];
+				std::vector<DataChunk*> packetBody;
+
+				void clearPacketBody(){
+					while (!this->packetBody.empty()){
+						delete this->packetBody.back();
+						this->packetBody.pop_back();
+					}
 				}
-				
-				SVCPacket(SVCPacket* packet):SVCPacket(){		
-					if (packet!=NULL){
-						this->dataLen = packet->dataLen;
-						memcpy(this->packet, packet->packet, packet->dataLen);
+
+			public:
+				~SVCPacket(){
+					this->clearPacketBody();
+				}
+
+				SVCPacket(){
+					memset(this->packetHeader, 0, SVC_PACKET_HEADER_LEN);
+					this->packetBody.clear();
+				}
+
+				SVCPacket(const void* buffer, uint16_t bufferLen){
+					// cout<<"receive buffer: ";
+					// utils::printHexBuffer(buffer, bufferLen);
+					//-- check packet validity
+					// cout<<"checking packet validty:"<<endl;
+
+					if (bufferLen < SVC_PACKET_HEADER_LEN){
+						// cout<<"data shorter than header"<<endl;
+						throw ERR_DATA_DAMAGED;
 					}
 					else{
-						this->dataLen = 0;
+						bool dataCorrect = true;
+						uint8_t* buf8 = (uint8_t*)buffer;
+						while (bufferLen > SVC_PACKET_HEADER_LEN){
+							uint16_t chunkLen;
+							memcpy(&chunkLen, buf8 + bufferLen - 2, 2);
+							if ((chunkLen + 2) <= (bufferLen - SVC_PACKET_HEADER_LEN)){
+								//-- ok, copy this chunk
+								DataChunk* chunk = new DataChunk(buf8 + bufferLen - 2 - chunkLen, chunkLen);
+								this->packetBody.insert(this->packetBody.begin(), chunk);
+								bufferLen -= (2 + chunkLen);
+							}
+							else{
+								dataCorrect = false;
+								break;
+							}
+						}
+						dataCorrect = dataCorrect && (bufferLen == SVC_PACKET_HEADER_LEN);
+						if (!dataCorrect){
+							//-- remove any allocated data chunk
+							this->clearPacketBody();
+							// cout<<"data damaged??"<<endl;
+							throw ERR_DATA_DAMAGED;
+						}
+						else{
+							memcpy(this->packetHeader, buf8, SVC_PACKET_HEADER_LEN);
+						}
 					}
 				}
-				
-				SVCPacket(const uint8_t* buffer, uint32_t bufferLen):SVCPacket(){				
-					this->dataLen = bufferLen;
-					memcpy(this->packet, buffer, this->dataLen);
+
+				void pushDataChunk(const void* buffer, uint16_t bufferLen){
+					DataChunk* chunk = new DataChunk(buffer, bufferLen);
+					this->packetBody.push_back(chunk);
 				}
 				
-				SVCPacket(uint64_t endpointID):SVCPacket(){
-					this->dataLen = SVC_PACKET_HEADER_LEN;
-					memset(this->packet, 0, this->dataLen);
-					memcpy(this->packet+1, &endpointID, ENDPOINTID_LENGTH);
-				}
-				
-				~SVCPacket(){
-					free(this->packet);
-				}
-				
-				bool isCommand(){
-					return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
-				}
-				
-				void setBody(const uint8_t* body, uint32_t bodyLen){
-					memcpy(this->packet + SVC_PACKET_HEADER_LEN, body, bodyLen);
-					this->dataLen = SVC_PACKET_HEADER_LEN + bodyLen;
-				}
-				
-				void setSequence(uint64_t sequence){
-					memcpy(this->packet+1+ENDPOINTID_LENGTH, &sequence, SEQUENCE_LENGTH);
-				}
-				
-				void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
-					memset(&this->srcAddr, 0, sizeof(this->srcAddr));
-					memcpy(&this->srcAddr, srcAddr, addrLen);
-					this->srcAddrLen = addrLen;
-				}
-				
-				void setData(const uint8_t* data, uint32_t dataLen){
-					memcpy(this->packet + SVC_PACKET_HEADER_LEN, &dataLen, 4);
-					memcpy(this->packet + SVC_PACKET_HEADER_LEN + 4, data, dataLen);
-					this->dataLen = SVC_PACKET_HEADER_LEN + 4 + dataLen; //-- 4 byte datalen
-					this->packet[INFO_BYTE] &= 0x7F; //-- set 7th bit to 0: data
-				}
-				
-				void extractData(uint8_t* data, uint32_t* dataLen){
-					*dataLen = *((uint32_t*)(this->packet+SVC_PACKET_HEADER_LEN));
-					//-- TODO: possible error
-					memcpy(data, this->packet + SVC_PACKET_HEADER_LEN + 4, this->dataLen - SVC_PACKET_HEADER_LEN - 4);
-				}			
-				
-				//-- public methods
-				void setCommand(enum SVCCommand cmd){
-					//-- reset length
-					this->dataLen = SVC_PACKET_HEADER_LEN + 1;
-					//-- set info byte				
-					packet[INFO_BYTE] |= SVC_COMMAND_FRAME; //-- set info byte
-					packet[INFO_BYTE] |= SVC_URGENT_PRIORITY; 	
-					//-- set commandID
-					packet[SVC_PACKET_HEADER_LEN] = (uint8_t)cmd;				
-				}
-				
-				void switchCommand(enum SVCCommand cmd){
-					this->packet[CMD_BYTE] = (uint8_t)cmd;
-				}
-				
-				void pushCommandParam(const uint8_t* param, uint16_t paramLen){					
-					//-- copy new param to packet
-					memcpy(this->packet+this->dataLen, param, paramLen);
-					memcpy(this->packet+this->dataLen+paramLen, &paramLen, 2);
-					this->dataLen += 2 + paramLen;
-				}
-				
-				bool popCommandParam(uint8_t* param, uint16_t* paramLen){
-					*paramLen = *((uint16_t*)(this->packet+this->dataLen-2));
-					if (*paramLen + SVC_PACKET_HEADER_LEN < this->dataLen){
-						memcpy(param, this->packet+this->dataLen-2-*paramLen, *paramLen);
-						//-- reduce the packet len
-						this->dataLen -= 2 + *paramLen;
+				bool popDataChunk(uint8_t* buffer, uint16_t* bufferLen){
+					if (!this->packetBody.empty()){
+						DataChunk* chunk = this->packetBody.back();
+						memcpy(buffer, chunk->chunk, chunk->chunkLen);
+						*bufferLen = chunk->chunkLen;
 						return true;
 					}
 					else{
 						return false;
-					}				
+					}
 				}
+
+				uint8_t getInfoByte(){
+					return this->packetHeader[0];
+				}
+
+				void setInfoByte(uint8_t infoByte){
+					this->packetHeader[0] = infoByte;
+				}
+
+				uint8_t getExtraInfoByte(){
+					return this->packetHeader[1];
+				}
+
+				void setExtraInfoByte(uint8_t extraInfoByte){
+					this->packetHeader[1] = extraInfoByte;
+				}
+
+				uint64_t getEndpointID(){
+					return *((uint64_t*)(this->packetHeader + INFO_LENGTH));
+				}
+
+				void setEndpointID(uint64_t endpointID){
+					memcpy(this->packetHeader + INFO_LENGTH, &endpointID, ENDPOINTID_LENGTH);
+				}
+
+				uint32_t getSequence(){
+					return *((uint32_t*)(this->packetHeader + INFO_LENGTH + ENDPOINTID_LENGTH));
+				}
+
+				void setSequence(uint32_t sequence){
+					memcpy(this->packetHeader + INFO_LENGTH + ENDPOINTID_LENGTH, &sequence, SEQUENCE_LENGTH);
+				}
+
+				void serialize(uint8_t* buffer, uint16_t* bufferLen){
+					memcpy(buffer, this->packetHeader, SVC_PACKET_HEADER_LEN);
+					uint16_t pointer = SVC_PACKET_HEADER_LEN;
+					for (int i=0; i<this->packetBody.size(); i++){
+						memcpy(buffer + pointer, this->packetBody[i]->chunk, this->packetBody[i]->chunkLen);
+						memcpy(buffer + pointer + this->packetBody[i]->chunkLen, &this->packetBody[i]->chunkLen, 2);
+						pointer += 2 + this->packetBody[i]->chunkLen;
+					}
+					*bufferLen = pointer;
+				}
+
+				void setCommand(enum SVCCommand cmd){
+					//-- set info byte				
+					this->packetHeader[0] |= SVC_COMMAND_FRAME;
+					this->packetHeader[0] |= SVC_URGENT_PRIORITY; 	
+					//-- set extra info byte
+					this->packetHeader[1] = (uint8_t)cmd;				
+				}		
+				// void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
+				// 	memset(&this->srcAddr, 0, sizeof(this->srcAddr));
+				// 	memcpy(&this->srcAddr, srcAddr, addrLen);
+				// 	this->srcAddrLen = addrLen;
+				// }
+				
+				
 		};	
 		
 		typedef void (*SVCPacketProcessing)(SVCPacket* packet, void* args);
-		
-		//-- utils classes
 
 		class SVCPacketReader{
 			NamedPipe* pipe;
@@ -140,7 +184,12 @@
 				while (_this->working){
 					ssize_t dataLen = _this->pipe->read(buffer, SVC_DEFAULT_BUFSIZ);
 					if (dataLen > 0){
-						_this->queue->enqueue(new SVCPacket(buffer, dataLen));
+						try{
+							_this->queue->enqueue(new SVCPacket(buffer, dataLen));		
+						}
+						catch(std::string& e){
+							//-- error packet malformed, log this buffer, or IP address, may be?
+						}
 					}
 				}
 			}
@@ -163,7 +212,6 @@
 				}
 		};
 
-	
 		class SVCPacketHandler{
 		
 			class CommandHandler{
@@ -171,8 +219,8 @@
 					enum SVCCommand cmd;
 					uint64_t endpointID;
 					bool processed;
-					std::mutex waitingMutex;
 					std::condition_variable waitingCond;
+					
 					CommandHandler(){
 						this->processed = false;
 					}
@@ -182,12 +230,15 @@
 			
 			private:
 				SVCPacketProcessing packetHandler;
-				MutexedQueue<SVCPacket*>* readingQueue;
-				volatile bool working;								
 				void* packetHandlerArgs;
+				MutexedQueue<SVCPacket*>* readingQueue;
+
+				volatile bool working;				
 				std::thread processingThread;
 
-				//--	static methods
+				std::mutex commandHandlerRegistraMutex;
+				vector<CommandHandler*> commandHandlerRegistra;
+
 				static void processingLoop(void* args){
 					SVCPacketHandler* _this = (SVCPacketHandler*)args;
 					SVCPacket* packet = NULL;
@@ -203,7 +254,6 @@
 						}
 					}
 				}
-				vector<CommandHandler*> commandHandlerRegistra;
 
 			public:
 				SVCPacketHandler(MutexedQueue<SVCPacket*>* queue, SVCPacketProcessing handler, void* args){
@@ -225,39 +275,46 @@
 					handler->cmd = cmd;
 					handler->endpointID = endpointID;
 					handler->processed = false;
+
+					//-- mutex to protect commandHandlerRegistra
+					this->commandHandlerRegistraMutex.lock();
 					this->commandHandlerRegistra.push_back(handler);
-					
+					this->commandHandlerRegistraMutex.unlock();
+
+					std::mutex waitingMutex;
 					cv_status rs;
 					bool boolRs = false;
-					std::unique_lock<std::mutex> lock(handler->waitingMutex);
+					std::unique_lock<std::mutex> lock(waitingMutex);
 					//-- suspend the calling thread until the correct command is received or the timer expires	
 					if (timeout<0){
-						//-- spurious awake may occur
-						handler->waitingCond.wait(lock);
+						//-- spurious awake may occur, check with working and processed
+						handler->waitingCond.wait(lock, [this]{return !this->working;});
 						boolRs = handler->processed;
 					}
-					else{						
+					else{
 						rs = handler->waitingCond.wait_for(lock, std::chrono::milliseconds(timeout));
 						boolRs = (rs == cv_status::no_timeout);
 					}
-					handler->waitingMutex.unlock();
+					waitingMutex.unlock();
 					delete handler;
 					return boolRs;
 				}
+
 				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
+					this->commandHandlerRegistraMutex.lock();
 					for (int i=0;i<this->commandHandlerRegistra.size(); i++){
 						CommandHandler* handler = this->commandHandlerRegistra[i];
-						if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){														
-							handler->waitingMutex.lock();
+						if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){
 							handler->processed = true;
 							handler->waitingCond.notify_all();
-							handler->waitingMutex.unlock();
 							//-- remove the handler
 							this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);
 							break;
 						}
 					}
+					this->commandHandlerRegistraMutex.unlock();
 				}
+
 				void stopWorking(){
 					this->working = false;
 					this->processingThread.join();

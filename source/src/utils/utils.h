@@ -15,17 +15,34 @@
 	#endif
 
 	namespace utils{
+
+		//-- ERROR DESCRIPTIONS
+		const std::string ERR_PERM = "Error: SVC daemon failed to start. Cannot write config file.";
+		const std::string ERR_NOCONFIG = "Error: SVC daemon failed to start. Config file not valid.";
+		const std::string ERR_NOIMAGE = "Error: SVC daemon failed to start. Image file not valid.";
+		const std::string ERR_PARAM = "Error: bad syntax";
+		const std::string ERR_RUNNING = "Error: SVC daemon is already running.";
+		const std::string ERR_NOT_RUNNING = "Error: SVC daemon is not running.";
+		const std::string ERR_BINDING_SOCKET = "Error: cannot bind socket";
+		const std::string ERR_CONNECT_SOCKET = "Error: cannot connect to socket";
+		const std::string ERR_NOT_SUPPORTED = "Error: not supported";
+		const std::string ERR_NOT_CONNECTED = "Error: endpoint not connected";
+		const std::string ERR_TIMEOUT = "Error: operation timed out";
+		const std::string ERR_NO_MEMORY = "Error: no memory";
+		const std::string ERR_NULL_POINTER = "Error: null pointer deferencing";
+		const std::string ERR_DATA_DAMAGED = "Error: bad data format";
+
 		#ifdef _WIN32
 			const std::string pathSeparator = "\\";
 		#else
 			const std::string pathSeparator = "/";
 		#endif
 
-		std::string tail(const std::string& source, size_t const length) {
+		static std::string tail(const std::string& source, size_t const length) {
 			return (length >= source.size())? source : source.substr(source.size() - length);
 		}
 
-		std::string getCurrentDirectory(bool separator){
+		static std::string getCurrentDirectory(bool separator){
 			std::string result = std::string(getcwd(NULL,0));
 			while (tail(result,1) == pathSeparator){
 				result = result.substr(0, result.size()-1);
@@ -33,7 +50,7 @@
 			return separator? result + pathSeparator : result;
 		}
 
-		std::string getOSTempDirectory(bool separator){
+		static std::string getOSTempDirectory(bool separator){
 			#ifdef _WIN32
 				char buffer[1024];
 				GetTempPath(1024, buffer);
@@ -48,7 +65,7 @@
 			return separator? result + pathSeparator : result;
 		}
 		
-		std::string hexToString(const uint8_t* data, uint32_t len){
+		static std::string hexToString(const uint8_t* data, uint32_t len){
 			char buffer[len*2];
 			memset(buffer, 0, len*2);
 			uint8_t b;
@@ -64,7 +81,7 @@
 			return std::string(buffer, len*2);
 		}
 
-		uint32_t stringToHex(const std::string& hexString, uint8_t* data){
+		static uint32_t stringToHex(const std::string& hexString, uint8_t* data){
 			
 			if (hexString.size()>0){		
 				uint8_t c1;
@@ -95,7 +112,14 @@
 			else{
 				return 0;
 			}
-		}	
+		}
+
+		static void printHexBuffer(const uint8_t* buffer, uint16_t bufferLen){
+			for (int i=0; i<bufferLen; i++){
+				printf("%0.2x ", buffer[i]);
+			}
+			printf("\n");
+		}
 	}
 	
 #endif

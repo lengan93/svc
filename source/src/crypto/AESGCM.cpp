@@ -63,7 +63,7 @@ void AESGCM::mulBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 	
 	for (i = 0; i < 16; i++) {
 		for (j = 0; j < 8; j++) {
-			if (blockXCopy[i] & BIT(7 - j)) {
+			if (blockXCopy[i] & BIT((7 - j))) {
 				//--	Z_(i + 1) = Z_i XOR V_i
 				xorBlock(blockZ, blockZ, blockV);
 			}

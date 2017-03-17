@@ -30,19 +30,17 @@
 
 			bool waitData(int timeout){
 				bool rs;
-				cv_status cv;
-				unique_lock<std::mutex> uLock(waitMutex);
+				std::cv_status cv;
+				std::unique_lock<std::mutex> uLock(waitMutex); //-- this will attemp to lock the mutex
 				this->haveData = false;
 				if (timeout<0){
-					// std::cout<<"waiting for data with timeout = "<<timeout<<endl;
 					//-- spurious awake may occur but we had "haveData" to check this
 					waitCond.wait(uLock, [this]{return !this->working || this->haveData;});
-					// std::cout<<"waiting for data returned, working = "<<this->working<<" and haveData = "<<this->haveData<<endl;
 					rs = this->haveData;
 				}
 				else{
 					cv = waitCond.wait_for(uLock, std::chrono::milliseconds(timeout));
-					rs = (cv == cv_status::no_timeout);
+					rs = (cv == std::cv_status::no_timeout);
 				}
 				this->waitMutex.unlock();
 				return rs;
@@ -60,17 +58,13 @@
 			}
 
 			void close(){
-				// std::cout<<"MutexedQueue close called"<<endl;
 				this->waitMutex.lock();
 				this->working = false;
-				// std::cout<<"MutexedQueue working set to false"<<endl;
 				this->waitMutex.unlock();
-				// std::cout<<"MutexedQueue notify for any waiting thread"<<endl;
 				waitCond.notify_all();
 			}
 		
 			~MutexedQueue(){
-				// std::cout<<"MutexedQueue is being destroyed"<<endl;
 				if (this->working){
 					this->close();
 				}
@@ -78,7 +72,6 @@
 					this->dequeue();
 				}
 				delete this->lastNode;
-				// std::cout<<"MutexedQueue destructor finished"<<endl;
 			}
 			
 			bool notEmpty(){

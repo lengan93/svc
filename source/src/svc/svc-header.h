@@ -10,28 +10,6 @@
 	/*	HTP definitions */
 	#define AF_HTP								AF_PHONET
 	#define PF_HTP								PF_PHONET
-	
-	/*	SVC ERROR DESCRIPTION	*/
-	// #define SVC_ERROR_NAME_EXISTED				"Application is already running"
-	// #define SVC_ERROR_UNEXPECTED_RESPONSE		"Unexpected response"
-	// #define SVC_ERROR_NOT_ESTABLISHED			"Connection not established"
-	// #define SVC_ERROR_REQUEST_TIMEDOUT			"Request timed out"
-	// #define SVC_ERROR_AUTHENTICATION_FAILED		"Authentication failed"
-	// #define SVC_ERROR_CRITICAL					"Critical error"
-	// #define SVC_ERROR_BINDING					"Error binding socket"
-	// #define SVC_ERROR_CONNECTING				"Error connecting socket"	
-	// #define SVC_ERROR_SIGNAL_INTERRUPTED		"Execution interrupted by SIGINT"
-	const std::string ERR_PERM = "Error: svc daemon failed to start. Cannot write config file.";
-	const std::string ERR_NOCONFIG = "Error: svc daemon failed to start. Config file not valid.";
-	const std::string ERR_NOIMAGE = "Error: svc daemon failed to start. Image file not valid.";
-	const std::string ERR_PARAM = "Error: bad syntax";
-	const std::string ERR_RUNNING = "Error: svc daemon is already running.";
-	const std::string ERR_NOT_RUNNING = "Error: svc daemon is not running.";
-	const std::string ERR_BINDING_SOCKET = "Error: cannot bind socket";
-	const std::string ERR_CONNECT_SOCKET = "Error: cannot connect to socket";
-	const std::string ERR_NOT_SUPPORTED = "Error: not supported";
-	const std::string ERR_NOT_CONNECTED = "Error: endpoint not connected";
-	const std::string ERR_TIMEOUT = "Error: operation timed out";
 
 	/*	SVC CONFIG	*/
 	#define SVC_DEFAULT_TIMEOUT 				3000
@@ -42,14 +20,11 @@
 	
 	const std::string SVC_DEFAULT_DAEMON_NAME = "svcdaemon";
 		
-	/*	SVC CONSTANTS' LENGTHS	*/	
-	#define HOST_ADDR_LENGTH			4
-	#define APPID_LENGTH				4
-	#define SEQUENCE_LENGTH				4
+	/*	SVC CONSTANTS' LENGTHS	*/
+	#define INFO_LENGTH					2
 	#define ENDPOINTID_LENGTH			8
-	#define SVC_PACKET_HEADER_LEN		13 //-- SVC_PACKET_HEADER_LEN = 1 (info byte) + ENDPOINTID_LENGTH + SEQUENCE_LENGTH
-	#define	INFO_BYTE					0
-	#define	CMD_BYTE					SVC_PACKET_HEADER_LEN
+	#define SEQUENCE_LENGTH				4
+	#define SVC_PACKET_HEADER_LEN		INFO_LENGTH + ENDPOINTID_LENGTH + SEQUENCE_LENGTH
 	
 	/*	SVC INFO BIT	*/
 	#define SVC_COMMAND_FRAME  					0x80

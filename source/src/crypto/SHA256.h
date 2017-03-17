@@ -1,11 +1,14 @@
 #ifndef __SHA256__
 #define __SHA256__
+
+	#include <cstdint>
+	#include <cstring>
 	
 	class SHA256{		
 	 
 		const static uint32_t sha256_k[];
 		static const uint8_t SHA224_256_BLOCK_SIZE = (512/8);
-		static const unsigned int DIGEST_SIZE = (256 / 8);
+		
 		
 		uint32_t m_tot_len;
 		uint32_t m_len;
@@ -18,9 +21,10 @@
 		void final(uint8_t* digest);
 				
 		public:
+			static const unsigned int DIGEST_SIZE = (256 / 8);
 			SHA256();
 			~SHA256();			
-			std::string hash(std::string input);
+			void hash(const void* input, uint16_t inputLength, uint8_t* output);
 	};	 
 	 
 	#define SHA2_SHFR(x, n)    (x >> n)
