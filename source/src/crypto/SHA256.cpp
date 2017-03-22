@@ -115,7 +115,8 @@ void SHA256::final(uint8_t* digest){
 std::string SHA256::hash(std::string input){
     uint8_t digest[SHA256::DIGEST_SIZE];
     memset(digest,0,SHA256::DIGEST_SIZE);
- 
+    
+    // init();
     update((uint8_t*)input.c_str(), input.length());
     final(digest);
  

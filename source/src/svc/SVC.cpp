@@ -653,6 +653,7 @@ std::string SVCEndpoint::getRemoteIdentity(){
 
 void SVCEndpoint::shutdownEndpoint(){
 	if (!this->shutdownCalled){
+		printf("\nSVC: %d packets sent, %d packets received", sendCounter, recvCounter);
 		printf("\nendpoint shutdown called"); fflush(stdout);
 		this->shutdownCalled = true;
 		//-- send a shutdown packet to daemon
@@ -722,6 +723,9 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
 		packet->setData(data, dataLen);
 		//this->outgoingQueue->enqueue(packet);
 		this->tobesentQueue->enqueue(packet);
+		
+		sendCounter++;
+		
 		return 0;
 	}
 	else{
@@ -734,6 +738,9 @@ int SVCEndpoint::readData(uint8_t* data, uint32_t* len, int timeout){
 		SVCPacket* packet = this->dataholdQueue->dequeueWait(timeout);
 		if (packet!=NULL){
 			packet->extractData(data, len);
+			
+			recvCounter++;
+
 			delete packet;
 			return 0;
 		}

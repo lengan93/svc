@@ -19,6 +19,21 @@
 
 using namespace std;
 
+//-- debug stuff
+int encryptedSentPackets = 0;
+int daemonEpHandledOutPacketCounter = 0;
+
+int readPacketCounter = 0;
+int inetWritePacketCounter = 0;
+int handledPacketCounter = 0;
+int daemonEpHandledInPacketCounter = 0;
+int forwardedToAppPacketCounter = 0;
+int decryptSuccessPackets =0;
+
+ofstream* DecryptLogfile = new ofstream("decryptfailed.log");
+ofstream* EncryptLogfile = new ofstream("rawpackets.log");
+char gap[10] = {0};
+
 //--	class forward declaration
 class DaemonEndpoint;
 
@@ -50,6 +65,7 @@ extern void* daemon_inet_reading_loop(void* args);
 
 class DaemonEndpoint{
 	public:
+
 		//-- static methods
 		static void daemon_endpoint_unix_incoming_packet_handler(SVCPacket* packet, void* args);
 		static void daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* packet, void* args);		
@@ -92,6 +108,7 @@ class DaemonEndpoint{
 		int dmnSocket;
 		struct sockaddr_in remoteAddr;
 		size_t remoteAddrLen;	
+		int f;
 
 		//-- crypto protocol variables
 		pthread_mutex_t stateMutex;
@@ -101,6 +118,8 @@ class DaemonEndpoint{
 		ECCurve* curve;	
 		ECPoint* gxy;
 		SHA256 sha256;
+
+		mutex aesgcmMutex;
 		AESGCM* aesgcm;
 		uint64_t endpointID;
 		uint64_t sendSequence;
@@ -279,6 +298,24 @@ void DaemonEndpoint::shutdownEndpoint(){
 		delete this->curve;
 		this->aesgcm = NULL;
 		this->curve = NULL;
+		// printf("\ndaemon endpoint: %d packets received from client", readPacketCounter);
+		printf("\nHTP: %d inet packets sent, %d inet packets received", daemonHtpSocket->sendCounter, daemonHtpSocket->recvCounter);
+		
+		printf("\n\n========= Sender logs =========");
+		printf("\nHTP: %d packets sent successfully, %d packets resended", 
+			daemonHtpSocket->successReceivedPackets, daemonHtpSocket->resendPackets);
+		printf("\nDaemon endpoint: %d packets encrypted", encryptedSentPackets);
+		printf("\nDaemon endpoint: %d outgoing inet packets handled", daemonEpHandledOutPacketCounter);
+		printf("\n========= /Sender logs =========\n");
+
+		printf("\n\n========= Receiver logs =========");
+		printf("\nDaemon: %d inet packets read", readPacketCounter);
+		printf("\nDaemon: %d recvd inet packets handled", handledPacketCounter);
+		printf("\nDaemon endpoint: %d recvd inet packets handled", daemonEpHandledInPacketCounter);
+		printf("\nDaemon endpoint: %d packets decrypted successfully", decryptSuccessPackets);
+		printf("\nDaemon endpoint: %d recvd packets forwarded to App", forwardedToAppPacketCounter);
+		printf("\n========= /Receiver logs =========\n");
+
 		printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	}
 }
@@ -349,6 +386,8 @@ void DaemonEndpoint::daemon_endpoint_unix_outgoing_packet_handler(SVCPacket* pac
 }
 
 void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* packet, void* args){
+	daemonEpHandledOutPacketCounter++;
+
 	DaemonEndpoint* _this = (DaemonEndpoint*)args;
 	uint8_t infoByte = packet->packet[INFO_BYTE];
 	if ((infoByte & SVC_ENCRYPTED)!=0x00){
@@ -356,8 +395,23 @@ void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* pac
 			//-- encrypt packet before send out
 			_this->sendSequence++;
 			packet->setSequence(_this->sendSequence);
-			_this->encryptPacket(packet);			
+			_this->encryptPacket(packet);
+
+			//JUST FOR TESTING
+			SVCPacket* tmp = new SVCPacket(packet);
+			if((infoByte & SVC_COMMAND_FRAME)==0) {
+				bool rs = _this->decryptPacket(tmp);
+				if(!rs) {
+					printf("sender: failed to decrypt packet %d \n", _this->sendSequence);
+				}
+				else {
+					// printf("decrypted %d \n", _this->sendSequence);
+				}
+			}
+			delete tmp;
+
 			_this->inetToBeSentQueue.enqueue(packet);
+			encryptedSentPackets++;
 		}
 		else{
 			//-- secure connection not yet established, silently discard
@@ -381,6 +435,7 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 			// sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 
 			sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			inetWritePacketCounter++;
 
 			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 			delete packet;
@@ -416,6 +471,7 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 
 	//-- set infoByte
 	packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
+	// logPacket(EncryptLogfile, packet->getSequence(), packet->packet, packet->dataLen);
 	
 	/*//printf("\nencrypt packet with:");
 	//printf("\niv: "); printBuffer(iv, ivLen); fflush(stdout);
@@ -423,7 +479,9 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//printf("\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
 	*/
 	
+	aesgcmMutex.lock();
 	this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
+	aesgcmMutex.unlock();
 	
 	/*//printf("\ngot:");
 	//printf("\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
@@ -435,6 +493,7 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//-- copy tag and tagLen to the end of packet
 	packet->pushCommandParam(tag, tagLen);	
 	
+
 	free(encrypted);
 	free(tag);
 }
@@ -459,7 +518,9 @@ bool DaemonEndpoint::decryptPacket(SVCPacket* packet){
 	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
 	//printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);*/
 	
+	aesgcmMutex.lock();
 	rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
+	aesgcmMutex.unlock();
 	
 	/*//printf("\ngot:");
 	//printf("\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);*/
@@ -482,6 +543,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_reading_loop(void* args){
 		readrs = recv(_this->dmnSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);				
 		if (readrs>0){	
 			_this->unixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
+			// _this->readPacketCounter++;
 			//printf("\ndaemon endpoint unix reads packet:"); printBuffer(buffer, readrs); fflush(stdout);
 		}
 		/*else{
@@ -509,7 +571,7 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 }
 
 void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* packet, void* args){
-	
+	daemonEpHandledInPacketCounter++;
 	uint16_t paramLen;
 	uint8_t param[SVC_DEFAULT_BUFSIZ];	
 	
@@ -525,6 +587,19 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	}
 	
 	if (decryptSuccess){
+		decryptSuccessPackets++;
+		//send htp ack for encrypted packet
+		uint8_t* htp_ack_frame = new uint8_t[HTP_HEADER_LENGTH + packet->dataLen];
+		memcpy(htp_ack_frame + HTP_HEADER_LENGTH, packet->packet, packet->dataLen);
+		HtpPacket* htpPkt = new HtpPacket(htp_ack_frame, packet->dataLen + HTP_HEADER_LENGTH);
+		htpPkt->setSrcAddr(&packet->srcAddr, packet->srcAddrLen);
+		// print track log
+		// printf("send ack for encrypted %d\n", htpPkt->getSequence());
+		daemonHtpSocket->sendACK(htpPkt);
+
+		delete [] htp_ack_frame;
+		delete htpPkt;
+		
 		//printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		//-- check sequence and address to be update
 		if (memcmp(&_this->remoteAddr, &packet->srcAddr, _this->remoteAddrLen)!=0){
@@ -599,10 +674,17 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 		else{
 			//-- forward to app
 			_this->unixOutgoingQueue.enqueue(packet);
+			forwardedToAppPacketCounter++;
 		}
 	}
 	else{
-		//printf("\npacket decrypted failed. removed."); fflush(stdout);
+		uint32_t seq = packet->getSequence();
+		printf("\nfailed to decrypt packet %d", seq); fflush(stdout);
+		// DecryptLogfile->write((char*)&seq, 4);
+		// DecryptLogfile->write((char*)packet->packet, packet->dataLen);
+		// DecryptLogfile->write(gap, 10);
+		// logPacket(DecryptLogfile, seq, packet->packet, packet->dataLen);
+
 		delete packet;
 	}	
 	
@@ -660,8 +742,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				//-- reset beatLiveTime
 				_this->beatUp = true;
 				_this->beatLiveTime = SVC_ENDPOINT_BEAT_LIVETIME;
-				_this->inetOutgoingQueue.enqueue(packet);
-				//delete packet;
+				//_this->inetOutgoingQueue.enqueue(packet);
+				delete packet;
 				break;
 				
 			case SVC_CMD_SHUTDOWN_ENDPOINT:				
@@ -1052,6 +1134,7 @@ void* daemon_inet_reading_loop(void* args){
 			packet = new SVCPacket(buffer, readrs);
 			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
 			daemonInetIncomingQueue.enqueue(packet);
+			readPacketCounter++;
 			//printf("."); fflush(stdout);
 		}
 	}
@@ -1145,7 +1228,7 @@ void daemon_unix_incoming_packet_handler(SVCPacket* packet, void* args){
 }
 
 void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
-
+	handledPacketCounter++;
 	static uint8_t param[SVC_DEFAULT_BUFSIZ] = "";
 	static uint16_t paramLen;
 	

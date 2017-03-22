@@ -31,6 +31,7 @@ float timeDistance(const struct timespec* greater, const struct timespec* smalle
 int main(int argc, char** argv){
 
 	int RETRY_TIME = atoi(argv[2]);
+	// int counter = 0;
 
 	if (argc>1){
 		string appID = string("SEND_FILE_APP");
@@ -70,6 +71,7 @@ int main(int argc, char** argv){
 						memcpy(buffer+1+4, (uint8_t*)fileName.c_str(), fileName.size());
 						for (int i=0;i<RETRY_TIME;i++){
 							endpoint->sendData(buffer, 1+4+fileName.size());
+							// counter++;
 						}						
 				
 						//-- then send the content
@@ -85,6 +87,7 @@ int main(int argc, char** argv){
 								}
 
 								endpoint->sendData(buffer, blocsize+1);
+								// counter++;
 							}													
 							bigFile.close();
 						}
@@ -93,12 +96,14 @@ int main(int argc, char** argv){
 						buffer[0] = 0x03;
 						for (int i=0;i<RETRY_TIME;i++){
 							endpoint->sendData(buffer, 1);
+							// counter++;
 						}
 						buffer[0] = 0x00;
 						
 						//-- read to check that server send terminating signal
 						clock_gettime(CLOCK_REALTIME, &echelon);
 						printf("\n[%0.2f] All data sent, waiting ACK", timeDistance(&echelon, &startingTime)); fflush(stdout);
+						// printf("\n%d packets sent", counter); fflush(stdout);
 						bool fileSent = false;
 						do{
 							if (endpoint->readData(buffer, &bufferSize, 1000) == 0){

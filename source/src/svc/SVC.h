@@ -25,8 +25,11 @@
 	class SVCEndpoint{				
 		friend class SVC;
 
-		private:			
-		
+		private:
+			// for debug only			
+			int sendCounter = 0;
+			int recvCounter = 0;
+
 			SVC* svc;
 			bool isInitiator;
 			bool isAuth;

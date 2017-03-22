@@ -66,6 +66,10 @@
 			void setSequence(uint64_t sequence){
 				memcpy(this->packet+1+ENDPOINTID_LENGTH, &sequence, SEQUENCE_LENGTH);
 			}
+
+			uint32_t getSequence(){
+				return *((uint32_t*)(this->packet+1+ENDPOINTID_LENGTH));
+			}
 			
 			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
 				memset(&this->srcAddr, 0, sizeof(this->srcAddr));
