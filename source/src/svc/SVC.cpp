@@ -460,7 +460,7 @@ void* SVCEndpoint::svc_endpoint_writing_loop(void* args){
 	SVCPacket* packet;
 	while (_this->working /*|| _this->outgoingQueue.notEmpty()*/ || _this->tobesentQueue->notEmpty()){
 		//packet = _this->tobesentQueue->dequeueWait(1000);
-		if (_this->tobesentQueue->peakWait(&packet, -1)){		
+		if (_this->tobesentQueue->peakWait(&packet, 1000)){		
 			//-- send this packet to underlayer
 			sendrs = send(_this->sock, packet->packet, packet->dataLen, 0);
 			//printf("\nsvc endpoint write packet %d, error %d:  ", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
@@ -676,12 +676,14 @@ void SVCEndpoint::shutdownEndpoint(){
 		//-- do not receive data anymore
 		shutdown(this->sock, SHUT_RD);
 		if (this->readingThread !=0) {
+			printf("1\n");
 			joinrs = pthread_join(this->readingThread, NULL);
 		}
 	
 		//-- process residual packets
 		if (this->incomingPacketHandler != NULL){
 			this->incomingPacketHandler->stopWorking();
+			printf("2\n");
 			joinrs = this->incomingPacketHandler->waitStop();
 			delete this->incomingPacketHandler;
 		}
@@ -695,7 +697,9 @@ void SVCEndpoint::shutdownEndpoint(){
 		//-- stop writing
 		shutdown(this->sock, SHUT_WR);
 		if (this->writingThread !=0) {
+			printf("3\n");
 			joinrs = pthread_join(this->writingThread, NULL);			
+			printf("4\n");
 		}			
 		close(this->sock);
 	

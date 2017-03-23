@@ -178,7 +178,7 @@ void* HtpSocket::htp_ack_handler(void* args) {
 				}
 				else if(ack > seq){
 					//ack > seq : packet might be lost, resend it and go to the next packet
-					_this->outGoingPackets.insert(packet);
+					// _this->outGoingPackets.insert(packet);
 					_this->resendPackets++;
 					// printf("resend %d\n", seq);
 					// pktIt = _this->waitingACKPacketList.erase(pktIt);
@@ -209,6 +209,7 @@ issue: how to detect it's sent from the right sender ??
 void HtpSocket::sendACK(HtpPacket* packet) {
 	// print track log
 	// printBuffer(packet->packet, HTP_PACKET_MINLEN);
+	
 	if(packet->checkLength()) {
 		// print track log
 		// printf("sending ack %d: \n", packet->getSequence());
@@ -258,13 +259,15 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 	htp_frame[0] = HTP_DATA;
  	// memcpy(htp_frame + 1, &currentSeq, HTP_SEQUENCE_LENGTH);
 	memcpy(htp_frame + HTP_HEADER_LENGTH, msg, len);
+	
+	// -- simple send
+	// return ::sendto(UDPSocket, htp_frame, len+HTP_HEADER_LENGTH, flags, to, tolen);
 
 	//create a htp packet
 	HtpPacket* packet = new HtpPacket(htp_frame, HTP_HEADER_LENGTH + len);
 	packet->setDstAddr((sockaddr_storage*)to, tolen);
 	// packet->setSequence(currentSeq);
 	// currentSeq++;
-	// return ::sendto(UDPSocket, htp_frame, len, flags, to, tolen);
 
 	/*check if the packet requires delivery ganrantee*/
 	if(packet->nolost()) {
@@ -290,6 +293,7 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 
 	// printf("htp_recvfrom\n");
 	// static int recvCounter = 0;
+
 	int r = 0;
 
 	HtpPacket* packet = inComingQueue.dequeueWait(1000);
@@ -308,6 +312,7 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 	}
 	return r;
 
+	//-- simple receive
 	// int frame_len = len + HTP_HEADER_LENGTH;
 	// uint8_t* htp_frame = new uint8_t[frame_len];
 
@@ -315,6 +320,7 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 	// if (r > HTP_HEADER_LENGTH) {
 	// 	//check if it's data packet or control packet
 	// 	memcpy(buf, htp_frame + HTP_HEADER_LENGTH, r - HTP_HEADER_LENGTH);
+	// 	printf("r\n");
 	// 	return r - HTP_HEADER_LENGTH;
 	// }
 
