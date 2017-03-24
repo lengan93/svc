@@ -398,17 +398,17 @@ void DaemonEndpoint::daemon_endpoint_inet_outgoing_packet_handler(SVCPacket* pac
 			_this->encryptPacket(packet);
 
 			//JUST FOR TESTING
-			SVCPacket* tmp = new SVCPacket(packet);
-			if((infoByte & SVC_COMMAND_FRAME)==0) {
-				bool rs = _this->decryptPacket(tmp);
-				if(!rs) {
-					printf("sender: failed to decrypt packet %d \n", _this->sendSequence);
-				}
-				else {
-					// printf("decrypted %d \n", _this->sendSequence);
-				}
-			}
-			delete tmp;
+			// SVCPacket* tmp = new SVCPacket(packet);
+			// if((infoByte & SVC_COMMAND_FRAME)==0) {
+			// 	bool rs = _this->decryptPacket(tmp);
+			// 	if(!rs) {
+			// 		printf("sender: failed to decrypt packet %d \n", _this->sendSequence);
+			// 	}
+			// 	else {
+			// 		// printf("decrypted %d \n", _this->sendSequence);
+			// 	}
+			// }
+			// delete tmp;
 
 			_this->inetToBeSentQueue.enqueue(packet);
 			encryptedSentPackets++;
@@ -680,6 +680,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	else{
 		uint32_t seq = packet->getSequence();
 		printf("\nfailed to decrypt packet %d", seq); fflush(stdout);
+		daemonHtpSocket->sendNACK(seq);
 		// DecryptLogfile->write((char*)&seq, 4);
 		// DecryptLogfile->write((char*)packet->packet, packet->dataLen);
 		// DecryptLogfile->write(gap, 10);

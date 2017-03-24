@@ -47,6 +47,25 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 
 // }
 
+bool HtpSocket::checkSequence(uint32_t seq) {
+	if(seq > biggestSeq) {
+		for (uint32_t i = biggestSeq+1; i < seq; ++i)
+		{
+			missingPackets.insert(i);
+		}
+		biggestSeq = seq;
+		return true;
+	}
+	else {
+		set<uint32_t>::iterator it = missingPackets.find(seq);
+		if(it == missingPackets.end()) {
+			return false;
+		}
+		missingPackets.erase(it);
+		return true;
+	}
+}
+
 void* HtpSocket::htp_reading_loop(void* args) {
 	//TODO: listen to the socket and enqueue every packet received to incoming queue
 
@@ -64,13 +83,20 @@ void* HtpSocket::htp_reading_loop(void* args) {
 		packet->packetLen = readbytes;
 		
 		if(packet->checkLength()) {
-			// print track log
-			// printf("receive packet    %d(%d): ", packet->getSequence(), packet->packetLen);
-			// printBuffer(packet->packet, HTP_PACKET_MINLEN);
-
+			
 			switch (packet->packet[0]) {
 				case HTP_DATA:
-				
+					
+					if(!_this->checkSequence(packet->getSequence())) {
+						_this->sendACK(packet);
+						delete packet;
+						break;
+					}
+
+					// print track log
+					printf("receive data packet %d(%d): \n", packet->getSequence(), packet->packetLen);
+					// printBuffer(packet->packet, HTP_PACKET_MINLEN);
+
 					_this->inComingQueue.enqueue(packet);
 
 					if(!packet->isEncrypted()) {
@@ -123,7 +149,7 @@ void* HtpSocket::htp_writing_loop(void* args) {
 				_this->outGoingSetMutex.unlock();
 
 				// print track log
-				// printf("send packet    %d: ", packet->getSequence());
+				printf("send packet %d\n", packet->getSequence());
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
 					(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
@@ -160,7 +186,7 @@ void* HtpSocket::htp_ack_handler(void* args) {
 		if(ackPkt != NULL) {
 			ack = ackPkt->getSequence();
 			// print track log
-			// printf("receive ack of %d\n", ack);
+			printf("receive ack of %d\n", ack);
 
 			// THIS ALGORITHM MIGHT BE WRONG
 			
@@ -178,9 +204,9 @@ void* HtpSocket::htp_ack_handler(void* args) {
 				}
 				else if(ack > seq){
 					//ack > seq : packet might be lost, resend it and go to the next packet
-					// _this->outGoingPackets.insert(packet);
+					_this->outGoingPackets.insert(packet);
 					_this->resendPackets++;
-					// printf("resend %d\n", seq);
+					printf("resend ---------------- %d\n", seq);
 					// pktIt = _this->waitingACKPacketList.erase(pktIt);
 					// print track log
 					// printf("lose packet           %d\n", seq);
@@ -203,13 +229,15 @@ void* HtpSocket::htp_ack_handler(void* args) {
 		}
 	}
 }
+
 /*
 issue: how to detect it's sent from the right sender ??
 */
 void HtpSocket::sendACK(HtpPacket* packet) {
+	// return ;
+	
 	// print track log
 	// printBuffer(packet->packet, HTP_PACKET_MINLEN);
-	
 	if(packet->checkLength()) {
 		// print track log
 		// printf("sending ack %d: \n", packet->getSequence());
@@ -237,6 +265,11 @@ void HtpSocket::sendACK(HtpPacket* packet) {
 // 	this->outGoingPackets.enqueue(ack_packet);
 // }
 
+void HtpSocket::sendNACK(uint32_t seq) {
+	this->missingPackets.insert(seq);
+}
+
+
 //======== HTP INTERFACE ==========
 int HtpSocket::bind(struct sockaddr *my_addr, socklen_t addrlen) {
 	printf("htp_bind\n");
@@ -249,6 +282,8 @@ int HtpSocket::close() {
 }
 
 int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) {
+	// return ::sendto(UDPSocket, msg, len, flags, to, tolen);
+
 	if(msg == NULL || len == 0) {
 		return -1;
 	}
@@ -289,6 +324,8 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 }
 
 int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen) {
+	// return ::recvfrom(UDPSocket, buf, len, flags, from, fromlen);
+
 	// TODO: get the first data packet from the incoming queue
 
 	// printf("htp_recvfrom\n");

@@ -54,9 +54,10 @@ int main(int argc, char** argv){
 				int blocs = 0;
 
 				//-- try to read file size and name from the first message				
-				
+				int trytimes = 0;
 				while (!fileReceived){
 					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
+						trytimes = 0;
 						switch (buffer[0]){
 							case 0x01:
 								if (!headerReceived){
@@ -82,31 +83,37 @@ int main(int argc, char** argv){
 								}
 								break;
 								
-							case 0x03:
-								if (!fileReceived){
-									fileReceived = true;
-
-									myFile->close();
-
-									if (fileSize>0){
-										printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
-										printf("\nblocs = %d", blocs);
-									}
-									else{
-										printf("\nEmpty file received");
-									}
-								}												
-								//printf("\nsend back 0x03"); fflush(stdout);
-								for (int i=0; i<RETRY_TIME; i++){
-									buffer[1]=0xFF;						
-									endpoint->sendData(buffer, 2);
-									//printf(".");
-								}
-								fflush(stdout);
-								break;
+							// case 0x03:
+								
 								
 							default:
 								break;
+						}
+					}
+					else {
+						trytimes++;
+						if(trytimes >= 3) {
+							if (!fileReceived){
+								fileReceived = true;
+
+								myFile->close();
+
+								if (fileSize>0){
+									printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
+									printf("\nblocs = %d", blocs);
+								}
+								else{
+									printf("\nEmpty file received");
+								}
+							}												
+							//printf("\nsend back 0x03"); fflush(stdout);
+							for (int i=0; i<RETRY_TIME; i++){
+								buffer[1]=0xFF;						
+								endpoint->sendData(buffer, 2);
+								//printf(".");
+							}
+							fflush(stdout);
+							break;
 						}
 					}
 				}

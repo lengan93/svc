@@ -21,9 +21,7 @@ class HtpSocket {
 	
 	private:
 
-		int UDPSocket;
-	
-		~HtpSocket();
+		int UDPSocket;	
 		
 		// static ssize_t sendto(/*int sockfd*/ HtpSocket* socket, const void *buf);
 
@@ -32,7 +30,7 @@ class HtpSocket {
 		// MutexedQueue<HtpPacket*> waitingACKPacketQueue;		//buffer of sent packets, used in case resend a lost packet
 		std::list<HtpPacket*> waitingACKPacketList;		//buffer of sent packets, used in case resend a lost packet
 		MutexedQueue<HtpPacket*> receivedACKQueue;		//buffer of received ACK messages
-		MutexedQueue<uint32_t*> missingQueue;	//buffer of lost packets (presented by sequence number)
+		set<uint32_t> missingPackets;	//buffer of lost packets (presented by sequence number)
 
 		set<HtpPacket*, HtpPacketComparator> outGoingPackets;
 		MutexedQueue<HtpPacket*> inComingQueue;
@@ -45,7 +43,9 @@ class HtpSocket {
 		static void* htp_reading_loop(void* args);
 		static void* htp_writing_loop(void* args);
 
-		// uint32_t currentSeq;							//Sequence counter
+		bool checkSequence(uint32_t seq);
+
+		uint32_t biggestSeq = 0; //the biggest sequence number received
 
 
 
@@ -71,6 +71,10 @@ class HtpSocket {
 		int recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen);
 
 		void sendACK(HtpPacket* packet);
+		
+		void sendNACK(uint32_t seq);
+		
+		~HtpSocket();
 };
 
 #endif
