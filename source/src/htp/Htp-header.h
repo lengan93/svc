@@ -10,12 +10,12 @@
 #include <mutex>
 #include "../svc/svc-header.h"
 
-#define SENT_BUFFER_MAX_SIZE 50
+#define SENT_WINDOW_MAX_SIZE 50
 
-#define HTP_HEADER_LENGTH 1
-// #define HTP_SEQUENCE_LENGTH 4
+#define HTP_HEADER_LENGTH 5 // 1 byte flag + 4 bytes sequence
+#define HTP_SEQUENCE_LENGTH 4
 
-#define HTP_PACKET_MINLEN 14 //(1+1+ENDPOINTID_LENGTH+SEQUENCE_LENGTH)
+#define HTP_PACKET_MINLEN 5 //(1+1+ENDPOINTID_LENGTH+SEQUENCE_LENGTH)
 
 #define HTP_DEFAULT_BUFSIZ 65556
 

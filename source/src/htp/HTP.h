@@ -27,13 +27,15 @@ class HtpSocket {
 
 		mutex waitingACKListMutex;
 		mutex outGoingSetMutex;
+		mutex inComingBufferMutex;
+
 		// MutexedQueue<HtpPacket*> waitingACKPacketQueue;		//buffer of sent packets, used in case resend a lost packet
 		std::list<HtpPacket*> waitingACKPacketList;		//buffer of sent packets, used in case resend a lost packet
 		MutexedQueue<HtpPacket*> receivedACKQueue;		//buffer of received ACK messages
 		set<uint32_t> missingPackets;	//buffer of lost packets (presented by sequence number)
 
 		set<HtpPacket*, HtpPacketComparator> outGoingPackets;
-		MutexedQueue<HtpPacket*> inComingQueue;
+		set<HtpPacket*, HtpPacketComparator> inComingQueue;
 
 		pthread_t htp_reading_thread;
 		pthread_t htp_writing_thread;
@@ -47,7 +49,8 @@ class HtpSocket {
 
 		uint32_t biggestSeq = 0; //the biggest sequence number received
 
-
+		uint32_t currentSeq = 1;
+		uint32_t receiverWindowLeftSideSeq = 1;
 
 	public:
 		int sendCounter = 0;
@@ -72,7 +75,7 @@ class HtpSocket {
 
 		void sendACK(HtpPacket* packet);
 		
-		void sendNACK(uint32_t seq);
+		void sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tolen);
 		
 		~HtpSocket();
 };

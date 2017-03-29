@@ -588,17 +588,17 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	
 	if (decryptSuccess){
 		decryptSuccessPackets++;
-		//send htp ack for encrypted packet
-		uint8_t* htp_ack_frame = new uint8_t[HTP_HEADER_LENGTH + packet->dataLen];
-		memcpy(htp_ack_frame + HTP_HEADER_LENGTH, packet->packet, packet->dataLen);
-		HtpPacket* htpPkt = new HtpPacket(htp_ack_frame, packet->dataLen + HTP_HEADER_LENGTH);
-		htpPkt->setSrcAddr(&packet->srcAddr, packet->srcAddrLen);
-		// print track log
-		// printf("send ack for encrypted %d\n", htpPkt->getSequence());
-		daemonHtpSocket->sendACK(htpPkt);
+		// //send htp ack for encrypted packet
+		// uint8_t* htp_ack_frame = new uint8_t[HTP_HEADER_LENGTH + packet->dataLen];
+		// memcpy(htp_ack_frame + HTP_HEADER_LENGTH, packet->packet, packet->dataLen);
+		// HtpPacket* htpPkt = new HtpPacket(htp_ack_frame, packet->dataLen + HTP_HEADER_LENGTH);
+		// htpPkt->setSrcAddr(&packet->srcAddr, packet->srcAddrLen);
+		// // print track log
+		// // printf("send ack for encrypted %d\n", htpPkt->getSequence());
+		// daemonHtpSocket->sendACK(htpPkt);
 
-		delete [] htp_ack_frame;
-		delete htpPkt;
+		// delete [] htp_ack_frame;
+		// delete htpPkt;
 		
 		//printf("\ndaemon inet incoming: packet after decrypt: "); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
 		//-- check sequence and address to be update
@@ -680,7 +680,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 	else{
 		uint32_t seq = packet->getSequence();
 		printf("\nfailed to decrypt packet %d", seq); fflush(stdout);
-		daemonHtpSocket->sendNACK(seq);
+		// daemonHtpSocket->sendNACK(seq, (struct sockaddr *) &_this->remoteAddr, _this->remoteAddrLen);
 		// DecryptLogfile->write((char*)&seq, 4);
 		// DecryptLogfile->write((char*)packet->packet, packet->dataLen);
 		// DecryptLogfile->write(gap, 10);
@@ -830,7 +830,9 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				}				
 				break;
 			
-			case SVC_CMD_CONNECT_INNER3:			
+			case SVC_CMD_CONNECT_INNER3:	
+				printf("SVC_CMD_CONNECT_INNER3\n");
+
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER3){					
 					//-- app responded with CONNECT_INNER3, now can connect to app socket
@@ -932,7 +934,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						delete ecpoint;	
 					
 						aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
-					
+						
+						printf("SVC_CMD_CONNECT_INNER3 -> SVC_CMD_CONNECT_OUTER2\n");
 						//-- switch command
 						packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
 						//-- attach Ey(gy) to packet
@@ -1294,7 +1297,8 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 							break;
 						}
 						appID = *((uint32_t*)param);					
-					
+						
+						printf("SVC_CMD_CONNECT_OUTER1 -> SVC_CMD_CONNECT_INNER2\n");
 						//-- send the packet to the corresponding app
 						packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
 						appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);

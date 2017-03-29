@@ -676,14 +676,12 @@ void SVCEndpoint::shutdownEndpoint(){
 		//-- do not receive data anymore
 		shutdown(this->sock, SHUT_RD);
 		if (this->readingThread !=0) {
-			printf("1\n");
 			joinrs = pthread_join(this->readingThread, NULL);
 		}
 	
 		//-- process residual packets
 		if (this->incomingPacketHandler != NULL){
 			this->incomingPacketHandler->stopWorking();
-			printf("2\n");
 			joinrs = this->incomingPacketHandler->waitStop();
 			delete this->incomingPacketHandler;
 		}
@@ -697,9 +695,7 @@ void SVCEndpoint::shutdownEndpoint(){
 		//-- stop writing
 		shutdown(this->sock, SHUT_WR);
 		if (this->writingThread !=0) {
-			printf("3\n");
 			joinrs = pthread_join(this->writingThread, NULL);			
-			printf("4\n");
 		}			
 		close(this->sock);
 	

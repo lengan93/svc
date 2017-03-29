@@ -87,6 +87,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 			switch (packet->packet[0]) {
 				case HTP_DATA:
 					
+					//-- what if the packet has a faked seq? 
 					if(!_this->checkSequence(packet->getSequence())) {
 						_this->sendACK(packet);
 						delete packet;
@@ -97,13 +98,15 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					printf("receive data packet %d(%d): \n", packet->getSequence(), packet->packetLen);
 					// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
-					_this->inComingQueue.enqueue(packet);
+					_this->inComingBufferMutex.lock();
+					_this->inComingQueue.insert(packet);
+					_this->inComingBufferMutex.unlock();
 
-					if(!packet->isEncrypted()) {
+					// if(!packet->isEncrypted()) {
 						// print track log
 						// printf("send ack for %d\n", packet->getSequence());
 						_this->sendACK(packet);
-					}
+					// }
 
 					break;
 
@@ -179,7 +182,7 @@ void* HtpSocket::htp_ack_handler(void* args) {
 	uint32_t ack;
 	uint32_t seq;
 	ofstream* logfile = new ofstream("lostpacket.log");
-	char gap[10] = {0};
+	// char gap[10] = {0};
 	while(1) {
 		ackPkt = _this->receivedACKQueue.dequeueWait(1000);
 
@@ -196,6 +199,7 @@ void* HtpSocket::htp_ack_handler(void* args) {
 				packet = *pktIt;
 				seq = packet->getSequence();
 				if(ack == seq) {
+					//-- check source address
 					pktIt = _this->waitingACKPacketList.erase(pktIt);
 					delete packet;
 					_this->successReceivedPackets++;
@@ -244,7 +248,7 @@ void HtpSocket::sendACK(HtpPacket* packet) {
 		int ackLen = HTP_PACKET_MINLEN;
 		uint8_t htp_frame[ackLen];
 		htp_frame[0] = HTP_ACK;
-		memcpy(htp_frame+2, packet->packet + 2, ackLen-2);
+		memcpy(htp_frame+1, packet->packet + 1, ackLen-1);
 
 		HtpPacket* ack_packet = new HtpPacket(htp_frame, ackLen);
 		ack_packet->setDstAddr(&(packet->srcAddr), packet->srcAddrLen);
@@ -265,7 +269,7 @@ void HtpSocket::sendACK(HtpPacket* packet) {
 // 	this->outGoingPackets.enqueue(ack_packet);
 // }
 
-void HtpSocket::sendNACK(uint32_t seq) {
+void HtpSocket::sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tolen) {
 	this->missingPackets.insert(seq);
 }
 
@@ -301,8 +305,8 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 	//create a htp packet
 	HtpPacket* packet = new HtpPacket(htp_frame, HTP_HEADER_LENGTH + len);
 	packet->setDstAddr((sockaddr_storage*)to, tolen);
-	// packet->setSequence(currentSeq);
-	// currentSeq++;
+	packet->setSequence(currentSeq);
+	currentSeq++;
 
 	/*check if the packet requires delivery ganrantee*/
 	if(packet->nolost()) {
@@ -333,20 +337,35 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 
 	int r = 0;
 
-	HtpPacket* packet = inComingQueue.dequeueWait(1000);
+	inComingBufferMutex.lock();
+	if(!inComingQueue.empty()) {
+		set<HtpPacket*, HtpPacketComparator>::iterator it = (inComingQueue.begin());
+		HtpPacket* packet = *it;
+		if(packet->getSequence() != receiverWindowLeftSideSeq) {
+			inComingBufferMutex.unlock();
+			return 0;
+		}
+		inComingQueue.erase(it);
+		inComingBufferMutex.unlock();
+		receiverWindowLeftSideSeq++;
 
-	if(packet != NULL && packet->isData()) {
-		r = packet->packetLen - HTP_HEADER_LENGTH;
-		memcpy(buf, packet->packet + HTP_HEADER_LENGTH, r);
-		*fromlen = packet->srcAddrLen;
-		memset(from, 0, sizeof(*from));
-		memcpy(from, &(packet->srcAddr), packet->srcAddrLen);
+		if(packet != NULL && packet->isData()) {
+			r = packet->packetLen - HTP_HEADER_LENGTH;
+			memcpy(buf, packet->packet + HTP_HEADER_LENGTH, r);
+			*fromlen = packet->srcAddrLen;
+			memset(from, 0, sizeof(*from));
+			memcpy(from, &(packet->srcAddr), packet->srcAddrLen);
 
-		recvCounter++;
-		// printf("%dth received, seq=%d\n", ++recvCounter, packet->getSequence());
+			recvCounter++;
+			// printf("%dth received, seq=%d\n", ++recvCounter, packet->getSequence());
 
-		delete packet;
+			delete packet;
+		}
 	}
+	else {
+		inComingBufferMutex.unlock();
+	}
+	
 	return r;
 
 	//-- simple receive
