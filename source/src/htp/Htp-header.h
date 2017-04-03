@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <list>
 #include <set>
+#include <unordered_set>
 #include <mutex>
 #include "../svc/svc-header.h"
 
@@ -24,6 +25,8 @@
 // HTP Info byte
 #define HTP_DATA	0x80
 #define HTP_ACK		0x40
-#define HTP_NACK	0X20
+#define HTP_NACK	0x20
+
+#define HTP_SEND_TIMEOUT 1000 //in ms
 
 #endif

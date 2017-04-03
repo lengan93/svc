@@ -38,9 +38,13 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 		throw;
 	}
 
-	if (pthread_create(&htp_ack_handle_thread, &attr, htp_ack_handler, this) != 0){
+	if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
 		throw;
 	}
+
+	// if (pthread_create(&htp_ack_handle_thread, &attr, htp_ack_handler, this) != 0){
+	// 	throw;
+	// }
 }
 
 // HtpSocket::HtpSocket(size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
@@ -112,7 +116,26 @@ void* HtpSocket::htp_reading_loop(void* args) {
 
 				case HTP_ACK:
 					// printf("%d sent success\n", packet->getSequence());
-					_this->receivedACKQueue.enqueue(packet);
+					// _this->receivedACKQueue.enqueue(packet);
+
+					printf("received ACK of packet %d\n", packet->getSequence());
+
+					/* TODO: remove the packet acked in the waiting queue */
+					_this->waitingACKListMutex.lock();
+					{
+						auto it = _this->waitingACKPacketList.find(packet); 
+						if(it != _this->waitingACKPacketList.end()) {
+							HtpPacket* tmp = *it;
+							_this->waitingACKPacketList.erase(it);
+							printf("delete packet %d from waitingACKPacketList\n", tmp->getSequence());
+							delete tmp;
+							_this->successReceivedPackets++;
+						}
+					}
+					_this->waitingACKListMutex.unlock();
+
+					delete packet;
+
 					break;
 
 				case HTP_NACK:
@@ -154,6 +177,11 @@ void* HtpSocket::htp_writing_loop(void* args) {
 				// print track log
 				printf("send packet %d\n", packet->getSequence());
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
+
+				if(packet->isData() && packet->nolost()) {
+					packet->setTimestamp();
+				}
+
 				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
 					(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
 				// if(packet->isData()) {
@@ -174,64 +202,87 @@ void* HtpSocket::htp_writing_loop(void* args) {
 	}
 }
 
-void* HtpSocket::htp_ack_handler(void* args) {
+
+void* HtpSocket::htp_retransmission_loop(void* args) {
 	HtpSocket* _this = (HtpSocket*) args;
 
-	HtpPacket* ackPkt;
-	HtpPacket* packet;
-	uint32_t ack;
-	uint32_t seq;
-	ofstream* logfile = new ofstream("lostpacket.log");
-	// char gap[10] = {0};
 	while(1) {
-		ackPkt = _this->receivedACKQueue.dequeueWait(1000);
-
-		if(ackPkt != NULL) {
-			ack = ackPkt->getSequence();
-			// print track log
-			printf("receive ack of %d\n", ack);
-
-			// THIS ALGORITHM MIGHT BE WRONG
-			
-			_this->waitingACKListMutex.lock();
-			std::list<HtpPacket*>::iterator pktIt=_this->waitingACKPacketList.begin(); 
-			while(pktIt!=_this->waitingACKPacketList.end()) {
-				packet = *pktIt;
-				seq = packet->getSequence();
-				if(ack == seq) {
-					//-- check source address
-					pktIt = _this->waitingACKPacketList.erase(pktIt);
-					delete packet;
-					_this->successReceivedPackets++;
-					// print track log
-					// printf("send success   %d\n", seq);
-				}
-				else if(ack > seq){
-					//ack > seq : packet might be lost, resend it and go to the next packet
+		_this->waitingACKListMutex.lock();
+		if(!_this->waitingACKPacketList.empty()) {
+			for(auto packet : _this->waitingACKPacketList) {
+				if(packet->timeout()) {
+					packet->setTimestamp();
+					printf("resend ---------------- %d\n", packet->getSequence());
+					_this->outGoingSetMutex.lock();
 					_this->outGoingPackets.insert(packet);
+					_this->outGoingSetMutex.unlock();
 					_this->resendPackets++;
-					printf("resend ---------------- %d\n", seq);
-					// pktIt = _this->waitingACKPacketList.erase(pktIt);
-					// print track log
-					// printf("lose packet           %d\n", seq);
-					// logfile->write((char*)&seq, 4);
-					// logfile->write((char*)packet->packet, packet->packetLen);
-					// logfile->write(gap, 10);
-					// logPacket(logfile, seq, packet->packet, packet->packetLen);
-
-					pktIt++;
-					continue;
 				}
-				else {
-					//invalid ack
-				}
-
-				delete ackPkt;
-				break;
 			}
-			_this->waitingACKListMutex.unlock();
 		}
+		_this->waitingACKListMutex.unlock();
 	}
+}
+
+
+void* HtpSocket::htp_ack_handler(void* args) {
+	// HtpSocket* _this = (HtpSocket*) args;
+
+	// HtpPacket* ackPkt;
+	// HtpPacket* packet;
+	// uint32_t ack;
+	// uint32_t seq;
+	// ofstream* logfile = new ofstream("lostpacket.log");
+	// // char gap[10] = {0};
+	// while(1) {
+	// 	ackPkt = _this->receivedACKQueue.dequeueWait(1000);
+
+	// 	if(ackPkt != NULL) {
+	// 		ack = ackPkt->getSequence();
+	// 		// print track log
+	// 		printf("receive ack of %d\n", ack);
+
+	// 		// THIS ALGORITHM MIGHT BE WRONG
+			
+	// 		_this->waitingACKListMutex.lock();
+	// 		auto pktIt=_this->waitingACKPacketList.begin(); 
+	// 		while(pktIt!=_this->waitingACKPacketList.end()) {
+	// 			packet = *pktIt;
+	// 			seq = packet->getSequence();
+	// 			if(ack == seq) {
+	// 				//-- check source address
+	// 				pktIt = _this->waitingACKPacketList.erase(pktIt);
+	// 				delete packet;
+	// 				_this->successReceivedPackets++;
+	// 				// print track log
+	// 				// printf("send success   %d\n", seq);
+	// 			}
+	// 			else if(ack > seq){
+	// 				//ack > seq : packet might be lost, resend it and go to the next packet
+	// 				_this->outGoingPackets.insert(packet);
+	// 				_this->resendPackets++;
+	// 				printf("resend ---------------- %d\n", seq);
+	// 				// pktIt = _this->waitingACKPacketList.erase(pktIt);
+	// 				// print track log
+	// 				// printf("lose packet           %d\n", seq);
+	// 				// logfile->write((char*)&seq, 4);
+	// 				// logfile->write((char*)packet->packet, packet->packetLen);
+	// 				// logfile->write(gap, 10);
+	// 				// logPacket(logfile, seq, packet->packet, packet->packetLen);
+
+	// 				pktIt++;
+	// 				continue;
+	// 			}
+	// 			else {
+	// 				//invalid ack
+	// 			}
+
+	// 			delete ackPkt;
+	// 			break;
+	// 		}
+	// 		_this->waitingACKListMutex.unlock();
+	// 	}
+	// }
 }
 
 /*
@@ -311,8 +362,12 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 	/*check if the packet requires delivery ganrantee*/
 	if(packet->nolost()) {
 		// waitingACKPacketList.enqueue(packet);
+
+		// set timestamp here to prevent instant retransmission
+		packet->setTimestamp();
+
 		waitingACKListMutex.lock();
-		waitingACKPacketList.push_back(packet);
+		waitingACKPacketList.insert(packet);
 		waitingACKListMutex.unlock();
 	}
 	//enqueue the packet to the outgoing queue

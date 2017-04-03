@@ -3,6 +3,8 @@
 
 #include "Htp-header.h"
 
+using namespace std::chrono;
+
 class HtpPacket{
 	public:
 		//-- public members
@@ -14,6 +16,8 @@ class HtpPacket{
 		struct sockaddr_storage dstAddr;
 		socklen_t dstAddrLen;
 		//-- constructors/destructors
+
+		high_resolution_clock::time_point timestamp;
 		
 		HtpPacket(){
 			packet = (uint8_t*)malloc(HTP_DEFAULT_BUFSIZ);	
@@ -42,6 +46,8 @@ class HtpPacket{
 		~HtpPacket(){
 			free(this->packet);
 		}
+
+		//-- operator== ?????
 		
 		// bool isCommand(){
 		// 	return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
@@ -106,6 +112,13 @@ class HtpPacket{
 		// 	return (packet[1] & SVC_ENCRYPTED) != 0;
 		// }
 		
+		void setTimestamp() {
+			this->timestamp = high_resolution_clock::now();
+		}
+
+		bool timeout() {
+			return chrono::duration_cast<chrono::milliseconds>(high_resolution_clock::now() - this->timestamp).count() > HTP_SEND_TIMEOUT;
+		}
 		
 };
 
@@ -122,5 +135,13 @@ public:
         return s1 < s2;
     }
 };
+
+class HtpPacketHash {
+public:
+	uint32_t operator() (HtpPacket* const& p) const {
+		return p->getSequence();
+	}
+};
+
 
 #endif
