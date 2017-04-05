@@ -5,7 +5,7 @@
 
 /*
 TODO: retransmission timeout, set a timeout for every important packet, so that the sender will
-resend the packet if it does receive the ack after pass the timeout
+resend the packet if it doesn't receive the ack after pass the timeout
 */
 
 HtpSocket::HtpSocket() throw(){
@@ -38,9 +38,9 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 		throw;
 	}
 
-	if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
-		throw;
-	}
+	// if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
+	// 	throw;
+	// }
 
 	// if (pthread_create(&htp_ack_handle_thread, &attr, htp_ack_handler, this) != 0){
 	// 	throw;
@@ -179,7 +179,16 @@ void* HtpSocket::htp_writing_loop(void* args) {
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
 				if(packet->isData() && packet->nolost()) {
-					packet->setTimestamp();
+					if(packet->timer == nullptr) {
+						void* args[] = {_this, packet};
+						Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
+						packet->setTimer(timer);
+						packet->timer->start(true);
+					}
+					else {
+						packet->timer->stop();
+						packet->timer->start(true);
+					}
 				}
 
 				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
@@ -224,6 +233,33 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 	}
 }
 
+void HtpSocket::htp_retransmission_timeout_handler(void* args) {
+	void** tmp = (void**) args;
+	HtpSocket* _this = (HtpSocket*) tmp[0];
+	HtpPacket* packet = (HtpPacket*) tmp[1];
+
+	_this->waitingACKListMutex.lock();
+	auto it = _this->waitingACKPacketList.find(packet); 
+	if(it != _this->waitingACKPacketList.end()) {
+		if(packet->resend_times >= 5) {
+			_this->waitingACKPacketList.erase(it);
+			_this->waitingACKListMutex.unlock();
+			delete packet;
+		}
+		else {
+			_this->waitingACKListMutex.unlock();
+			_this->outGoingSetMutex.lock();
+			_this->outGoingPackets.insert(packet);
+			_this->outGoingSetMutex.unlock();
+			packet->resend_times++;
+
+			_this->resendPackets++;
+		}
+	}
+	else {
+		_this->waitingACKListMutex.unlock();
+	}
+}
 
 void* HtpSocket::htp_ack_handler(void* args) {
 	// HtpSocket* _this = (HtpSocket*) args;

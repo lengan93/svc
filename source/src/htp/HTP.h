@@ -16,9 +16,34 @@
 #include "Htp-header.h"
 #include "HtpPacket.h"
 
-
 class HtpSocket {
-	
+	public:
+		int sendCounter = 0;
+		int recvCounter = 0;
+
+		int successReceivedPackets = 0;
+		int resendPackets = 0;
+
+		HtpSocket() throw();
+
+		HtpSocket(in_port_t localPort) throw();
+
+		// HtpSocket(size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+		
+		int bind(struct sockaddr *my_addr, socklen_t addrlen);
+
+		int close();
+
+		int sendto(const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen);
+
+		int recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen);
+
+		void sendACK(HtpPacket* packet);
+		
+		void sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tolen);
+		
+		~HtpSocket();
+
 	private:
 
 		int UDPSocket;	
@@ -53,39 +78,13 @@ class HtpSocket {
 		static void* htp_ack_handler(void* args);
 		static void* htp_reading_loop(void* args);
 		static void* htp_writing_loop(void* args);
+		static void htp_retransmission_timeout_handler(void* args);
 
 		bool checkSequence(uint32_t seq);
 
 		uint32_t biggestSeq = 0; //the biggest sequence number received
 		uint32_t currentSeq = 1;
 		uint32_t receiverWindowLeftSideSeq = 1;
-
-	public:
-		int sendCounter = 0;
-		int recvCounter = 0;
-
-		int successReceivedPackets = 0;
-		int resendPackets = 0;
-
-		HtpSocket() throw();
-
-		HtpSocket(in_port_t localPort) throw();
-
-		// HtpSocket(size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
-		
-		int bind(struct sockaddr *my_addr, socklen_t addrlen);
-
-		int close();
-
-		int sendto(const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen);
-
-		int recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen);
-
-		void sendACK(HtpPacket* packet);
-		
-		void sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tolen);
-		
-		~HtpSocket();
 };
 
 #endif

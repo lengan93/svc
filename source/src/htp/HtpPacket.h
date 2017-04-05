@@ -18,6 +18,9 @@ class HtpPacket{
 		//-- constructors/destructors
 
 		high_resolution_clock::time_point timestamp;
+		Timer* timer = nullptr;
+
+		int8_t resend_times = 0;
 		
 		HtpPacket(){
 			packet = (uint8_t*)malloc(HTP_DEFAULT_BUFSIZ);	
@@ -44,7 +47,8 @@ class HtpPacket{
 		}
 					
 		~HtpPacket(){
-			free(this->packet);
+			delete [] this->packet;
+			delete this->timer;
 		}
 
 		//-- operator== ?????
@@ -120,6 +124,9 @@ class HtpPacket{
 			return chrono::duration_cast<chrono::milliseconds>(high_resolution_clock::now() - this->timestamp).count() > HTP_SEND_TIMEOUT;
 		}
 		
+		void setTimer(Timer* timer) {
+			this->timer = timer;
+		}
 };
 
 class HtpPacketComparator
