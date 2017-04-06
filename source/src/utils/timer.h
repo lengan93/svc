@@ -46,7 +46,8 @@ public:
     }
 
     ~Timer() {
-        this->stop();
+        if(this->running())
+            this->stop();
         // delete _thread;
     }
 
@@ -69,7 +70,10 @@ public:
     void stop()
     {
         _running = false;
-        _thread->join();
+        try {
+            _thread->join();
+        }
+        catch(...){}
     }
 
     bool running() const
@@ -137,6 +141,7 @@ private:
     {
         if (_this->_isSingleShot == true) {
             _this->_sleepThenTimeout();
+            _this->_running = false;
         }
         else {
             while (_this->running() == true) {

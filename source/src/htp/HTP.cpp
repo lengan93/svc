@@ -8,11 +8,13 @@ TODO: retransmission timeout, set a timeout for every important packet, so that 
 resend the packet if it doesn't receive the ack after pass the timeout
 */
 
+std::chrono::high_resolution_clock::time_point start_tp = std::chrono::high_resolution_clock::now();
+
 HtpSocket::HtpSocket() throw(){
 	printf("default constructor\n");
 
 	UDPSocket = socket(AF_INET, SOCK_DGRAM, 0);
-
+	start_tp = std::chrono::high_resolution_clock::now();
 	// currentSeq = 0;
 }
 
@@ -50,6 +52,10 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 // HtpSocket::HtpSocket(size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
 
 // }
+
+int getTime() {
+	return chrono::duration_cast<chrono::milliseconds>(high_resolution_clock::now()-start_tp).count();
+}
 
 bool HtpSocket::checkSequence(uint32_t seq) {
 	if(seq > biggestSeq) {
@@ -99,7 +105,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					}
 
 					// print track log
-					printf("receive data packet %d(%d): \n", packet->getSequence(), packet->packetLen);
+					printf("[%d] receive data packet %d(%d): \n", getTime(), packet->getSequence(), packet->packetLen);
 					// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
 					_this->inComingBufferMutex.lock();
@@ -118,7 +124,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					// printf("%d sent success\n", packet->getSequence());
 					// _this->receivedACKQueue.enqueue(packet);
 
-					printf("received ACK of packet %d\n", packet->getSequence());
+					printf("[%d] received ACK of packet %d\n", getTime(), packet->getSequence());
 
 					/* TODO: remove the packet acked in the waiting queue */
 					_this->waitingACKListMutex.lock();
@@ -127,7 +133,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 						if(it != _this->waitingACKPacketList.end()) {
 							HtpPacket* tmp = *it;
 							_this->waitingACKPacketList.erase(it);
-							printf("delete packet %d from waitingACKPacketList\n", tmp->getSequence());
+							printf("[%d] delete packet %d from waitingACKPacketList\n", getTime(), tmp->getSequence());
 							delete tmp;
 							_this->successReceivedPackets++;
 						}
@@ -175,7 +181,7 @@ void* HtpSocket::htp_writing_loop(void* args) {
 				_this->outGoingSetMutex.unlock();
 
 				// print track log
-				printf("send packet %d\n", packet->getSequence());
+				printf("[%d] send packet %d\n", getTime(), packet->getSequence());
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
 				if(packet->isData() && packet->nolost()) {
