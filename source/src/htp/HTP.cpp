@@ -185,16 +185,16 @@ void* HtpSocket::htp_writing_loop(void* args) {
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
 				if(packet->isData() && packet->nolost()) {
-					if(packet->timer == nullptr) {
-						void* args[] = {_this, packet};
-						Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
-						packet->setTimer(timer);
-						packet->timer->start(true);
-					}
-					else {
-						packet->timer->stop();
-						packet->timer->start(true);
-					}
+					// if(packet->timer == nullptr) {
+					// 	void* args[] = {_this, packet};
+					// 	Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
+					// 	packet->setTimer(timer);
+					// 	packet->timer->start(true);
+					// }
+					// else {
+					// 	packet->timer->stop();
+					// 	packet->timer->start(true);
+					// }
 				}
 
 				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
@@ -255,6 +255,7 @@ void HtpSocket::htp_retransmission_timeout_handler(void* args) {
 		else {
 			_this->waitingACKListMutex.unlock();
 			_this->outGoingSetMutex.lock();
+			printf("[%d] resend ---------------- %d\n", getTime(), packet->getSequence());
 			_this->outGoingPackets.insert(packet);
 			_this->outGoingSetMutex.unlock();
 			packet->resend_times++;

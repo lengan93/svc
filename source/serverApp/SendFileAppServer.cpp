@@ -107,8 +107,9 @@ int main(int argc, char** argv){
 								}
 							}												
 							//printf("\nsend back 0x03"); fflush(stdout);
+							buffer[0]=0x03;						
+							buffer[1]=0xFF;						
 							for (int i=0; i<RETRY_TIME; i++){
-								buffer[1]=0xFF;						
 								endpoint->sendData(buffer, 2);
 								//printf(".");
 							}
