@@ -1,32 +1,501 @@
-// #include "../crypto/crypto-utils.h"
-// #include "../crypto/AES256.h"
-// #include "../crypto/SHA256.h"
-// #include "../crypto/ECCurve.h"
-// #include "../crypto/AESGCM.h"
+#include "../crypto/crypto-utils.h"
+#include "../crypto/SHA256.h"
+#include "../crypto/ECCurve.h"
+#include "../crypto/AESGCM.h"
 
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <errno.h>
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <exception>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
+#include <unordered_map>
 
 #include "svc-header.h"
 #include "svc-utils.h"
 #include "../utils/NamedPipe.h"
+#include "../utils/HTPSocket.h"
 
 using namespace std;
 using namespace svc_utils;
 
 //================================ TYPE DEFINITION =================
 struct SVCDaemonConfig{
+	public:
+		uint8_t networkType;
+		string localHost;
+		int daemonPort;		//-- specific in INET network
 };
 
-struct SVCDaemonImage{
-	struct SVCDaemonConfig config;
+class SVCDaemonImage{
+	public:
+		struct SVCDaemonConfig config;
 };
+
+class SVCClient{
+	public:
+		bool working;
+		uint64_t pipeID;
+		NamedPipe* pipe;
+		uint32_t appID;
+
+		SVCClient(){
+			this->working = true;
+		}
+
+		~SVCClient(){
+			if (this->pipe != NULL){
+				delete this->pipe;
+			}
+		}
+};
+
+class STSNegotiation{
+	public:
+		bool isEstablished;
+		uint32_t sequence;
+
+		bool internalRandomX;
+		ECCurve* ecCurve;
+		mpz_t randomX;
+		mpz_t randomY;
+		ECPoint* gx;
+		ECPoint* gy;
+		ECPoint* gxy;
+		AESGCM* aesGCM;
+		int requested_security_strength;
+		SHA256* sha256;
+
+
+		STSNegotiation(){
+			this->sha256 = new SHA256();
+			this->aesGCM = NULL;
+			this->gx = NULL;
+			this->gy = NULL;
+			this->sequence = 2;
+			mpz_init(this->randomX);
+			mpz_init(this->randomY);
+			this->ecCurve = new ECCurve();
+			this->requested_security_strength = this->ecCurve->getRequestSecurityLength();
+		}
+
+		void generateGx(){
+			this->internalRandomX = true;			
+			crypto::generateRandomNumber(&this->randomX, this->requested_security_strength);
+			this->gx = new ECPoint();
+			this->ecCurve->mul(this->gx, this->ecCurve->g, &this->randomX);
+		}
+
+		void generateGy(){
+			this->internalRandomX = false;
+			crypto::generateRandomNumber(&this->randomY, this->requested_security_strength);
+			this->gy = new ECPoint();
+			this->ecCurve->mul(this->gy, this->ecCurve->g, &this->randomY);
+		}
+
+
+		void setGx(const mpz_t* x, const mpz_t* y){
+			this->gx = new ECPoint(x, y);
+		}
+
+		void setGy(const mpz_t* x, const mpz_t* y){
+			this->gy = new ECPoint(x, y);
+		}
+
+		void generateGxy(){
+			this->gxy = new ECPoint();
+			if (this->internalRandomX){
+				this->ecCurve->mul(this->gxy, this->gy, &(this->randomX));
+			}
+			else{
+				this->ecCurve->mul(this->gxy, this->gx, &(this->randomY));
+			}
+
+			//-- create aesGCM based on this key
+			uint8_t buffer[2*sizeof(mpz_t)];
+			memcpy(buffer, &(this->gxy->x), sizeof(mpz_t));
+			memcpy(buffer + sizeof(mpz_t), &(this->gxy->y), sizeof(mpz_t));
+			uint8_t hashResult[32];
+			this->sha256->hash(buffer, 2*sizeof(mpz_t), hashResult);
+			this->aesGCM = new AESGCM(hashResult, (enum SecurityParameter)this->requested_security_strength);
+		}
+
+		void encryptPacket(SVCPacket* packet){
+			this->sequence++;
+
+			uint8_t packetBody[SVC_DEFAULT_BUFSIZ];
+			uint16_t packetBodyLen;
+
+			packet->popDataChunk(packetBody, &packetBodyLen);
+
+			uint8_t* iv = (uint8_t*)&this->sequence;
+			uint16_t ivLen = SEQUENCE_LENGTH;	
+			
+			uint8_t* tag;
+			uint16_t tagLen;	
+			uint8_t* encrypted;
+			uint32_t encryptedLen;
+
+			//-- set infoByte
+			packet->setInfoByte(packet->getInfoByte() | SVC_ENCRYPTED);
+			
+			//cout<<"\nencrypt packet with:");
+			//cout<<"\niv: "); printBuffer(iv, ivLen); fflush(stdout);
+			//cout<<"\naad: "); printBuffer(packet->packet, SVC_PACKET_HEADER_LEN); fflush(stdout);
+			//cout<<"\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
+			
+			
+			this->aesGCM->encrypt(iv, ivLen, packetBody, packetBodyLen, packet->packetHeader, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
+			
+			//cout<<"\ngot:");
+			//cout<<"\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
+			//cout<<"\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
+			
+			packet->pushDataChunk(encrypted, encryptedLen);
+			packet->pushDataChunk(tag, tagLen);	
+			
+			free(encrypted);
+			free(tag);
+		}
+
+		bool decryptPacket(SVCPacket* packet){
+			bool rs;
+			uint8_t* iv = &(packet->getSequence());
+			uint16_t ivLen = SEQUENCE_LENGTH;	
+			
+			uint8_t packetTag[SVC_DEFAULT_BUFSIZ];
+			uint16_t packetTagLen;
+			uint8_t packetEncrypted[SVC_DEFAULT_BUFSIZ];
+			uint16_t packetEncryptedLen;
+			
+			uint8_t* decrypted;
+			uint32_t decryptedLen;
+
+			packet->popDataChunk(packetTag, &packetTagLen);
+			packet->popDataChunk(packetEncrypted, &packetEncryptedLen);
+			
+				
+			//cout<<"\ndecrypt packet with:");
+			//cout<<"\niv: "); printBuffer(iv, ivLen); fflush(stdout);
+			//cout<<"\naad: "); printBuffer(aad, aadLen); fflush(stdout);
+			//cout<<"\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
+			//cout<<"\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
+			
+			rs = this->aesGCM->decrypt(iv, ivLen, packetEncrypted, packetEncryptedLen, packet->packetHeader, SVC_PACKET_HEADER_LEN, packetTag, packetTagLen, &decrypted, &decryptedLen);
+			
+			//cout<<"\ngot:");
+			//cout<<"\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);
+				
+			//-- set body to be decrypted
+			if (rs){
+				packet->pushDataChunk(decrypted, decryptedLen);
+				packet->setInfoByte(packet->getInfoByte() & ~SVC_ENCRYPTED);
+			}
+			free(decrypted);
+			return rs;
+		}
+
+		~STSNegotiation(){
+			mpz_clear(randomX);
+			mpz_clear(randomY);
+			delete this->ecCurve;
+			delete this->gx;
+			delete this->gy;
+			delete this->gxy;
+			delete this->aesGCM;
+		}
+
+};
+
+class DaemonEndpoint{
+	public:
+		SVCClient* svcClient;
+		uint8_t option;
+		uint64_t pipeID;
+		uint64_t sessionID;
+		HostAddr* hostAddr;
+		STSNegotiation* sts;
+		
+		bool working;
+		NamedPipe* readPipe;
+		NamedPipe* writePipe;
+		SVCPacketReader* localPacketReader;
+		MutexedQueue<SVCPacket*>* localReadingQueue;
+		SVCPacketHandler* localPacketHandler;
+
+		static void local_incoming_packet_handler(SVCPacket* packet, void* args){
+			DaemonEndpoint* _this = (DaemonEndpoint*)args;
+
+			uint8_t infoByte = packet->getInfoByte();
+			if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+				enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
+				switch (cmd){
+					case SVC_CMD_SHUTDOWN_ENDPOINT:
+						{
+							//-- send SVC_CMD_SHUTDOWN_ENDPOINT to other end
+							cout<<"received SVC_CMD_SHUTDOWN_ENDPOINT"<<endl;
+							_this->shutdown();
+							break;
+						}
+
+					case SVC_CMD_CONNECT_INNER1:
+						{
+							cout<<"received SVC_CMD_CONNECT_INNER1"<<endl;
+							uint8_t param[SVC_DEFAULT_BUFSIZ];
+							uint16_t paramLen;
+
+							_this->sts->generateGx();					
+							packet->pushDataChunk(&(_this->sts->gx->x), sizeof(mpz_t));
+							packet->pushDataChunk(&(_this->sts->gx->y), sizeof(mpz_t));
+							
+							//-- switch commandID
+							packet->setCommand(SVC_CMD_CONNECT_OUTER1);
+
+							//-- TODO: send the packet to internet
+							packet->serialize(param, &paramLen);
+
+							break;
+						}
+
+					case SVC_CMD_CONNECT_INNER3:
+						{
+							cout<<"received SVC_CMD_CONNECT_INNER3"<<endl;
+							uint8_t param[SVC_DEFAULT_BUFSIZ];
+							uint16_t paramLen;
+
+							_this->sts->generateGy();
+							_this->sts->generateGxy();
+							
+							//-- pop proof
+							packet->popDataChunk(param, &paramLen);
+
+							//-- push Gy
+							packet->pushDataChunk(&(_this->sts->gy->x), sizeof(mpz_t));
+							packet->pushDataChunk(&(_this->sts->gy->y), sizeof(mpz_t));
+
+							//-- encrypt proof
+							uint32_t iv = 0;
+							uint8_t* tag;
+							uint16_t tagLen;	
+							uint8_t* encrypted;
+							uint32_t encryptedLen;
+							_this->sts->aesGCM->encrypt((uint8_t*) &iv, 4, param, paramLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);
+
+							packet->pushDataChunk(encrypted, encryptedLen);
+							packet->pushDataChunk(tag, tagLen);
+
+							//-- free allocated buffers
+							free(tag);
+							free(encrypted);
+
+							//-- switch commandID
+							packet->setCommand(SVC_CMD_CONNECT_OUTER2);
+
+							//-- TODO: send the packet to internet
+							packet->serialize(param, &paramLen);				
+							
+							break;
+						}
+
+					case SVC_CMD_CONNECT_INNER5:
+						{
+							uint8_t param[SVC_DEFAULT_BUFSIZ];
+							uint16_t paramLen;
+
+							//-- pop proof
+							packet->popDataChunk(param, &paramLen);
+
+							//-- encrypt proof
+							uint32_t iv = 1;
+							uint8_t* tag;
+							uint16_t tagLen;	
+							uint8_t* encrypted;
+							uint32_t encryptedLen;
+							_this->sts->aesGCM->encrypt((uint8_t*) &iv, 4, param, paramLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);
+
+							packet->pushDataChunk(encrypted, encryptedLen);
+							packet->pushDataChunk(tag, tagLen);
+
+							//-- free allocated buffers
+							free(tag);
+							free(encrypted);
+
+							//-- switch commandID
+							packet->setCommand(SVC_CMD_CONNECT_OUTER3);
+
+							//-- TODO: send the packet to internet
+							packet->serialize(param, &paramLen);	
+
+						}
+						break;
+
+					default:
+						{
+							break;
+						}
+				}
+			}
+			else{
+
+			}
+		}
+
+		static void net_incoming_packet_handler(SVCPacket* packet, void* args){
+			DaemonEndpoint* _this = (DaemonEndpoint*)args;
+
+			uint8_t param[SVC_DEFAULT_BUFSIZ];
+			uint16_t paramLen;
+
+			uint8_t infoByte = packet->getInfoByte();
+			if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+				enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
+				switch (cmd){
+
+					case SVC_CMD_CONNECT_OUTER1:
+						{
+							cout<<"received SVC_CMD_CONNECT_OUTER1"<<endl;
+							//-- pop out Gx
+							mpz_t gx_x;
+							mpz_t gx_y;
+							packet->popDataChunk(&gx_x);
+							packet->popDataChunk(&gx_y);
+							_this->sts->setGx(&gx_x, &gx_y);
+
+							//-- switch commandID
+							packet->setCommand(SVC_CMD_CONNECT_INNER2);
+
+							//-- send the packet to client
+							packet->serialize(param, &paramLen);
+							_this->writePipe->write(param, paramLen, 0);
+							break;
+						}
+
+					case SVC_CMD_CONNECT_OUTER2:
+						{
+							cout<<"received SVC_CMD_CONNECT_OUTER2"<<endl;
+							
+							uint8_t tag[SVC_DEFAULT_BUFSIZ];
+							uint16_t tagLen;
+							uint8_t encrypted[SVC_DEFAULT_BUFSIZ];
+							uint16_t encryptedLen;
+
+							//-- pop E_Px - tag
+							packet->popDataChunk(tag, &tagLen);
+							//-- pop E_Px - encrypted
+							packet->popDataChunk(encrypted, &encryptedLen);
+
+							//-- pop Gy
+							mpz_t gy_x;
+							mpz_t gy_y;
+							packet->popDataChunk(&gy_x);
+							packet->popDataChunk(&gy_x);
+							_this->sts->setGy(&gy_x, &gy_y);
+							_this->sts->generateGxy();
+
+							//-- decrypt E_px
+							uint32_t iv = 0;
+							uint8_t* decrypted;
+							uint32_t decryptedLen;
+							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+								//-- push Px
+								packet->pushDataChunk(decrypted, decryptedLen);
+								//-- send to client
+								packet->setCommand(SVC_CMD_CONNECT_INNER4);
+								packet->serialize(param, &paramLen);
+								_this->writePipe->write(param, paramLen, 0);
+							}
+							else{
+								//-- TODO: decrypt failed
+							}
+							free(decrypted);
+							break;
+						}
+
+					case SVC_CMD_CONNECT_OUTER3:
+						{
+							cout<<"received SVC_CMD_CONNECT_OUTER3"<<endl;
+
+							uint8_t tag[SVC_DEFAULT_BUFSIZ];
+							uint16_t tagLen;
+							uint8_t encrypted[SVC_DEFAULT_BUFSIZ];
+							uint16_t encryptedLen;
+
+							//-- pop E_Py - tag
+							packet->popDataChunk(tag, &tagLen);
+							//-- pop E_Py - encrypted
+							packet->popDataChunk(encrypted, &encryptedLen);
+							
+							//-- decrypt E_py
+							uint32_t iv = 0;
+							uint8_t* decrypted;
+							uint32_t decryptedLen;
+							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+								//-- push Py
+								packet->pushDataChunk(decrypted, decryptedLen);
+								//-- send to client
+								packet->setCommand(SVC_CMD_CONNECT_INNER6);
+								packet->serialize(param, &paramLen);
+								_this->writePipe->write(param, paramLen, 0);
+							}
+							else{
+								//-- TODO: decrypt failed
+							}
+							free(decrypted);
+							break;
+						}		
+	
+					default:
+						{
+							break;
+						}
+				}
+			}
+			else{
+
+			}
+		}
+
+		DaemonEndpoint(SVCClient* svcClient, uint8_t option, uint64_t pipeID, HostAddr* hostAddr){
+			this->svcClient = svcClient;
+			this->option = option;
+			this->pipeID = pipeID;
+			this->hostAddr = hostAddr;
+			
+			this->readPipe = new NamedPipe(SVC_DAEMON_ENDPOINT_PIPE_PREFIX + to_string(pipeID), NamedPipeMode::NP_READ);
+			this->writePipe = new NamedPipe(SVC_ENDPOINT_PIPE_PREFIX + to_string(pipeID), NamedPipeMode::NP_WRITE);
+			this->localReadingQueue = new MutexedQueue<SVCPacket*>();
+			this->localPacketReader = new SVCPacketReader(this->readPipe, this->localReadingQueue, 0);
+			this->localPacketHandler = new SVCPacketHandler(this->localReadingQueue, DaemonEndpoint::local_incoming_packet_handler, this);
+
+			this->working = true;
+		}
+
+		void shutdown(){
+			if (this->working){
+				this->working = false;
+				this->writePipe->close();
+				this->readPipe->close();
+				this->localPacketReader->stopWorking();
+				this->localReadingQueue->close();
+				this->localPacketHandler->stopWorking();
+
+				delete this->writePipe;
+				delete this->readPipe;
+				delete this->localPacketHandler;
+				delete this->localPacketReader;
+				delete this->localReadingQueue;
+				delete this->hostAddr;
+				cout<<"endpoint: "<<this->pipeID<<" shutdown"<<endl;
+			}
+		}
+
+		~DaemonEndpoint(){
+			this->shutdown();
+		}
+};
+
 
 //================================= GLOBAL CONSTANT  ===============
 const string ARG_DEFAULT_CONFIG = "--default-config";
@@ -39,27 +508,44 @@ const string ARG_CONFIG_PATH = "config_file_path";
 const string ARG_IMAGE_PATH = "image_file_path";
 
 const string svcDefaultConfigFilename = "svcdaemon.conf";
-struct SVCDaemonConfig svcDefaultConfig;
+
+static SVCDaemonConfig svcDefaultConfig = {
+	NETWORK_TYPE_IPv4, 	//-- networkType
+	"0.0.0.0:9293",		//-- localHost
+	9293				//-- daemonPort
+};
 
 //================================= GLOBAL VARIABLE ================
-NamedPipe* daemonPipe;
-MutexedQueue<SVCPacket*>* localInputQueue;
-SVCPacketReader* localInputReader;
+NamedPipe* daemonLocalPipe;
+HTPSocket* htpSocket;
+
+MutexedQueue<SVCPacket*>* localIncomingQueue;
+SVCPacketReader* localPacketReader;
 SVCPacketHandler* localPacketHandler;
+
+MutexedQueue<SVCPacket*>* netIncomingQueue;
+SVCPacketReader* netPacketReader;
+SVCPacketHandler* netPacketHandler;
+
+struct SVCDaemonConfig daemonConfig;
+
 mutex stopMutex;
 condition_variable stopCV;
 bool working;
 
+unordered_map<uint64_t, SVCClient*> svcClients;
+unordered_map<uint64_t, DaemonEndpoint*> daemonEndpoints;
+
 //================================= FUNCTIONS' DECLARATION ===========
-void stopWorking(bool saveImage, const string& saveImagePath);
 void waitStop();
 int exitWithError(string err);
 int showHelp();
-int startDaemon(const struct SVCDaemonImage* image);
+int startDaemon(SVCDaemonImage* image);
 int shutdownDaemon(bool saveImage, const string& imagePath);
 int saveDefaultConfig(const string& configPath);
-bool loadConfig(const char* filename, struct SVCDaemonConfig* config);
-bool loadImage(const char* filename, struct SVCDaemonImage* image);
+bool loadConfig(const string& filename, struct SVCDaemonConfig* config);
+bool loadImage(const string& filename, SVCDaemonImage** image);
+void shutdown();
 
 void daemon_local_packet_handler(SVCPacket* packet, void* args);
 
@@ -77,18 +563,19 @@ int main(int argc, char* argv[]){
 			}
 			else if (argv[i] == ARG_START){
 				if (i+2 < argc){
-					struct SVCDaemonImage image;
+					SVCDaemonImage* image;
 					if (argv[i+1] == ARG_CONFIG){
-						if (loadConfig(argv[i+2], &image.config)){
-							return startDaemon(&image);
+						image = new SVCDaemonImage();
+						if (loadConfig(string(argv[i+2]), &(image->config))){
+							return startDaemon(image);
 						}
 						else{
 							return exitWithError(ERR_NOCONFIG);
 						}
 					}
 					else if (argv[i+1] == ARG_IMAGE){
-						if (loadImage(argv[i+2], &image)){
-							return startDaemon(&image);
+						if (loadImage(string(argv[i+2]), &image)){
+							return startDaemon(image);
 						}
 						else{
 							return exitWithError(ERR_NOIMAGE);
@@ -100,9 +587,9 @@ int main(int argc, char* argv[]){
 				}
 				else if (i == argc-1){
 					if (saveDefaultConfig(svcDefaultConfigFilename) == 0){
-						struct SVCDaemonImage image;
-						image.config = svcDefaultConfig;
-						return startDaemon(&image);
+						SVCDaemonImage* image = new SVCDaemonImage();
+						image->config = svcDefaultConfig;
+						return startDaemon(image);
 					}
 					else{
 						return exitWithError(ERR_PERM);
@@ -145,83 +632,194 @@ int main(int argc, char* argv[]){
 
 //================================= BUSINESS FUNCTIONS' DEFINITION ===
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
-	// cout<<"processing packet";
 	uint8_t infoByte = packet->getInfoByte();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
-		uint64_t endpointID = packet->getEndpointID();
-		bool existed = false;
 		switch (cmd){
 			case SVC_CMD_STOP_DAEMON:
-				delete packet;
-				if (endpointID == 0){
-					//-- shutdown only with specific request, check to save image
-					// cout<<"shutdown request received, calling stop working"<<endl;
-					stopWorking(false, "");
-				}
-				break;
+				{
+					//-- check to save image
+					uint8_t saveImage;
+					packet->popDataChunk(&saveImage);
+					if (saveImage){
+						uint8_t imagePath[1024];
+						memset(imagePath, 0, 1024);
+						packet->popDataChunk(imagePath);
+						string strImagePath = string((char*)imagePath);
+						//-- TODO: pause all working instances and save their states to strImagePath
 
-			// case SVC_CMD_CREATE_ENDPOINT:
-			// 	//-- check if this endpointID is used before to create an endpoint that is working				
-			// 	for (auto& it : endpoints){
-			// 		if (it.second != NULL){
-			// 			DaemonEndpoint* ep = (DaemonEndpoint*)it.second;
-			// 			if (endpointID == (ep->endpointID & 0x0000FFFFFFFFFFFF)){
-			// 				existed = true;
-			// 				break;
-			// 			}
-			// 		}
-			// 	}
-			// 	if (existed){
-			// 		delete packet;
-			// 	}
-			// 	else{
-			// 		DaemonEndpoint* endpoint;
-			// 		try{
-			// 			endpoint = new DaemonEndpoint(endpointID);
-			// 			endpoint->isInitiator = true;
-			// 			if (endpoint->connectToAppSocket()==0){
-			// 				endpoints[endpointID] = endpoint;
-			// 				//-- send back the packet
-			// 				endpoint->unixOutgoingQueue.enqueue(packet);
-			// 				//-- add this endpoint to collection
-			// 				endpoints[endpointID] = endpoint;
-			// 			}
-			// 			else{
-			// 				delete packet;
-			// 				delete endpoint;
-			// 			}
-			// 		}
-			// 		catch(const char* err){
-			// 			delete packet;
-			// 		}
-			// 	}
-			// 	break;
+					}
+
+					//-- send SVC_CMD_DAEMON_DOWN to all svc client
+					SVCPacket* p = new SVCPacket();
+					p->setCommand(SVC_CMD_DAEMON_DOWN);
+					uint16_t bufferLen;
+					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+					p->serialize(buffer, &bufferLen);
+					for (auto it = svcClients.begin(); it != svcClients.end(); it++){
+						if (it->second != NULL){
+							SVCClient* client = (SVCClient*)it->second;
+							client->pipe->write(buffer, bufferLen, 0);
+						}
+					}
+					
+					stopMutex.lock();
+					working = false;
+					stopMutex.unlock();
+					stopCV.notify_all();
+					break;
+				}
 			
+			case SVC_CMD_REGISTER_SVC:
+				{
+					uint16_t bufferLen;
+					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+					//-- check if the client has existed
+					uint64_t pipeID = packet->getEndpointID();
+					if (svcClients[pipeID] == NULL){
+						if (packet->popDataChunk(buffer, &bufferLen)){
+							uint32_t appID;
+							memcpy(&appID, buffer, APPID_LENGTH);
+							SVCClient* svcClient = new SVCClient();
+							svcClient->appID = appID;
+							// cout<<"appID: "<<appID<<endl;
+							try{
+								string pipeName = to_string(pipeID);
+								svcClient->pipeID = pipeID;
+								svcClient->pipe = new NamedPipe(SVC_PIPE_PREFIX + pipeName, NamedPipeMode::NP_WRITE);
+								
+								//-- TODO: add neccessary config to this packet then send back to client
+								
+								//-- send response to client
+								packet->serialize(buffer, &bufferLen);
+								if (svcClient->pipe->write(buffer, bufferLen, 0) > 0){
+									//-- add the client
+									svcClients[pipeID] = svcClient;
+								}
+								else{
+									delete svcClient;
+								}
+							}
+							catch(string& e){
+								//-- cannot connect to this pipe
+								cout<<e<<endl;
+							}
+						}
+					}
+					break;
+				}
+
+			case SVC_CMD_SHUTDOWN_SVC:
+				{
+					uint64_t endpointID = packet->getEndpointID();
+					SVCClient* svcClient = svcClients[endpointID];
+					delete svcClient;
+					svcClients[endpointID] = NULL;
+					// cout<<"removing svcClient: "<<endpointID<<endl;
+					break;
+				}
+
+			case SVC_CMD_CREATE_ENDPOINT:
+				{
+					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+					uint16_t bufferLen;
+
+					uint64_t endpointID = packet->getEndpointID();
+					SVCClient* svcClient = svcClients[endpointID];
+					if (svcClient != NULL){
+						uint8_t option;
+						uint64_t pipeID;
+						uint8_t hostAddress[1024];
+						memset(hostAddress, 0, 1024);
+						HostAddr* hostAddr;
+
+						if (packet->popDataChunk(&option) && packet->popDataChunk(&pipeID) && packet->popDataChunk(&hostAddress)){
+							uint8_t result;
+							try{
+								DaemonEndpoint* daemonEndpoint = daemonEndpoints[pipeID];
+								//-- remove dupplicated shutdowned endpoint to avoid mem leak
+								if (daemonEndpoint != NULL){
+									if (daemonEndpoint->working){
+										//-- overriding working DaemonEndpoint
+										throw ERR_CONFLIT_ADDRESS;
+									}
+									else{
+										delete daemonEndpoint;
+									}
+								}
+								string hostAddrStr = string((char*)hostAddress);
+								//-- how to process this host address depends on which network used
+								switch (daemonConfig.networkType){
+									case NETWORK_TYPE_IPv4:
+										{
+											hostAddrStr = hostAddrStr + ":" +  to_string(daemonConfig.daemonPort);
+										}
+										break;
+									default:
+										break;
+								}
+								hostAddr = new HostAddr(daemonConfig.networkType, hostAddrStr);
+								daemonEndpoint = new DaemonEndpoint(svcClient, option, pipeID, hostAddr);
+								daemonEndpoints[pipeID] = daemonEndpoint;
+								result = SVC_SUCCESS;
+							}
+							catch(string& e){
+								result = SVC_FAILED;
+							}
+							//-- send back result to client
+							packet->pushDataChunk(&result, 1);
+							packet->serialize(buffer, &bufferLen);
+							svcClient->pipe->write(buffer, bufferLen, 0);
+						}
+						else{
+							//-- request not valid, ignore
+						}
+
+					}
+					else{
+						//-- request sent from unknown svc client, ignore
+					}
+					break;
+				}
+					
 			default:
-				delete packet;
-				break;
+				{
+					break;
+				}
 		}
+		delete packet;
 	}
 	else{
-		//-- ingore data frame
+		//-- ingore data packet to daemon
+		delete packet;
+	}
+}
+
+void daemon_net_packet_handler(SVCPacket* packet, void* args){
+	uint8_t infoByte = packet->getInfoByte();
+	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
+		enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
+		switch (cmd){
+			default:
+				{
+					break;
+				}
+		}
+		delete packet;
+	}
+	else{
+		//-- ingore data packet to daemon
 		delete packet;
 	}
 }
 
 //================================= GLOBAL FUNCTIONS' DEFINITION =====
-void stopWorking(bool saveImage, const string& imagePath){
-	
-	stopMutex.lock();
-	working = false;
-	stopMutex.unlock();
-    stopCV.notify_all();
-}
 
 void waitStop(){
 	unique_lock<mutex> ul(stopMutex);
 	//-- suspend and wait for working to be FALSE
 	stopCV.wait(ul, []{return !working;});
+	stopMutex.unlock();
 }
 
 int exitWithError(string err){
@@ -259,34 +857,35 @@ int showHelp(){
 	return 0;
 }
 
-int startDaemon(const struct SVCDaemonImage* image){
+int startDaemon(SVCDaemonImage* image){
 	try{
+		//-- copy config
+		memcpy(&daemonConfig, &image->config, sizeof(SVCDaemonConfig));
+		
+		//-- TODO: all socket file instances are created in this temp folder.
+		//-- If daemon failed to bind, due to a previous crash, just run: rm <path>/svc*
+		//-- to clear all temp files.
+		cout<<"temp dir: "<<utils::getOSTempDirectory(true)<<endl;
+
 		//-- create a pipe to receive local data
-		daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_READ);
-		localInputQueue = new MutexedQueue<SVCPacket*>();
+		daemonLocalPipe = new NamedPipe(SVC_PIPE_PREFIX + SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_READ);
+		localIncomingQueue = new MutexedQueue<SVCPacket*>();
+		localPacketReader = new SVCPacketReader(daemonLocalPipe, localIncomingQueue, 0);
+		localPacketHandler = new SVCPacketHandler(localIncomingQueue, daemon_local_packet_handler, NULL);
 
-		//-- create reading thread to read local data
-		localInputReader = new SVCPacketReader(daemonPipe, localInputQueue);
-
-		//-- create thread to handler local data
-		localPacketHandler = new SVCPacketHandler(localInputQueue, daemon_local_packet_handler, NULL);
+		//-- bind htp to localhost
+		htpSocket = new HTPSocket(daemonConfig.networkType, 0);
+		htpSocket->bind(new HostAddr(daemonConfig.networkType, daemonConfig.localHost));
+		netIncomingQueue = new MutexedQueue<SVCPacket*>();
+		netPacketReader = new SVCPacketReader(htpSocket, netIncomingQueue, SVCPacketReader::WITH_SENDER_ADDR);
+		netPacketHandler = new SVCPacketHandler(netIncomingQueue, daemon_net_packet_handler, NULL);
 		
 		working = true;
 		cout<<"SVC daemon is running..."<<endl;
+
 		waitStop();
-		
-		//-- SVC_CMD_STOP_DAEMON received
-		//-- close daemonPipe so localInputReader will not block
-		daemonPipe->close();
-		delete localInputReader;
-		delete daemonPipe;
-	
-		//-- close inputQueue so packetHandler will not block
-		localInputQueue->close();
-		delete localPacketHandler;
-		delete localInputQueue;
-	
-		cout<<"SVC daemon stopped."<<endl;
+		shutdown();
+		delete image;
 		return 0;
 	}
 	catch (std::string& e){
@@ -298,7 +897,7 @@ int shutdownDaemon(bool saveImage, const string& imagePath){
 	
 	//-- try to connect to the running daemon
 	try{
-		daemonPipe = new NamedPipe(SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_WRITE);
+		daemonLocalPipe = new NamedPipe(SVC_PIPE_PREFIX + SVC_DEFAULT_DAEMON_NAME, NamedPipeMode::NP_WRITE);
 	}
 	catch (string& e){
 		cout<<ERR_NOT_RUNNING<<endl;
@@ -308,29 +907,27 @@ int shutdownDaemon(bool saveImage, const string& imagePath){
 	//-- send a specific command to current daemon instance
 	SVCPacket* packet = new SVCPacket();
 	packet->setCommand(SVC_CMD_STOP_DAEMON);
-	uint8_t save = saveImage? 0x01 : 0x00;
-	packet->pushDataChunk(&save, 1);
 	if (saveImage) {
 		packet->pushDataChunk((uint8_t*)imagePath.c_str(), imagePath.size());
 	}
+	uint8_t save = saveImage? 0x01 : 0x00;
+	packet->pushDataChunk(&save, 1);
+
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 	uint16_t packetLen;
 	packet->serialize(buffer, &packetLen);
-	daemonPipe->write(buffer, packetLen);
-	// cout<<"send svc packet: ";
-	// utils::printHexBuffer(buffer, packetLen);
-	
+	daemonLocalPipe->write(buffer, packetLen, 0);
+
 	delete packet;
-	delete daemonPipe;
+	delete daemonLocalPipe;
 	return 0;
-	
 }
 
 int saveDefaultConfig(const string& configPath){
 	ofstream configFile;
 	configFile.open(configPath);
 	if (configFile.is_open()){
-		// configFile<<"This is a config";
+		//-- TODO: serialize and writing config to configPath
 		configFile.close();
 		return 0;
 	}
@@ -339,14 +936,60 @@ int saveDefaultConfig(const string& configPath){
 	}
 }
 
-bool loadConfig(const char* filename, struct SVCDaemonConfig* config){
+bool loadConfig(const string& filename, struct SVCDaemonConfig* config){
+	//-- TODO: this is for testing purpose. need implementing file reading and parsing.
+	memcpy(config, &svcDefaultConfig, sizeof(struct SVCDaemonConfig));
 	return true;
 }
 
-bool loadImage(const char* filename, struct SVCDaemonImage* image){
+bool loadImage(const string& filename, SVCDaemonImage** image){
+	//-- TODO: need implementing file reading and parsing
+	*image = new SVCDaemonImage();
+	//-- 
 	return true;
 }
 
+void shutdown(){
+	//-- close daemonLocalPipe so localPacketReader will not block
+	daemonLocalPipe->close();
+	localPacketReader->stopWorking();
+	//-- close localIncomingQueue so localPacketHandler will not block
+	localIncomingQueue->close();
+	localPacketHandler->stopWorking();
+
+	//-- close dhtpSocket so netPacketReader will not block
+	htpSocket->close();
+	netPacketReader->stopWorking();
+	//-- close netIncomingQueue so netPacketHandler will not block
+	netIncomingQueue->close();
+	netPacketHandler->stopWorking();
+
+	delete daemonLocalPipe;
+	delete localPacketReader;
+	delete localIncomingQueue;
+	delete localPacketHandler;
+
+	delete htpSocket;
+	delete netPacketReader;
+	delete netIncomingQueue;
+	delete netPacketHandler;
+
+	for (auto it = svcClients.begin(); it != svcClients.end(); it++){
+		if (it->second != NULL){
+			cout<<"removing svcClient: "<<((SVCClient*)it->second)->pipeID<<endl;
+		}
+		delete it->second;
+	}
+
+	for (auto it = daemonEndpoints.begin(); it != daemonEndpoints.end(); it++){
+		if (it->second != NULL){
+			cout<<"removing endpoint: "<<((DaemonEndpoint*)it->second)->pipeID<<endl;
+		}
+		delete it->second;
+	}
+
+	cout<<"SVC daemon stopped."<<endl;
+}
 
 /*
 #define SVC_VERSION 0x01
@@ -762,7 +1405,7 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//-- set body to be encrypted
 	packet->setBody(encrypted, encryptedLen);
 	//-- copy tag and tagLen to the end of packet
-	packet->pushCommandParam(tag, tagLen);	
+	packet->pushDataChunk(tag, tagLen);	
 	
 	free(encrypted);
 	free(tag);
@@ -874,14 +1517,14 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 					pthread_mutex_lock(&_this->stateMutex);
 					if (_this->state < SVC_CMD_CONNECT_OUTER2){		
 						//-- pop encrypted proof					
-						if (!packet->popCommandParam(param, &paramLen)){
+						if (!packet->popDataChunk(param, &paramLen)){
 							delete packet;
 							pthread_mutex_unlock(&_this->stateMutex);
 							break;
 						}
 						_this->encryptedProof = new SVCPacket(param, paramLen);
 					
-						if (!packet->popCommandParam(param, &paramLen)){
+						if (!packet->popDataChunk(param, &paramLen)){
 							delete _this->encryptedProof;
 							delete packet;
 							pthread_mutex_unlock(&_this->stateMutex);
@@ -890,9 +1533,9 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 						_this->encryptedECPoint = new SVCPacket(param, paramLen);
 		
 						//-- change command to INNER_4				
-						packet->switchCommand(SVC_CMD_CONNECT_INNER4);
+						packet->setCommand(SVC_CMD_CONNECT_INNER4);
 						//-- app svc is still waiting for the 'old' endpointID, push the current endpointID as new param
-						packet->pushCommandParam(packet->packet+1, ENDPOINTID_LENGTH);
+						packet->pushDataChunk(packet->packet+1, ENDPOINTID_LENGTH);
 						//-- clear the 6&7 byte of endpointID
 						packet->packet[1+6]=0x00;
 						packet->packet[1+7]=0x00;				
@@ -909,7 +1552,7 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 				case SVC_CMD_CONNECT_OUTER3:
 					pthread_mutex_lock(&_this->stateMutex);
 					if (_this->state < SVC_CMD_CONNECT_OUTER3){					
-						packet->switchCommand(SVC_CMD_CONNECT_INNER8);
+						packet->setCommand(SVC_CMD_CONNECT_INNER8);
 						_this->unixOutgoingQueue.enqueue(packet);
 						_this->state = SVC_CMD_CONNECT_OUTER3;
 						pthread_mutex_unlock(&_this->stateMutex);
@@ -1006,7 +1649,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER1){				
 					//-- extract remote address
-					if (!packet->popCommandParam(param, &paramLen)){															
+					if (!packet->popDataChunk(param, &paramLen)){															
 						delete packet;
 						pthread_mutex_unlock(&_this->stateMutex);
 						break;
@@ -1020,7 +1663,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					}
 					
 					//-- extract challengeSecret x
-					if (!packet->popCommandParam(param, &paramLen)){
+					if (!packet->popDataChunk(param, &paramLen)){
 						delete packet;
 						pthread_mutex_unlock(&_this->stateMutex);
 						break;
@@ -1057,14 +1700,14 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					paramLen += ecpointHexLen;					
 				
 					aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);					
-					packet->pushCommandParam(encrypted, encryptedLen);
+					packet->pushDataChunk(encrypted, encryptedLen);
 					
 					free(encrypted);
 					delete aes256;
 					delete ecpoint;
 					
 					//-- switch commandID
-					packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
+					packet->setCommand(SVC_CMD_CONNECT_OUTER1);
 					//-- send the packet to internet					
 					_this->inetOutgoingQueue.enqueue(packet);
 					_this->state = SVC_CMD_CONNECT_INNER1;
@@ -1082,7 +1725,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					//-- app responded with CONNECT_INNER3, now can connect to app socket
 					_this->connectToAppSocket();
 				
-					if (!packet->popCommandParam(param, &paramLen)){
+					if (!packet->popDataChunk(param, &paramLen)){
 						delete packet;
 						pthread_mutex_unlock(&_this->stateMutex);
 						break;
@@ -1102,7 +1745,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
 						ecpoint = new ECPoint((char*)(data + 2) , (char*)(data + 4 + paramLen));				
 						//-- extract challengeSecret y
-						if (!packet->popCommandParam(param, &paramLen)){
+						if (!packet->popDataChunk(param, &paramLen)){
 							free(data);
 							delete aes256;
 							delete packet;
@@ -1146,7 +1789,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						}
 					
 						//-- pop solution proof to be encrypted
-						if (!packet->popCommandParam(solutionProof, &solutionProofLen)){
+						if (!packet->popDataChunk(solutionProof, &solutionProofLen)){
 							free(data);
 							delete _this->aesgcm;
 							_this->aesgcm = NULL;
@@ -1180,9 +1823,9 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
 					
 						//-- switch command
-						packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
+						packet->setCommand(SVC_CMD_CONNECT_OUTER2);
 						//-- attach Ey(gy) to packet
-						packet->pushCommandParam(encrypted, encryptedLen);					
+						packet->pushDataChunk(encrypted, encryptedLen);					
 						free(encrypted);
 				
 						//-- encrypt solution proof then attach to packet
@@ -1203,7 +1846,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						paramLen += 2;
 						memcpy(param + paramLen, tag, tagLen);
 						paramLen += tagLen;					
-						packet->pushCommandParam(param, paramLen);
+						packet->pushDataChunk(param, paramLen);
 						free(encrypted);
 						free(tag);
 						delete aes256;
@@ -1229,7 +1872,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER5){
 					requested_security_strength = _this->curve->getRequestSecurityLength();		
-					if (!packet->popCommandParam(solution, &solutionLen)){
+					if (!packet->popDataChunk(solution, &solutionLen)){
 						delete packet;
 						pthread_mutex_unlock(&_this->stateMutex);
 						break;
@@ -1283,8 +1926,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 							if (_this->aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
 								//-- solution proof decrypted succeeded by aesgcm							
 								//-- forward CONNECT_INNER6 to app
-								packet->switchCommand(SVC_CMD_CONNECT_INNER6);
-								packet->pushCommandParam(decrypted, decryptedLen);	
+								packet->setCommand(SVC_CMD_CONNECT_INNER6);
+								packet->pushDataChunk(decrypted, decryptedLen);	
 								_this->state = SVC_CMD_CONNECT_INNER5;											
 								_this->unixOutgoingQueue.enqueue(packet);
 								pthread_mutex_unlock(&_this->stateMutex);
@@ -1317,7 +1960,7 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				pthread_mutex_lock(&_this->stateMutex);
 				_this->state = SVC_CMD_CONNECT_INNER7;
 				_this->isAuth = true;
-				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
+				packet->setCommand(SVC_CMD_CONNECT_OUTER3);
 				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 				_this->inetOutgoingQueue.enqueue(packet);
 				pthread_mutex_unlock(&_this->stateMutex);
@@ -1457,7 +2100,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 				switch (cmd){
 					case SVC_CMD_CONNECT_OUTER1:
 						//-- extract DH-1
-						if (!packet->popCommandParam(param, &paramLen)){
+						if (!packet->popDataChunk(param, &paramLen)){
 							delete packet;
 							break;
 						}
@@ -1478,7 +2121,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						dmnEndpoint->encryptedECPoint = encryptedECPoint;
 					
 						//-- extract appID
-						if (!packet->popCommandParam(param, &paramLen)){
+						if (!packet->popDataChunk(param, &paramLen)){
 							delete packet;
 							dmnEndpoint->working = false;
 							break;
@@ -1486,7 +2129,7 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						appID = *((uint32_t*)param);					
 					
 						//-- send the packet to the corresponding app
-						packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
+						packet->setCommand(SVC_CMD_CONNECT_INNER2);					
 						appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);
 						appSockAddr.sun_path[0] = '\0';
 						memcpy(appSockAddr.sun_path+1, appSockPath.c_str(), appSockPath.size());
@@ -1569,140 +2212,4 @@ void checkEndpointLiveTime(void* args){
 		}
 	}
 }
-
-void showHelp(){
-	cout<<"\nsvc-daemon: daemon process for svc-based applications");
-	cout<<"\nusage:");
-	cout<<"\n\t--default-config config_file");
-	cout<<"\n\t\tGenerate svc-daemon's default configuration and save it to config_file\n");
-	cout<<"\n\t--help");
-	cout<<"\n\t\tShow this help content\n");
-	cout<<"\n\t--start -c config_file");
-	cout<<"\n\t\tStart a new instance of svc-daemon using the configuration inside config_file\n");
-	cout<<"\n\t--start -i image_file");
-	cout<<"\n\t\tStart the svc-daemon using the previously saved infomation in image_file\n");
-	cout<<"\n\t--stop [-i image_file]");
-	cout<<"\n\t\tGracefully stop the running svc-daemon instance and (optionally) save \n\t\tall current endpoints' states to image_file. This is generally used \n\t\tin svc update/maintenance\n");
-	cout<<"\n");
-	fflush(stdout);
-}
-
-int startDaemonWithConfig(const char* configFile){
-	const char* errorString;
-	
-	working = true;	
-	//-- block all signals, except SIGINT
-    sigset_t blockSignals;
-    sigfillset(&blockSignals);
-    sigdelset(&blockSignals, SIGINT);    
-    pthread_sigmask(SIG_SETMASK, &blockSignals, NULL);
-
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	
-	//-- create a daemon unix socket and bind
-	daemonUnSocket = socket(AF_LOCAL, SOCK_DGRAM, 0);
-	memset(&daemonSockUnAddress, 0, sizeof(daemonSockUnAddress));
-	daemonSockUnAddress.sun_family = AF_LOCAL;
-	daemonSockUnAddress.sun_path[0]='\0';
-	memcpy(daemonSockUnAddress.sun_path+1, SVC_DAEMON_PATH.c_str(), SVC_DAEMON_PATH.size());			
-	if (bind(daemonUnSocket, (struct sockaddr*) &daemonSockUnAddress, sizeof(daemonSockUnAddress)) == -1) {		
-		errorString = SVC_ERROR_BINDING;
-        goto error1;
-    }
-    //-- then create a reading thread
-	if (pthread_create(&daemonUnixReadingThread, &attr, daemon_unix_reading_loop, NULL) != 0){
-		errorString = SVC_ERROR_CRITICAL;
-		goto error2;
-	}
-    
-    //--TODO:	TO BE CHANGED TO HTP
-    //--	create htp socket and bind to localhost
-    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
-    daemonSockInAddress.sin_family = AF_INET;
-    daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
-	daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
-    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
-    	working = false;
-    	pthread_join(daemonUnixReadingThread, NULL);
-    	errorString = SVC_ERROR_BINDING;
-    	goto error2;
-    }
-    //-- then create a reading thread
-	if (pthread_create(&daemonInetReadingThread, &attr, daemon_inet_reading_loop, NULL) != 0){		
-		working = false;
-    	pthread_join(daemonUnixReadingThread, NULL);
-    	errorString = SVC_ERROR_CRITICAL;
-		goto error3;
-	}
-    
-    //-- handle SIGINT
-	struct sigaction act;
-	act.sa_flags = 0;
-	act.sa_handler = signal_handler;
-	sigfillset(&act.sa_mask);
-	sigdelset(&act.sa_mask, SIGINT);
-	sigaction(SIGINT, &act, NULL);
-	
-	//-- packet handler
-	try{
-    	daemonUnixIncomingPacketHandler = new PacketHandler(&daemonUnixIncomingQueue, daemon_unix_incoming_packet_handler, NULL);
-   		daemonInetIncomingPacketHandler = new PacketHandler(&daemonInetIncomingQueue, daemon_inet_incoming_packet_handler, NULL);
-		endpointChecker = new PeriodicWorker(1000, checkEndpointLiveTime, NULL);
-		goto initSuccess;
-	}
-	catch(...){
-		working = false;
-		pthread_join(daemonUnixReadingThread, NULL);
-		pthread_join(daemonInetReadingThread, NULL);
-		errorString = SVC_ERROR_CRITICAL;
-		goto error3;
-	}    
-    
-    error3:
-    	close(daemonInSocket);
-    error2:
-    	close(daemonUnSocket);
-    error1:
-    	//cout<<"\nError: %s\n", errorString);
-    	return EXIT_FAILURE;
-    	
-    initSuccess:
-		//--	POST-SUCCESS JOBS	--//		
-		endpoints.clear();
-    	cout<<"\nSVC daemon is running\n"); fflush(stdout);
-    	        	
-        daemonUnixIncomingPacketHandler->waitStop();
-        daemonInetIncomingPacketHandler->waitStop();
-    	endpointChecker->waitStop();
-        	
-    	delete daemonUnixIncomingPacketHandler;
-    	delete daemonInetIncomingPacketHandler;
-    	delete endpointChecker;
-    	cout<<"\nSVC daemon stopped\n");
-    	return EXIT_SUCCESS;
-}
-
-
-int startDaemonWithImage(const char* imageFile){
-}
-
-void generateDefaultConfig(const char* configFile){
-}
-
-
-int main(int argc, char** argv){
-	
-	const char* errorString;
-	
-	if (argc == 1){
-		//-- cal program without any argument. show help
-		showHelp();		
-	}
-	else{	
-		return startDaemonWithConfig(NULL);
-	}
-}
 */
-

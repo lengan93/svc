@@ -25,7 +25,7 @@
 			std::mutex lastMutex;
 			std::mutex waitMutex;		
 			std::condition_variable waitCond;
-			bool working;
+			volatile bool working;
 			bool haveData;
 
 			bool waitData(int timeout){
@@ -58,10 +58,12 @@
 			}
 
 			void close(){
-				this->waitMutex.lock();
 				this->working = false;
-				this->waitMutex.unlock();
 				waitCond.notify_all();
+			}
+
+			bool isOpen(){
+				return this->working;
 			}
 		
 			~MutexedQueue(){

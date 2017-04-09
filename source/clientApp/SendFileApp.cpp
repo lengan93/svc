@@ -2,7 +2,6 @@
 #include <time.h>
 
 #include "../src/svc/SVC.h"
-#include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
 
@@ -34,24 +33,28 @@ int main(int argc, char** argv){
 
 	if (argc>1){
 		string appID = string("SEND_FILE_APP");
-		SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
+		string remoteHost = "149.56.142.13";
 		SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 		try{
 			SVC* svc = new SVC(appID, authenticator);
+			cout<<"svc create success"<<endl;
 			struct timespec startingTime;
 			struct timespec echelon;
 			clock_gettime(CLOCK_REALTIME, &startingTime);
 			
-			SVCEndpoint* endpoint = svc->establishConnection(SVC_DEFAULT_TIMEOUT, remoteHost, 0);
+			SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
 			if (endpoint!=NULL){
-				if (endpoint->negotiate()){
+				cout<<"connection established"<<endl;
+				cout<<"negociating..."<<endl;
+				if (endpoint->negotiate(3000)){
+					cout<<"negociated!"<<endl;
 					clock_gettime(CLOCK_REALTIME, &echelon);
 					printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
 					
 					uint16_t bufferSize = 1400;
-					uint8_t buffer[bufferSize+1];
-					memset(buffer, 0, bufferSize+1);
+					uint8_t buffer[bufferSize];
+					memset(buffer, 0, bufferSize);
 										
 					//-- send the file throw this connection
 					string fileName = string(argv[1]);
@@ -64,7 +67,7 @@ int main(int argc, char** argv){
 						memcpy(buffer+1, &fileSize, 4);
 						memcpy(buffer+1+4, (uint8_t*)fileName.c_str(), fileName.size());
 						for (int i=0;i<RETRY_TIME;i++){
-							endpoint->sendData(buffer, 1+4+fileName.size(), 0);
+							endpoint->write(buffer, 1+4+fileName.size(), 0);
 						}						
 				
 						//-- then send the content
@@ -72,8 +75,8 @@ int main(int argc, char** argv){
 							ifstream bigFile(argv[1]);
 							buffer[0] = 0x02;
 							while (bigFile /*&& endpoint->isAlive()*/){
-								bigFile.read((char*)buffer+1, bufferSize);							
-								endpoint->sendData(buffer, bufferSize, 0);
+								bigFile.read((char*)buffer+1, bufferSize-1);							
+								endpoint->write(buffer, bufferSize, 0);
 							}													
 							bigFile.close();
 						}
@@ -81,7 +84,7 @@ int main(int argc, char** argv){
 						//-- then send terminating packets
 						buffer[0] = 0x03;
 						for (int i=0;i<RETRY_TIME;i++){
-							endpoint->sendData(buffer, 1, 0);
+							endpoint->write(buffer, 1, 0);
 						}
 						buffer[0] = 0x00;
 						
@@ -90,7 +93,7 @@ int main(int argc, char** argv){
 						printf("\n[%0.2f] All data sent, waiting ACK", timeDistance(&echelon, &startingTime)); fflush(stdout);
 						bool fileSent = false;
 						do{
-							if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
+							if (endpoint->read(buffer, bufferSize, 0) == 0){
 								if ((buffer[0] == 0x03) && (buffer[1] == 0xFF)){
 									fileSent = true;																		
 								}
@@ -107,9 +110,13 @@ int main(int argc, char** argv){
 					}										
 				}
 				else{
-					printf("\nCannot establish connection. Program terminated.\n");
+					cout<<"negociating failed"<<endl;
 				}
+				endpoint->shutdown();
 				delete endpoint;
+			}
+			else{
+				cout<<"cannot establish connection"<<endl;
 			}
 			svc->shutdown();
 			delete svc;
@@ -122,7 +129,6 @@ int main(int argc, char** argv){
 		}
 		
 		delete authenticator;
-		delete remoteHost;
 	}
 		
 }

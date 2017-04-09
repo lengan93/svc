@@ -7,11 +7,11 @@
 	
 	#include <chrono>
 	#include <mutex>
-	#include <condition_variable>
 	#include <thread>
+	#include <condition_variable>
 	#include <vector>
 	#include <cstring>
-	
+
 	namespace svc_utils{
 
 		class SVCPacket{
@@ -26,6 +26,7 @@
 						if (this->chunk == NULL){
 							throw ERR_NO_MEMORY;
 						}
+						memcpy(this->chunk, chunk, chunkLen);
 						this->chunkLen = chunkLen;
 					}
 					~DataChunk(){
@@ -33,9 +34,6 @@
 					}
 			};
 			private:
-				uint8_t packetHeader[SVC_PACKET_HEADER_LEN];
-				std::vector<DataChunk*> packetBody;
-
 				void clearPacketBody(){
 					while (!this->packetBody.empty()){
 						delete this->packetBody.back();
@@ -44,6 +42,10 @@
 				}
 
 			public:
+				DataEndpointAddr* senderAddr;
+				uint8_t packetHeader[SVC_PACKET_HEADER_LEN];
+				std::vector<DataChunk*> packetBody;
+
 				~SVCPacket(){
 					this->clearPacketBody();
 				}
@@ -53,12 +55,14 @@
 					this->packetBody.clear();
 				}
 
-				SVCPacket(const void* buffer, uint16_t bufferLen){
-					// cout<<"receive buffer: ";
-					// utils::printHexBuffer(buffer, bufferLen);
-					//-- check packet validity
-					// cout<<"checking packet validty:"<<endl;
+				SVCPacket(const SVCPacket* packet){
+					memcpy(this->packetHeader, packet->packetHeader, SVC_PACKET_HEADER_LEN);
+					for (int i=0; i<packet->packetBody.size(); i++){
+						this->packetBody.push_back(new DataChunk(packet->packetBody[i]->chunk, packet->packetBody[i]->chunkLen));
+					}
+				}
 
+				SVCPacket(const void* buffer, uint16_t bufferLen){
 					if (bufferLen < SVC_PACKET_HEADER_LEN){
 						// cout<<"data shorter than header"<<endl;
 						throw ERR_DATA_DAMAGED;
@@ -84,7 +88,6 @@
 						if (!dataCorrect){
 							//-- remove any allocated data chunk
 							this->clearPacketBody();
-							// cout<<"data damaged??"<<endl;
 							throw ERR_DATA_DAMAGED;
 						}
 						else{
@@ -98,11 +101,12 @@
 					this->packetBody.push_back(chunk);
 				}
 				
-				bool popDataChunk(uint8_t* buffer, uint16_t* bufferLen){
+				bool popDataChunk(void* buffer, uint16_t* bufferLen = NULL){
 					if (!this->packetBody.empty()){
 						DataChunk* chunk = this->packetBody.back();
 						memcpy(buffer, chunk->chunk, chunk->chunkLen);
-						*bufferLen = chunk->chunkLen;
+						if (bufferLen != NULL) *bufferLen = chunk->chunkLen;
+						this->packetBody.pop_back();
 						return true;
 					}
 					else{
@@ -159,76 +163,110 @@
 					this->packetHeader[0] |= SVC_URGENT_PRIORITY; 	
 					//-- set extra info byte
 					this->packetHeader[1] = (uint8_t)cmd;				
-				}		
-				// void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
-				// 	memset(&this->srcAddr, 0, sizeof(this->srcAddr));
-				// 	memcpy(&this->srcAddr, srcAddr, addrLen);
-				// 	this->srcAddrLen = addrLen;
-				// }
-				
-				
+				}
 		};	
 		
 		typedef void (*SVCPacketProcessing)(SVCPacket* packet, void* args);
 
 		class SVCPacketReader{
-			NamedPipe* pipe;
-			MutexedQueue<SVCPacket*>* queue;
+			private:
+				DataEndpoint* dataEndpoint;
+				MutexedQueue<SVCPacket*>* queue;
+				uint8_t option;
 
-			std::thread readingThread;
-			volatile bool working;
+				std::thread readingThread;
+				volatile bool working;
 
-			static void reading_loop(void* args){
-				uint8_t buffer[SVC_DEFAULT_BUFSIZ];
-				SVCPacketReader* _this = (SVCPacketReader*) args;
-				while (_this->working){
-					ssize_t dataLen = _this->pipe->read(buffer, SVC_DEFAULT_BUFSIZ);
-					if (dataLen > 0){
-						try{
-							_this->queue->enqueue(new SVCPacket(buffer, dataLen));		
-						}
-						catch(std::string& e){
-							//-- error packet malformed, log this buffer, or IP address, may be?
+				static void reading_loop(void* args){
+					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+					SVCPacketReader* _this = (SVCPacketReader*) args;
+					while (_this->working){
+						ssize_t dataLen = _this->dataEndpoint->read(buffer, SVC_DEFAULT_BUFSIZ, 0);
+						if (dataLen > 0){
+							try{
+								if (_this->queue && _this->queue->isOpen()){
+									_this->queue->enqueue(new SVCPacket(buffer, dataLen));
+									// cout<<"get packet:";
+									// printHexBuffer(buffer, dataLen);
+								}
+								else{
+									//-- queue closed, ignore data
+								}
+							}
+							catch(std::string& e){
+								//-- error packet malformed, log this buffer, or IP address, may be?
+							}
 						}
 					}
 				}
-			}
+
+				static void reading_loop_addr(void* args){
+					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
+					SVCPacketReader* _this = (SVCPacketReader*) args;
+					while (_this->working){
+						DataEndpointAddr* senderAddr;
+						ssize_t dataLen = _this->dataEndpoint->readFrom(&senderAddr, buffer, SVC_DEFAULT_BUFSIZ, 0);
+						if (dataLen > 0){
+							try{
+								if (_this->queue && _this->queue->isOpen()){
+									SVCPacket* packet = new SVCPacket(buffer, dataLen);
+									packet->senderAddr = senderAddr;
+									_this->queue->enqueue(packet);
+									// cout<<"get packet:";
+									// printHexBuffer(buffer, dataLen);
+								}
+								else{
+									//-- queue closed, ignore data
+								}
+							}
+							catch(std::string& e){
+								//-- error packet malformed, log this buffer, or IP address, may be?
+							}
+						}
+					}
+				}
 
 			public:
-				SVCPacketReader(NamedPipe* pipe, MutexedQueue<SVCPacket*>* queue){
-					this->pipe = pipe;
+				static const uint8_t WITH_SENDER_ADDR = 0x01;
+
+				SVCPacketReader(DataEndpoint* dataEndpoint, MutexedQueue<SVCPacket*>* queue, uint8_t option){
+					this->option = option;
+					this->dataEndpoint = dataEndpoint;
 					this->queue = queue;
 					this->working = true;
-					this->readingThread = thread(reading_loop, this);
+					if ((option & WITH_SENDER_ADDR) != 0x00){
+						this->readingThread = thread(reading_loop_addr, this);
+					}
+					else{
+						this->readingThread = thread(reading_loop, this);
+					}
+					this->readingThread.detach();
 				}
 				void stopWorking(){
 					this->working = false;
-					this->readingThread.join();
 				}
-				~SVCPacketReader(){
-					if (this->working){
-						stopWorking();
-					}
+				~SVCPacketReader(){			
+					stopWorking();
 				}
 		};
 
-		class SVCPacketHandler{
-		
-			class CommandHandler{
-				public:
-					enum SVCCommand cmd;
-					uint64_t endpointID;
-					bool processed;
-					std::condition_variable waitingCond;
-					
-					CommandHandler(){
-						this->processed = false;
-					}
-					~CommandHandler(){
-					}
-			};
-			
+		class SVCPacketHandler{	
 			private:
+				class CommandHandler{
+					public:
+						enum SVCCommand cmd;
+						uint64_t endpointID;
+						bool processed;
+						void* data;
+						std::condition_variable waitingCond;
+						
+						CommandHandler(){
+							this->processed = false;
+						}
+						~CommandHandler(){
+						}
+				};
+				
 				SVCPacketProcessing packetHandler;
 				void* packetHandlerArgs;
 				MutexedQueue<SVCPacket*>* readingQueue;
@@ -244,11 +282,11 @@
 					SVCPacket* packet = NULL;
 					uint8_t infoByte;
 					
-					while (_this->working || _this->readingQueue->notEmpty()){	
+					while (_this->working){
 						packet = _this->readingQueue->dequeueWait(-1);
 						//-- process the packet
-						if (packet!=NULL){						
-							if (_this->packetHandler!=NULL){
+						if (packet != NULL){						
+							if (_this->packetHandler != NULL){
 								_this->packetHandler(packet, _this->packetHandlerArgs);
 							}						
 						}
@@ -262,15 +300,14 @@
 					this->readingQueue = queue;
 					this->working = true;
 					this->processingThread = thread(processingLoop, this);
+					this->processingThread.detach();
 				}
-				virtual ~SVCPacketHandler(){
-					if (this->working){
-						stopWorking();
-					}
+				~SVCPacketHandler(){
+					stopWorking();
 				}
 				
 				//--	methods			
-				bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout){
+				bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout, void* data){
 					CommandHandler* handler = new CommandHandler();		
 					handler->cmd = cmd;
 					handler->endpointID = endpointID;
@@ -288,36 +325,48 @@
 					//-- suspend the calling thread until the correct command is received or the timer expires	
 					if (timeout<0){
 						//-- spurious awake may occur, check with working and processed
-						handler->waitingCond.wait(lock, [this]{return !this->working;});
+						handler->waitingCond.wait(lock, [this, handler]{return !this->working || handler->processed;});
 						boolRs = handler->processed;
 					}
 					else{
 						rs = handler->waitingCond.wait_for(lock, std::chrono::milliseconds(timeout));
 						boolRs = (rs == cv_status::no_timeout);
 					}
+					if (data != NULL){
+						*data = handler->data;
+					}
 					waitingMutex.unlock();
 					delete handler;
 					return boolRs;
 				}
 
-				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID){
+				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID, void* data){
 					this->commandHandlerRegistraMutex.lock();
 					for (int i=0;i<this->commandHandlerRegistra.size(); i++){
 						CommandHandler* handler = this->commandHandlerRegistra[i];
 						if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){
 							handler->processed = true;
+							handler->data = data;
 							handler->waitingCond.notify_all();
 							//-- remove the handler
 							this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);
-							break;
 						}
 					}
 					this->commandHandlerRegistraMutex.unlock();
 				}
 
 				void stopWorking(){
-					this->working = false;
-					this->processingThread.join();
+					if (this->working){
+						this->working = false;
+						//-- notify all remain blocked waitCommand
+						this->commandHandlerRegistraMutex.lock();
+						for (int i=0;i<this->commandHandlerRegistra.size(); i++){
+							CommandHandler* handler = this->commandHandlerRegistra[i];
+							handler->waitingCond.notify_all();
+							this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);
+						}
+						this->commandHandlerRegistraMutex.unlock();
+					}
 				}
 		};
 	}

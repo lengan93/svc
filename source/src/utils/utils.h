@@ -1,10 +1,7 @@
 #ifndef __TOM_UTILS__
 #define __TOM_UTILS__
 
-	#include <cstdio>
-	#include <string>
-	#include <iostream>
-	#include <stdlib.h>
+	#include <cstdlib>
 	
 	#ifdef _WIN32
 		#include <direct.h>
@@ -15,6 +12,11 @@
 	#endif
 
 	namespace utils{
+
+		enum SVCNetwork  : uint8_t{
+			NETWORK_TYPE_IPv4,
+			NETWORK_TYPE_SATURN
+		};
 
 		//-- ERROR DESCRIPTIONS
 		const std::string ERR_PERM = "Error: SVC daemon failed to start. Cannot write config file.";
@@ -31,6 +33,8 @@
 		const std::string ERR_NO_MEMORY = "Error: no memory";
 		const std::string ERR_NULL_POINTER = "Error: null pointer deferencing";
 		const std::string ERR_DATA_DAMAGED = "Error: bad data format";
+		const std::string ERR_INVALID_ADDRESS = "Error: invalid address";
+		const std::string ERR_CONFLIT_ADDRESS = "Error: conflit in address space";
 
 		#ifdef _WIN32
 			const std::string pathSeparator = "\\";

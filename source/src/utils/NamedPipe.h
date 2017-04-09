@@ -2,9 +2,9 @@
 #define __SVC_NAMEDPIPE__
 
     #include <string>
-    #include <cstdio>
 
     #include "utils.h"
+    #include "DataEndpoint.h"
     #include "../crypto/crypto-utils.h"
 
     #ifdef _WIN32
@@ -12,6 +12,8 @@
         #include <sys/un.h>
         #include <sys/socket.h>
     #endif
+
+    #include <iostream>
 
 
     enum class NamedPipeMode{
@@ -21,7 +23,7 @@
 
     using namespace utils;
 
-    class NamedPipe{
+    class NamedPipe : public DataEndpoint{
 
         NamedPipeMode mode;
 
@@ -36,6 +38,26 @@
         #endif
 
         public:
+
+            static NamedPipe* createUniqueNamedPipe(const std::string& pipePrefix, uint64_t* pipeID){
+                uint64_t pipeTempID;
+                //-- create svc pipe
+                bool pipeOK = false;
+                NamedPipe* pipe = NULL;
+                do{
+                    try {
+                        crypto::generateRandomData(8, (uint8_t*)&pipeTempID);
+                        pipe = new NamedPipe(pipePrefix + std::to_string(pipeTempID), NamedPipeMode::NP_READ);
+                        pipeOK = true;
+                    }
+                    catch(std::string& e){
+                        //-- exception when pipeTempID duplicates, retry
+                    }
+                }
+                while (!pipeOK);
+                *pipeID = pipeTempID;
+                return pipe;
+            }
             
             NamedPipe(const std::string& fileName, NamedPipeMode mode){
                 this->mode = mode;
@@ -79,15 +101,39 @@
                 this->isOpen = true;
             }
 
-            ssize_t read(uint8_t* buffer, uint32_t bufferLen){
-                #ifdef _WIN32
-                #else
-                    return ::read(this->unixDomainSocket, buffer, bufferLen);
-                #endif
+            ssize_t read(uint8_t* buffer, uint16_t bufferLen, uint8_t option){
+                if (this->mode == NamedPipeMode::NP_READ){
+                    #ifdef _WIN32
+                    #else
+                        ssize_t readResult = ::read(this->unixDomainSocket, buffer, bufferLen);
+                        if (readResult > 0){
+                            std::cout<<"read: ";
+                            printHexBuffer(buffer, readResult);
+                        }
+                        return readResult;
+                    #endif
+                }
+                else{
+                    return -1;
+                }
             }
 
-            ssize_t write(const uint8_t* buffer, uint32_t bufferLen){
-                return ::write(this->unixDomainSocket, buffer, bufferLen);
+            ssize_t write(const uint8_t* buffer, uint16_t bufferLen, uint8_t option){
+                //-- option is within NamedPipe
+                if (this->mode == NamedPipeMode::NP_WRITE){
+                    #ifdef _WIN32
+                    #else
+                        ssize_t writeResult = ::write(this->unixDomainSocket, buffer, bufferLen);
+                        if (writeResult > 0){
+                            std::cout<<"write: ";
+                            printHexBuffer(buffer, writeResult);
+                        }
+                        return writeResult;
+                    #endif
+                }
+                else{
+                    return -1;
+                }
             }
 
             void close(){

@@ -2,8 +2,15 @@
 #define __TOM_AES_GCM__
 
 	#include "AES256.h"
-	
-	#define ERROR_DATALENGTH_NOT_SUPPORTED "Length not supported"
+
+	#define BIT(x) 0x01<<x	
+	#define GET_BE32(a) ((((uint32_t) (a)[0]) << 24) | (((uint32_t) (a)[1]) << 16) | (((uint32_t) (a)[2]) << 8) | ((uint32_t) (a)[3]))
+	#define PUT_BE32(a, val) do {                          \
+				(a)[0] = (uint8_t) ((((uint32_t) (val)) >> 24) & 0xff);   \
+				(a)[1] = (uint8_t) ((((uint32_t) (val)) >> 16) & 0xff);   \
+				(a)[2] = (uint8_t) ((((uint32_t) (val)) >> 8) & 0xff);    \
+				(a)[3] = (uint8_t) (((uint32_t) (val)) & 0xff);           \
+		} while (0)
 	
 	enum SecurityParameter : uint8_t {
 		SECU_128 = 128,

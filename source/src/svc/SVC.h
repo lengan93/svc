@@ -4,7 +4,6 @@
 #define __SVC__
 
 	#include "svc-utils.h"
-	#include "host/SVCHost.h"
 	#include "authenticator/SVCAuthenticator.h"
 	
 	#include "../crypto/SHA256.h"
@@ -16,81 +15,46 @@
 	using namespace crypto;
 
 	class SVC;
+
+	class ChallengeSet {
+		public:
+			std::string challengeSecretSent;
+			std::string challengeSent;
+			std::string challengeSecretReceived;
+			std::string challengeReceived;
+			std::string proofSent;
+			std::string proofReceived;
+			std::string remoteIdentity;
+	};
 		
-	class SVCEndpoint{
+	class SVCEndpoint : public DataEndpoint{
 		friend class SVC;
 
 		private:
-		
-			// SVC* svc;
-			// bool isInitiator;
-			// bool isAuth;
-			// PeriodicWorker* periodicWorker;
-			
-			// volatile bool working;
-			// volatile bool shutdownCalled;
-			// int reconnectionTimeout;			
-			// bool reconnectFailed;
-			// //string daemonRestartReason;
+			SVC* svc;
+			bool isInitiator;
+			volatile bool working;
+			bool isAuth;
+			uint64_t pipeID;
+			SVCPacket* requestPacket;
+			ChallengeSet challengeSet;
 
-			// static void liveCheck(void* args);		
-			// static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
-			// //static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
-			// static void* svc_endpoint_reading_loop(void* args);
-			// static void* svc_endpoint_writing_loop(void* args);
-			
-			// pthread_t readingThread;
-			// pthread_t writingThread;
-			// //MutexedQueue<SVCPacket*> incomingQueue;
-			// //MutexedQueue<SVCPacket*> outgoingQueue;
-			// MutexedQueue<SVCPacket*>* tobesentQueue;
-			// MutexedQueue<SVCPacket*>* dataholdQueue;
-			// PacketHandler* incomingPacketHandler;
-			// //PacketHandler* outgoingPacketHandler;
-			
-			// int sock;
-			// int sockOption;
-			uint64_t endpointID;
-			// uint32_t appID;			
-			// SVCHost* remoteHost;
-			// SVCPacket* request;
-			
-			// //-- crypto negotitation
-			// std::string challengeSecretSent;
-			// std::string challengeSecretReceived;
-			// std::string challengeSent;
-			// std::string challengeReceived;
-			// std::string proof;
-			// std::string remoteIdentity;
+			NamedPipe* writingPipe;
+			NamedPipe* readingPipe;
+			SVCPacketReader* packetReader;
+			MutexedQueue<SVCPacket*>* incomingQueue;
+			SVCPacketHandler* packetHandler;
+			MutexedQueue<SVCPacket*>* dataHoldQueue;
+			static void incoming_packet_handler(SVCPacket* packet, void* args);
 		
-			SVCEndpoint(SVC* svc, uint64_t endpointID, bool isInitiator);	
-			
-			// /*
-			//  * Connect the unix domain socket to the daemon endpoint address to send data
-			//  * */
-			// int connectToDaemon();
-			
-			// /*
-			//  * After a disconnection with daemon is detected, calling this method will try to reconnect with the daemon. 
-			//  * If TRUE is returned,the reconnection succeeded. Otherwise, the reconnection
-			//  * is failed and SVC must be shutdown. The default waiting time can be set via setReconnectionTimeout.
-			//  * */
-			// bool reconnectDaemon();
-			
-			// /*
-			//  * */
-			// void setRemoteHost(SVCHost* remoteHost);
-			
-			// /*
-			//  * */
-			// void changeEndpointID(uint64_t endpointID);			
+			SVCEndpoint(SVC* svc, bool isInitiator, NamedPipe* readPipe, uint64_t pipeID);
+			void stopWorking(bool isInitiator);
 
 		public:
 			~SVCEndpoint();
-			bool negotiate();
-			uint64_t getEndpointID();
-			int sendData(const uint8_t* data, uint16_t datalen, uint8_t option);
-			int readData(uint8_t* data, uint16_t* len, int timeout);
+			bool negotiate(int timeout);
+			ssize_t write(const uint8_t* buffer, uint16_t bufferLen, uint8_t option);
+			ssize_t read(uint8_t* buffer, uint16_t bufferLen, uint8_t option);
 			void shutdown();
 	};
 	
@@ -99,6 +63,7 @@
 
 		private:
 			uint32_t appID;
+			uint64_t pipeID;
 			SVCAuthenticator* authenticator;
 
 			NamedPipe* daemonPipe;
@@ -112,14 +77,13 @@
 
 			volatile bool working;
 			volatile bool shutdownCalled;
-			void cleanUp();
 			
 		public:
 			SVC(const std::string& appIdentity, SVCAuthenticator* authenticator);
 			~SVC();
 			void shutdown();
-			SVCEndpoint* establishConnection(int timeout, SVCHost* remoteHost, uint8_t option);
-			SVCEndpoint* listenConnection(int timeout, SVCHost* remoteHost);
+			SVCEndpoint* establishConnection(const std::string& remoteHost, uint8_t option);
+			SVCEndpoint* listenConnection(const std::string& remoteHost, uint8_t option);
 	};
 	
 #endif
