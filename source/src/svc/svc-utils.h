@@ -96,17 +96,27 @@
 					}
 				}
 
+				DataChunk* operator[](int index){
+					if (index < this->packetBody.size()){
+						return this->packetBody[this->packetBody.size() - 1 -index];
+					}
+					else{
+						return NULL;
+					}
+				}
+
 				void pushDataChunk(const void* buffer, uint16_t bufferLen){
 					DataChunk* chunk = new DataChunk(buffer, bufferLen);
 					this->packetBody.push_back(chunk);
 				}
 				
-				bool popDataChunk(void* buffer, uint16_t* bufferLen = NULL){
+				bool popDataChunk(void* buffer = NULL, uint16_t* bufferLen = NULL){
 					if (!this->packetBody.empty()){
 						DataChunk* chunk = this->packetBody.back();
-						memcpy(buffer, chunk->chunk, chunk->chunkLen);
+						if (buffer != NULL) memcpy(buffer, chunk->chunk, chunk->chunkLen);
 						if (bufferLen != NULL) *bufferLen = chunk->chunkLen;
 						this->packetBody.pop_back();
+						delete chunk;
 						return true;
 					}
 					else{
@@ -257,7 +267,7 @@
 						enum SVCCommand cmd;
 						uint64_t endpointID;
 						bool processed;
-						void* data;
+						uint8_t* data;
 						std::condition_variable waitingCond;
 						
 						CommandHandler(){
@@ -307,7 +317,7 @@
 				}
 				
 				//--	methods			
-				bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout, void* data){
+				bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout, uint8_t** data){
 					CommandHandler* handler = new CommandHandler();		
 					handler->cmd = cmd;
 					handler->endpointID = endpointID;
@@ -332,7 +342,7 @@
 						rs = handler->waitingCond.wait_for(lock, std::chrono::milliseconds(timeout));
 						boolRs = (rs == cv_status::no_timeout);
 					}
-					if (data != NULL){
+					if (*data != NULL){
 						*data = handler->data;
 					}
 					waitingMutex.unlock();
@@ -340,7 +350,7 @@
 					return boolRs;
 				}
 
-				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID, void* data){
+				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* data){
 					this->commandHandlerRegistraMutex.lock();
 					for (int i=0;i<this->commandHandlerRegistra.size(); i++){
 						CommandHandler* handler = this->commandHandlerRegistra[i];

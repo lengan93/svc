@@ -39,17 +39,17 @@
 			void inc32(uint8_t* block);
 			void dec32(uint8_t* block);
 						
-			inline void prepBlockJ(const uint8_t* iv, uint32_t ivLen);
-			inline void calcBlockS(const uint8_t* aad, uint32_t aadLen, const uint8_t* encrypted, uint32_t encryptedLen);
+			inline void prepBlockJ(const void* iv, uint32_t ivLen);
+			inline void calcBlockS(const void* aad, uint32_t aadLen, const void* encrypted, uint32_t encryptedLen);
 			void gHash(uint8_t* hash, const uint8_t* data, uint32_t dataLen);
-			void gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen);
+			void gCTR(void* ydata, const uint8_t* icb, const void* xdata, uint32_t strLen);
 		
 		public:
 			//--	SECURITY PARAMETERS
 			AESGCM(const uint8_t* key, enum SecurityParameter secuParam);
 			~AESGCM();
-			void encrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen);
-			bool decrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* encrypted, const uint32_t encryptedLen, const uint8_t* aad, const uint16_t aadLen, const uint8_t* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen);
+			void encrypt(const void* iv, const uint16_t ivLen, const void* data, const uint32_t dataLen, const void* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen);
+			bool decrypt(const void* iv, const uint16_t ivLen, const void* encrypted, const uint32_t encryptedLen, const void* aad, const uint16_t aadLen, const void* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen);
 	};
 
 #endif

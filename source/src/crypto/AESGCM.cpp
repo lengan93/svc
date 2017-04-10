@@ -9,15 +9,17 @@ void AESGCM::xorBlock(uint8_t* blockZ, const uint8_t* blockX, const uint8_t* blo
 	}
 }
 
-void AESGCM::dec32(uint8_t *block){
+void AESGCM::dec32(uint8_t* block){
 	uint32_t val;
+	
 	val = GET_BE32(block + BLOCK_SIZE - 4);
 	val--;
 	PUT_BE32(block + BLOCK_SIZE - 4, val);
 }
 
-void AESGCM::inc32(uint8_t *block){
+void AESGCM::inc32(uint8_t* block){
 	uint32_t val;
+	
 	val = GET_BE32(block + BLOCK_SIZE - 4);
 	val++;
 	PUT_BE32(block + BLOCK_SIZE - 4, val);
@@ -96,9 +98,12 @@ void AESGCM::gHash(uint8_t* hash, const uint8_t* data, uint32_t dataLen){
 	}
 }
 
-void AESGCM::gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32_t strLen){
+void AESGCM::gCTR(void* ydata, const uint8_t* icb, const void* xdata, uint32_t strLen){
 	
-	if (strLen>0){		
+	if (strLen>0){
+		uint8_t* ystr = (uint8_t*)ydata;
+		uint8_t* xstr = (uint8_t*)xdata;
+
 		uint8_t cb[BLOCK_SIZE]; //-- counter
 		uint8_t cbC[BLOCK_SIZE]; //-- encrypted counter
 		int lastBlockSize = strLen%BLOCK_SIZE;
@@ -129,7 +134,7 @@ void AESGCM::gCTR(uint8_t* ystr, const uint8_t* icb, const uint8_t* xstr, uint32
 	}
 }
 
-void AESGCM::prepBlockJ(const uint8_t* iv, uint32_t ivLen){
+void AESGCM::prepBlockJ(const void* iv, uint32_t ivLen){
 	
 	if (ivLen == 12){ //--	96 bits = 12 bytes		
 		memset(blockJ, 0, BLOCK_SIZE);
@@ -149,7 +154,7 @@ void AESGCM::prepBlockJ(const uint8_t* iv, uint32_t ivLen){
 	}
 }
 
-void AESGCM::calcBlockS(const uint8_t* aad, uint32_t aadLen, const uint8_t* encrypted, uint32_t encryptedLen){
+void AESGCM::calcBlockS(const void* aad, uint32_t aadLen, const void* encrypted, uint32_t encryptedLen){
 	//-- calculate u, v
 	int u = encryptedLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - encryptedLen%BLOCK_SIZE;
 	int v = aadLen%BLOCK_SIZE==0? 0 : BLOCK_SIZE - aadLen%BLOCK_SIZE;
@@ -185,7 +190,7 @@ AESGCM::~AESGCM(){
 	memset(this->hashSubKey, 0, BLOCK_SIZE); //--	securely remove the key by setting its value to 0
 }
 
-void AESGCM::encrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* data, const uint32_t dataLen, const uint8_t* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen){
+void AESGCM::encrypt(const void* iv, const uint16_t ivLen, const void* data, const uint32_t dataLen, const void* aad, const uint16_t aadLen, uint8_t** encrypted, uint32_t* encryptedLen, uint8_t** tag, uint16_t* tagLen){
 	//--	1. H has been calculated before
 	//--	2. prepare blockJ	
 	prepBlockJ(iv, ivLen);
@@ -207,7 +212,7 @@ void AESGCM::encrypt(const uint8_t* iv, const uint16_t ivLen, const uint8_t* dat
 	memcpy(*tag, blockS, *tagLen);
 }
 
-bool AESGCM::decrypt(const uint8_t* iv, uint16_t ivLen, const uint8_t* encrypted, uint32_t encryptedLen, const uint8_t* aad, uint16_t aadLen, const uint8_t* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen){
+bool AESGCM::decrypt(const void* iv, uint16_t ivLen, const void* encrypted, uint32_t encryptedLen, const void* aad, uint16_t aadLen, const void* tag, uint16_t tagLen, uint8_t** data, uint32_t* dataLen){
 	//--	1. check lengths
 	if (tagLen!=this->secuParam>>3) return false;
 	//--	2. generate blockJ

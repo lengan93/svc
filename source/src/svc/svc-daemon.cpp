@@ -162,8 +162,7 @@ class STSNegotiation{
 
 		bool decryptPacket(SVCPacket* packet){
 			bool rs;
-			uint8_t* iv = &(packet->getSequence());
-			uint16_t ivLen = SEQUENCE_LENGTH;	
+			uint32_t iv = packet->getSequence();
 			
 			uint8_t packetTag[SVC_DEFAULT_BUFSIZ];
 			uint16_t packetTagLen;
@@ -183,7 +182,7 @@ class STSNegotiation{
 			//cout<<"\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
 			//cout<<"\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
 			
-			rs = this->aesGCM->decrypt(iv, ivLen, packetEncrypted, packetEncryptedLen, packet->packetHeader, SVC_PACKET_HEADER_LEN, packetTag, packetTagLen, &decrypted, &decryptedLen);
+			rs = this->aesGCM->decrypt((uint8_t*)&iv, SEQUENCE_LENGTH, packetEncrypted, packetEncryptedLen, packet->packetHeader, SVC_PACKET_HEADER_LEN, packetTag, packetTagLen, &decrypted, &decryptedLen);
 			
 			//cout<<"\ngot:");
 			//cout<<"\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);
@@ -356,12 +355,12 @@ class DaemonEndpoint{
 					case SVC_CMD_CONNECT_OUTER1:
 						{
 							cout<<"received SVC_CMD_CONNECT_OUTER1"<<endl;
-							//-- pop out Gx
-							mpz_t gx_x;
-							mpz_t gx_y;
-							packet->popDataChunk(&gx_x);
-							packet->popDataChunk(&gx_y);
-							_this->sts->setGx(&gx_x, &gx_y);
+
+							_this->sts->setGx((mpz_t*)((*packet)[1]->chunk), (mpz_t*)((*packet)[0]->chunk));
+
+							//-- pop out: gx.y, gx.y
+							packet->popDataChunk();
+							packet->popDataChunk();
 
 							//-- switch commandID
 							packet->setCommand(SVC_CMD_CONNECT_INNER2);
@@ -369,36 +368,31 @@ class DaemonEndpoint{
 							//-- send the packet to client
 							packet->serialize(param, &paramLen);
 							_this->writePipe->write(param, paramLen, 0);
-							break;
 						}
+							break;
 
 					case SVC_CMD_CONNECT_OUTER2:
 						{
 							cout<<"received SVC_CMD_CONNECT_OUTER2"<<endl;
-							
-							uint8_t tag[SVC_DEFAULT_BUFSIZ];
-							uint16_t tagLen;
-							uint8_t encrypted[SVC_DEFAULT_BUFSIZ];
-							uint16_t encryptedLen;
 
-							//-- pop E_Px - tag
-							packet->popDataChunk(tag, &tagLen);
-							//-- pop E_Px - encrypted
-							packet->popDataChunk(encrypted, &encryptedLen);
+							//-- get Gy
+							_this->sts->setGy((mpz_t*)(*packet)[3]->chunk, (mpz_t*)(*packet)[2]->chunk);
 
-							//-- pop Gy
-							mpz_t gy_x;
-							mpz_t gy_y;
-							packet->popDataChunk(&gy_x);
-							packet->popDataChunk(&gy_x);
-							_this->sts->setGy(&gy_x, &gy_y);
+							//-- generate Gxy and the common key to create aesGCM
 							_this->sts->generateGxy();
 
 							//-- decrypt E_px
 							uint32_t iv = 0;
 							uint8_t* decrypted;
 							uint32_t decryptedLen;
-							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, (*packet)[1]->chunk, (*packet)[1]->chunkLen, NULL, 0, (*packet)[0]->chunk, (*packet)[0]->chunkLen, &decrypted, &decryptedLen)){
+								
+								//-- pop out: tag, encrypted proof, gy.y, gy.x
+								packet->popDataChunk();
+								packet->popDataChunk();
+								packet->popDataChunk();
+								packet->popDataChunk();
+
 								//-- push Px
 								packet->pushDataChunk(decrypted, decryptedLen);
 								//-- send to client
@@ -416,22 +410,16 @@ class DaemonEndpoint{
 					case SVC_CMD_CONNECT_OUTER3:
 						{
 							cout<<"received SVC_CMD_CONNECT_OUTER3"<<endl;
-
-							uint8_t tag[SVC_DEFAULT_BUFSIZ];
-							uint16_t tagLen;
-							uint8_t encrypted[SVC_DEFAULT_BUFSIZ];
-							uint16_t encryptedLen;
-
-							//-- pop E_Py - tag
-							packet->popDataChunk(tag, &tagLen);
-							//-- pop E_Py - encrypted
-							packet->popDataChunk(encrypted, &encryptedLen);
 							
 							//-- decrypt E_py
 							uint32_t iv = 0;
 							uint8_t* decrypted;
 							uint32_t decryptedLen;
-							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+							if (_this->sts->aesGCM->decrypt((uint8_t*) &iv, SEQUENCE_LENGTH, (*packet)[1]->chunk, (*packet)[1]->chunkLen, NULL, 0, (*packet)[0]->chunk, (*packet)[0]->chunkLen, &decrypted, &decryptedLen)){
+								//-- pop out tag, encrypted Py
+								packet->popDataChunk();
+								packet->popDataChunk();
+
 								//-- push Py
 								packet->pushDataChunk(decrypted, decryptedLen);
 								//-- send to client

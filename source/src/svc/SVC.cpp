@@ -34,6 +34,7 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 	packet->setCommand(SVC_CMD_REGISTER_SVC);
 	packet->pushDataChunk(&this->appID, APPID_LENGTH);
 
+	uint8_t* waitCommandData = NULL;
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 	uint16_t packetLen;
 	packet->serialize(buffer, &packetLen);
@@ -45,16 +46,13 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 		goto error_shutdown;
 	}
 
-	if (!this->packetHandler->waitCommand(SVC_CMD_REGISTER_SVC, this->pipeID, -1, &packet)){
+	if (!this->packetHandler->waitCommand(SVC_CMD_REGISTER_SVC, this->pipeID, -1, &waitCommandData)){
 		// cout<<"waitCommand failed"<<endl;
 		err = ERR_TIMEOUT;
 		goto error_shutdown;
 	}
 	else{
-		//-- extract config from svc packet
-
-		//-- then delete it
-		delete packet;
+		//-- extract config from data
 	}
 
 	goto success_return;
@@ -129,7 +127,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 				break;
 		}
 		if (_this->packetHandler != NULL){
-			_this->packetHandler->notifyCommand(cmd, endpointID, packet);
+			_this->packetHandler->notifyCommand(cmd, endpointID, NULL);
 		}
 		else{
 			delete packet;
@@ -143,6 +141,8 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 
 SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t option){
 	
+	SVCEndpoint* endpoint;
+
 	//-- create a unique named pipe
 	uint64_t endpointPipeID;
 	NamedPipe* endpointNamedPipe = NamedPipe::createUniqueNamedPipe(SVC_ENDPOINT_PIPE_PREFIX, &endpointPipeID);
@@ -163,24 +163,18 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 	delete packet;
 
 	cout<<"wait for SVC_CMD_CREATE_ENDPOINT"<<endl;
-	if (!this->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, this->pipeID, -1, &packet)){
+	uint8_t* result;
+	if (!this->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, this->pipeID, -1, &result)){
 		delete endpointNamedPipe;
-		return NULL;
 	}
 	else{
 		cout<<"received SVC_CMD_CREATE_ENDPOINT"<<endl;
 		//-- response received, extract param from packet
-		uint8_t result;
-		packet->popDataChunk(&result, NULL);
-		delete packet;
-		if (result == SVC_SUCCESS){
-			SVCEndpoint* endpoint = new SVCEndpoint(this, true, endpointNamedPipe, endpointPipeID);
-			return endpoint;
-		}
-		else{
-			return NULL;
+		if (*result == SVC_SUCCESS){
+			endpoint = new SVCEndpoint(this, true, endpointNamedPipe, endpointPipeID);
 		}
 	}
+	return endpoint;
 }
 
 SVCEndpoint* SVC::listenConnection(const std::string& remoteHost, uint8_t option){
@@ -252,9 +246,9 @@ void SVCEndpoint::incoming_packet_handler(SVCPacket* packet, void* args){
 					packet->popDataChunk(param, &paramLen);
 					_this->challengeSet.challengeReceived = std::string((char*)param, paramLen);
 					_this->challengeSet.challengeSecretReceived = _this->svc->authenticator->resolveChallenge(_this->challengeSet.challengeReceived);
-					_this->challengeSet.proofSent =  _this->svc->authenticator->generateProof(_this->challengeSet.challengeSecretReceived)
+					_this->challengeSet.proofSent =  _this->svc->authenticator->generateProof(_this->challengeSet.challengeSecretReceived);
 					_this->challengeSet.challengeSecretSent = _this->svc->authenticator->generateChallengeSecret();
-					_this->challengeSet.challengeSent = _this->svc->authenticator->generateChallenge(_this->challengeSecretSent);
+					_this->challengeSet.challengeSent = _this->svc->authenticator->generateChallenge(_this->challengeSet.challengeSecretSent);
 
 					packet->setCommand(SVC_CMD_CONNECT_INNER3);
 					packet->pushDataChunk(_this->challengeSet.challengeSent.c_str(), _this->challengeSet.challengeSent.size());
@@ -277,50 +271,30 @@ void SVCEndpoint::incoming_packet_handler(SVCPacket* packet, void* args){
 					packet->pushDataChunk(_this->challengeSet.challengeSecretReceived.c_str(), _this->challengeSet.challengeSecretReceived.size());
 					packet->serialize(param, &paramLen);
 					_this->writingPipe->write(param, paramLen, 0);
+					_this->packetHandler->notifyCommand(cmd, endpointID, NULL);
 				}
 				break;
 				
 			case SVC_CMD_CONNECT_INNER6:
 				{
-					printf("\nreceived SVC_CMD_CONNECT_INNER6");					
-					//-- pop solution proof and check
-					packet->popDataChunk(param, &paramLen);
-					if (_this->svc->authenticator->verifyProof(_this->challengeSet.challengeSecretSent, std::string((char*)param, paramLen))){
-						//-- proof verified, generate proof then send back to daemon
-						_this->challengeSet.proof = _this->svc->authenticator->generateProof(_this->challengeSet.challengeSecretReceived);
-						packet->setCommand(SVC_CMD_CONNECT_INNER7);				
-						packet->pushDataChunk((uint8_t*)_this->challengeSet.proof.c_str(), _this->challengeSet.proof.size());
-						packet->serialize(param, &paramLen);
-						_this->writingPipe->write(param, paramLen, 0);
-						//-- ok, connection established
-						_this->isAuth = true;
-					}
-					else{					
-						//-- proof verification failed
-						_this->isAuth = false;
-					}
-				}
-				break;
-				
-			case SVC_CMD_CONNECT_INNER8:
-				{
 					printf("\nreceived SVC_CMD_CONNECT_INNER6");
 					//-- verify the client's proof
-					bool isAuth;
+					uint8_t connectSuccess;
 					packet->popDataChunk(param, &paramLen);
-					if (_this->svc->authenticator->verifyProof(_this->challengeSet.challengeSecretSent, std::string((char*)param, paramLen))){
+					_this->challengeSet.proofReceived = std::string((char*)param, paramLen);
+					if (_this->svc->authenticator->verifyProof(_this->challengeSet.challengeSecretSent, _this->challengeSet.proofReceived)){
 						//-- send confirm to daemon
 						packet->setCommand(SVC_CMD_CONNECT_INNER7);
 						packet->serialize(param, &paramLen);
 						_this->writingPipe->write(param, paramLen, 0);
 						//-- proof verification succeeded
-						isAuth = true;
+						connectSuccess = SVC_SUCCESS;
 					}
 					else{
 						//-- proof verification failed
-						isAuth = false;
+						connectSuccess = SVC_FAILED;
 					}
-					_this->packetHandler->notifyCommand(cmd, endpointID, &isAuth);
+					_this->packetHandler->notifyCommand(cmd, endpointID, &connectSuccess);
 				}
 				break;
 				
@@ -339,6 +313,8 @@ bool SVCEndpoint::negotiate(int timeout){
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 	uint16_t bufferLen;
 
+	bool negotiationResult = false;
+
 	SVCPacket* packet = new SVCPacket();
 	packet->setEndpointID(this->pipeID);
 	if (this->isInitiator){
@@ -351,11 +327,13 @@ bool SVCEndpoint::negotiate(int timeout){
 		this->writingPipe->write(buffer, bufferLen, 0);
 		delete packet;
 
-		bool result = false;
+		uint8_t* result;
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->pipeID, timeout, &result)){
-			return result;
+			negotiationResult = *result == SVC_SUCCESS;
 		}
-		return false;
+		else{
+			negotiationResult = false;
+		}
 	}
 	else{
 		//-- read challenge from request packet
@@ -366,7 +344,7 @@ bool SVCEndpoint::negotiate(int timeout){
 		this->challengeSet.challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeSet.challengeReceived);
 		//this->remoteIdentity = this->svc->authenticator->getRemoteIdentity(this->challengeSecretReceived);
 		//-- generate proof
-		this->challengeSet.proof = this->svc->authenticator->generateProof(this->challengeSet.challengeSecretReceived);		
+		this->challengeSet.proofSent = this->svc->authenticator->generateProof(this->challengeSet.challengeSecretReceived);		
 	
 		//-- generate challenge
 		this->challengeSet.challengeSecretSent = this->svc->authenticator->generateChallengeSecret();		
@@ -374,17 +352,20 @@ bool SVCEndpoint::negotiate(int timeout){
 		
 		packet->setCommand(SVC_CMD_CONNECT_INNER3);
 		packet->pushDataChunk(this->challengeSet.challengeSent.c_str(), this->challengeSet.challengeSent.size());
-		packet->pushDataChunk(this->challengeSet.proof.c_str(), this->challengeSet.proof.size());
+		packet->pushDataChunk(this->challengeSet.proofSent.c_str(), this->challengeSet.proofSent.size());
 		packet->serialize(buffer, &bufferLen);
 		this->writingPipe->write(buffer, bufferLen, 0);
 		delete packet;
 
-		bool result = false;
+		uint8_t* result;
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->pipeID, timeout, &result)){
-			return result;
+			negotiationResult = *result == SVC_SUCCESS;
 		}
-		return false;
+		else{
+			negotiationResult = false;
+		}
 	}
+	return negotiationResult;
 }
 
 void SVCEndpoint::stopWorking(bool isInitiator){
