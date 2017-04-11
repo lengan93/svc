@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <csignal>
 #include <pthread.h>
+#include <mutex> 
 
 #include "svc-utils.h"
 #include "../utils/PeriodicWorker.h"
@@ -97,6 +98,8 @@ class DaemonEndpoint{
 		ECCurve* curve;	
 		ECPoint* gxy;
 		SHA256 sha256;
+
+		mutex aesgcmMutex;
 		AESGCM* aesgcm;
 		uint64_t endpointID;
 		uint64_t sendSequence;
@@ -415,8 +418,9 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//printf("\naad: "); printBuffer(packet->packet, SVC_PACKET_HEADER_LEN); fflush(stdout);
 	//printf("\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
 	*/
-	
+	aesgcmMutex.lock();
 	this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
+	aesgcmMutex.unlock();
 	
 	/*//printf("\ngot:");
 	//printf("\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
@@ -452,7 +456,9 @@ bool DaemonEndpoint::decryptPacket(SVCPacket* packet){
 	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
 	//printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);*/
 	
+	aesgcmMutex.lock();
 	rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
+	aesgcmMutex.unlock();
 	
 	/*//printf("\ngot:");
 	//printf("\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);*/
