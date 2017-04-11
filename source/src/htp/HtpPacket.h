@@ -20,6 +20,8 @@ class HtpPacket{
 		high_resolution_clock::time_point timestamp;
 		Timer* timer = nullptr;
 
+		bool acked = false;
+
 		int8_t resend_times = 0;
 		
 		HtpPacket(){
@@ -142,6 +144,7 @@ public:
         return s1 < s2;
     }
 };
+
 
 class HtpPacketHash {
 public:

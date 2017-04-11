@@ -50,14 +50,14 @@ class HtpSocket {
 		
 		// static ssize_t sendto(/*int sockfd*/ HtpSocket* socket, const void *buf);
 
-		mutex waitingACKListMutex;
+		// mutex waitingACKListMutex;
 		mutex outGoingSetMutex;
 		mutex inComingBufferMutex;
 
 		// MutexedQueue<HtpPacket*> waitingACKPacketQueue;		//buffer of sent packets, used in case resend a lost packet
 		
 		//buffer of sent packets, used in case resend a lost packet
-		set<HtpPacket*, HtpPacketComparator>		waitingACKPacketList;		
+		MutexedQueue<HtpPacket*>					waitingACKPacketList;		
 
 		//buffer of received ACK messages
 		MutexedQueue<HtpPacket*> 					receivedACKQueue;		

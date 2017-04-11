@@ -9,7 +9,8 @@
 	#include <iostream>
 	#include <pthread.h>
 	#include <cstdint>
-	
+	#include <functional>
+
 	#include "Node.h"
 
 	using namespace std;
@@ -179,6 +180,20 @@
 				}				
 				pthread_mutex_unlock(&this->firstMutex);
 				return haveData;
+			}
+
+			T find(T data, int (*compare)(T, T)) {
+				pthread_mutex_lock(&this->firstMutex);
+				Node<T>* node = *(this->first);
+				while(node != NULL) {
+					if(compare(data, node->data) == 0) {
+						pthread_mutex_unlock(&this->firstMutex);
+						return node->data;
+					}
+					node = node->next;
+				}
+				pthread_mutex_unlock(&this->firstMutex);
+				return NULL;
 			}
 	};
 
