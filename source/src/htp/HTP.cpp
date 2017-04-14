@@ -235,6 +235,7 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 		if(_this->waitingACKPacketList.peakWait(&packet, 1000)) {
 			if(packet->acked || packet->resend_times >= 5) {
 				_this->waitingACKPacketList.dequeue();
+				delete packet;
 				printf("delete from buffer packet %d\n", packet->getSequence());
 				// _this->waitingACKListMutex.unlock();
 			}
