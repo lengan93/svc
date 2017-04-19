@@ -605,6 +605,7 @@ int main(int argc, char* argv[]){
 			}
 			else if (argv[i] == ARG_DEFAULT_CONFIG){
 				if (i+1 < argc){
+					printf("1\n");
 					return saveDefaultConfig(argv[i+1]);
 				}
 				else{
@@ -912,14 +913,17 @@ int shutdownDaemon(bool saveImage, const string& imagePath){
 }
 
 int saveDefaultConfig(const string& configPath){
+	printf("2\n");
 	ofstream configFile;
 	configFile.open(configPath);
 	if (configFile.is_open()){
 		//-- TODO: serialize and writing config to configPath
 		configFile.close();
+		printf("3\n");
 		return 0;
 	}
 	else{
+		printf("4\n");
 		return -1;
 	}
 }

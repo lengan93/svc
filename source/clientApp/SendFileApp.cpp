@@ -93,7 +93,7 @@ int main(int argc, char** argv){
 						printf("\n[%0.2f] All data sent, waiting ACK", timeDistance(&echelon, &startingTime)); fflush(stdout);
 						bool fileSent = false;
 						do{
-							if (endpoint->read(buffer, bufferSize, 0) == 0){
+							if (endpoint->read(buffer, bufferSize, 0) > 0){
 								if ((buffer[0] == 0x03) && (buffer[1] == 0xFF)){
 									fileSent = true;																		
 								}

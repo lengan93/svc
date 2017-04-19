@@ -1,6 +1,6 @@
 BINDIR = ./bin
 SRCDIR = ./src
-CCOMPL = g++
+CCOMPL = g++ -static
 CINCLU = -I./src/utils -I./src/crypto
 CFLAGS = -std=c++11 -pthread -lgmp
 CDEBUG = -O0 -g

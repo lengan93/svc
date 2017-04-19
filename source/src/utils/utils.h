@@ -1,7 +1,8 @@
 #ifndef __TOM_UTILS__
 #define __TOM_UTILS__
 
-	#include <cstdlib>
+	#include <stdlib.h>
+	#include <string.h>
 	
 	#ifdef _WIN32
 		#include <direct.h>

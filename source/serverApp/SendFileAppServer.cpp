@@ -1,8 +1,8 @@
 #include <iostream>
 
-#include "../src/utils/PeriodicWorker.h"
+#include "../src/utils/_PeriodicWorker.h"
 #include "../src/svc/SVC.h"
-#include "../src/svc/host/SVCHostIP.h"
+// #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
 
@@ -23,7 +23,7 @@ void send_server_beat(void* args){
 	uint8_t buffer[1];
 	SVCEndpoint* ep = (SVCEndpoint*)args;
 	buffer[0] = 0xFF;
-	ep->sendData(buffer, 1);
+	ep->write(buffer, 1, 0);
 	if (headerReceived &!fileReceived){
 		printf("\rReceived: %d/%d", readSize, fileSize); fflush(stdout);
 	}
@@ -39,21 +39,21 @@ int main(int argc, char** argv){
 	try{
 		SVC* svc = new SVC(appID, authenticator);		
 		printf("\nserver is listenning..."); fflush(stdout);
-		SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT, 0);
+		SVCEndpoint* endpoint = svc->listenConnection("", 0);
 		if (endpoint!=NULL){
-			if (endpoint->negotiate()){
+			if (endpoint->negotiate(3000)){
 				printf("\nConnection established!");
 				
 				//pw to sent beat
 				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
 				
-				uint32_t bufferSize = 1400;
+				uint16_t bufferSize = 1400;
 				uint8_t buffer[bufferSize];
 				
 				//-- try to read file size and name from the first message				
 				
 				while (!fileReceived){
-					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
+					if ((bufferSize = endpoint->read(buffer, 1400, 0)) > 0){
 						switch (buffer[0]){
 							case 0x01:
 								if (!headerReceived){
@@ -84,7 +84,7 @@ int main(int argc, char** argv){
 								//printf("\nsend back 0x03"); fflush(stdout);
 								for (int i=0; i<RETRY_TIME; i++){
 									buffer[1]=0xFF;						
-									endpoint->sendData(buffer, 2);
+									endpoint->write(buffer, 2, 0);
 									//printf(".");
 								}
 								fflush(stdout);
@@ -100,7 +100,7 @@ int main(int argc, char** argv){
 				pw->waitStop();
 				delete pw;
 								
-				endpoint->shutdownEndpoint();			
+				endpoint->shutdown();			
 				printf("\nProgram terminated!\n");
 			}
 			else{
@@ -108,7 +108,7 @@ int main(int argc, char** argv){
 			}
 			delete endpoint;
 		}
-		svc->shutdownSVC();
+		svc->shutdown();
 		delete svc;
 	}
 	catch (...){
