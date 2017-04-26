@@ -4,6 +4,8 @@
 	#include <cstdio>		//-- for 'printf'
 	#include <iostream>
 	#include <fstream>
+	#include <chrono>
+
 	using namespace std;
 
 	//--	print a buffer in HEX
@@ -32,4 +34,9 @@
 		file->write(gap, 10);
 	}
 	
+	static inline int getTime() {
+		static std::chrono::high_resolution_clock::time_point start_tp = std::chrono::high_resolution_clock::now();
+		return std::chrono::duration_cast<chrono::milliseconds>(std::chrono::high_resolution_clock::now()-start_tp).count();
+	}
+
 #endif

@@ -8,18 +8,19 @@ TODO: retransmission timeout, set a timeout for every important packet, so that 
 resend the packet if it doesn't receive the ack after pass the timeout
 */
 
-std::chrono::high_resolution_clock::time_point start_tp = std::chrono::high_resolution_clock::now();
+#define PRINT_LOG false
 
 HtpSocket::HtpSocket() throw(){
-	printf("default constructor\n");
+	if(PRINT_LOG)
+		printf("default constructor\n");
 
 	UDPSocket = socket(AF_INET, SOCK_DGRAM, 0);
-	start_tp = std::chrono::high_resolution_clock::now();
 	// currentSeq = 0;
 }
 
 HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
-	printf("constructor with localPort\n");
+	if(PRINT_LOG)
+		printf("constructor with localPort\n");
 
 	struct sockaddr_in localAddress = {0};
     localAddress.sin_family = AF_INET;
@@ -36,9 +37,9 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 		throw;
 	}
 
-	if (pthread_create(&htp_writing_thread, &attr, htp_writing_loop, this) != 0){
-		throw;
-	}
+	// if (pthread_create(&htp_writing_thread, &attr, htp_writing_loop, this) != 0){
+	// 	throw;
+	// }
 
 	if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
 		throw;
@@ -53,10 +54,16 @@ HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
 
 // }
 
-int getTime() {
-	return chrono::duration_cast<chrono::milliseconds>(high_resolution_clock::now()-start_tp).count();
+int HtpSocket::sendPacket(HtpPacket* packet) {
+	int r;
+	sendMutex.lock();
+	r = ::sendto(this->UDPSocket, packet->packet, packet->packetLen, 0, 
+					(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
+	sendMutex.unlock();
+	return r;
 }
 
+// TODO: prevent sequence prediction attack
 bool HtpSocket::checkSequence(uint32_t seq) {
 	if(seq > biggestSeq) {
 		for (uint32_t i = biggestSeq+1; i < seq; ++i)
@@ -89,7 +96,8 @@ int HtpPacketCompare (HtpPacket* p1, HtpPacket* p2) {
 void* HtpSocket::htp_reading_loop(void* args) {
 	//TODO: listen to the socket and enqueue every packet received to incoming queue
 
-	printf("reading thread created\n");
+	if(PRINT_LOG)
+		printf("reading thread created\n");
 
 	HtpPacket* packet;
 	uint32_t readbytes;
@@ -115,10 +123,13 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					}
 
 					// print track log
-					printf("[%d] receive data packet %d(%d): \n", getTime(), packet->getSequence(), packet->packetLen);
+					if(PRINT_LOG)
+						printf("[%d] receive data packet %d(%d): \n", getTime(), packet->getSequence(), packet->packetLen);
 					// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
+					printf("[%d] reading_loop wait\n", getTime());
 					_this->inComingBufferMutex.lock();
+					printf("[%d] reading_loop notified\n", getTime());
 					_this->inComingQueue.insert(packet);
 					_this->inComingBufferMutex.unlock();
 
@@ -134,7 +145,8 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					// printf("%d sent success\n", packet->getSequence());
 					// _this->receivedACKQueue.enqueue(packet);
 
-					printf("[%d] received ACK of packet %d\n", getTime(), packet->getSequence());
+					if(PRINT_LOG)
+						printf("[%d] received ACK of packet %d\n", getTime(), packet->getSequence());
 
 
 					/* TODO: remove the packet acked in the waiting queue */
@@ -158,72 +170,75 @@ void* HtpSocket::htp_reading_loop(void* args) {
 		}
 		else {
 			delete packet;
-			printf("drop a packet with invalid length\n");
+			if(PRINT_LOG)
+				printf("drop a packet with invalid length\n");
 		}
 
 	// int r = ::recvfrom(UDPSocket, htp_frame, frame_len, flags, from, fromlen);
 	}
 }
 
-void* HtpSocket::htp_writing_loop(void* args) {
-	//TODO: send every packet in the outgoing queue to its destination
-	// uint8_t* htp_frame;
+// void* HtpSocket::htp_writing_loop(void* args) {
+// 	//TODO: send every packet in the outgoing queue to its destination
+// 	// uint8_t* htp_frame;
 
-	printf("writing thread created\n");
+// 	if(PRINT_LOG)
+// 		printf("writing thread created\n");
 
-	HtpSocket* _this = (HtpSocket*) args;
+// 	HtpSocket* _this = (HtpSocket*) args;
 
-	HtpPacket* packet;
-	while(1) {
-		// packet = _this->outGoingPackets.dequeueWait(1000);
-		// if(packet != NULL) {
-		_this->outGoingSetMutex.lock();
-		if(!_this->outGoingPackets.empty()) {
-			// packet = *(_this->outGoingPackets.begin());
-			// _this->outGoingPackets.erase(packet);
-			set<HtpPacket*, HtpPacketComparator>::iterator it = _this->outGoingPackets.begin();
-			packet = *it;
-			if(packet != NULL) {
-				_this->outGoingPackets.erase(it);
-				_this->outGoingSetMutex.unlock();
+// 	HtpPacket* packet;
+// 	while(1) {
+// 		// packet = _this->outGoingPackets.dequeueWait(1000);
+// 		// if(packet != NULL) {
+// 		_this->outGoingSetMutex.lock();
+// 		if(!_this->outGoingPackets.empty()) {
+// 			// packet = *(_this->outGoingPackets.begin());
+// 			// _this->outGoingPackets.erase(packet);
+// 			set<HtpPacket*, HtpPacketComparator>::iterator it = _this->outGoingPackets.begin();
+// 			packet = *it;
+// 			if(packet != NULL) {
+// 				_this->outGoingPackets.erase(it);
+// 				_this->outGoingSetMutex.unlock();
 
-				// print track log
-				printf("[%d] send packet %d\n", getTime(), packet->getSequence());
-				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
+// 				// print track log
+// 				if(PRINT_LOG)
+// 					printf("[%d] send packet %d\n", getTime(), packet->getSequence());
+// 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
-				if(packet->isData() && packet->nolost()) {
-					packet->setTimestamp();
-					// if(packet->timer == nullptr) {
-					// 	void* args[] = {_this, packet};
-					// 	Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
-					// 	packet->setTimer(timer);
-					// 	packet->timer->start(true);
-					// }
-					// else {
-					// 	packet->timer->stop();
-					// 	packet->timer->start(true);
-					// }
-				}
+// 				if(packet->isData() && packet->nolost()) {
+// 					packet->setTimestamp();
+// 					// if(packet->timer == nullptr) {
+// 					// 	void* args[] = {_this, packet};
+// 					// 	Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
+// 					// 	packet->setTimer(timer);
+// 					// 	packet->timer->start(true);
+// 					// }
+// 					// else {
+// 					// 	packet->timer->stop();
+// 					// 	packet->timer->start(true);
+// 					// }
+// 				}
 
-				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
-					(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
-				// if(packet->isData()) {
-				// 	_this->waitingACKPacketList.push_back(packet);
-				// }
-				if(!packet->nolost()) {
-					delete packet;
-				}
-			}
-			else {
-				_this->outGoingSetMutex.unlock();
-				printf("wtf\n");
-			}
-		}
-		else {
-			_this->outGoingSetMutex.unlock();
-		}
-	}
-}
+// 				::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
+// 					(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
+// 				// if(packet->isData()) {
+// 				// 	_this->waitingACKPacketList.push_back(packet);
+// 				// }
+// 				if(!packet->nolost()) {
+// 					delete packet;
+// 				}
+// 			}
+// 			else {
+// 				_this->outGoingSetMutex.unlock();
+// 				printf("wtf\n");
+// 			}
+// 		}
+// 		else {
+// 			_this->outGoingSetMutex.unlock();
+// 		}
+// 	}
+// }
 
 
 void* HtpSocket::htp_retransmission_loop(void* args) {
@@ -236,17 +251,20 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 			if(packet->acked || packet->resend_times >= 5) {
 				_this->waitingACKPacketList.dequeue();
 				delete packet;
-				printf("delete from buffer packet %d\n", packet->getSequence());
+				if(PRINT_LOG)
+					printf("delete from buffer packet %d\n", packet->getSequence());
 				// _this->waitingACKListMutex.unlock();
 			}
 			else if(packet->timeout()) {
 				packet->setTimestamp();
 				packet->resend_times++;
 				// _this->waitingACKListMutex.unlock();
-				printf("resend ---------------- %d\n", packet->getSequence());
-				_this->outGoingSetMutex.lock();
-				_this->outGoingPackets.insert(packet);
-				_this->outGoingSetMutex.unlock();
+				if(PRINT_LOG)
+					printf("resend ---------------- %d\n", packet->getSequence());
+				// _this->outGoingSetMutex.lock();
+				// _this->outGoingPackets.insert(packet);
+				// _this->outGoingSetMutex.unlock();
+				_this->sendPacket(packet);
 				_this->resendPackets++;
 			}
 			else {
@@ -257,123 +275,6 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 			// _this->waitingACKListMutex.unlock();
 		}
 	}
-
-	// while(1) {
-	// 	_this->waitingACKListMutex.lock();
-	// 	if(!_this->waitingACKPacketList.empty()) {
-	// 		for(auto packet : _this->waitingACKPacketList) {
-	// 			if(packet->acked || packet->resend_times >= 5) {
-	// 				_this->waitingACKPacketList.erase(packet);
-	// 				printf("delete from buffer packet %d\n", packet->getSequence());
-	// 				_this->waitingACKListMutex.unlock();
-	// 			}
-	// 			else if(packet->timeout()) {
-	// 				packet->setTimestamp();
-	// 				packet->resend_times++;
-	// 				_this->waitingACKListMutex.unlock();
-	// 				printf("resend ---------------- %d\n", packet->getSequence());
-	// 				_this->outGoingSetMutex.lock();
-	// 				_this->outGoingPackets.insert(packet);
-	// 				_this->outGoingSetMutex.unlock();
-	// 				_this->resendPackets++;
-	// 			}
-	// 			else {
-	// 				_this->waitingACKListMutex.unlock();
-	// 			}
-	// 			_this->waitingACKListMutex.lock();
-	// 		}
-	// 	}
-	// 	_this->waitingACKListMutex.unlock();
-	// }
-}
-
-void HtpSocket::htp_retransmission_timeout_handler(void* args) {
-	// void** tmp = (void**) args;
-	// HtpSocket* _this = (HtpSocket*) tmp[0];
-	// HtpPacket* packet = (HtpPacket*) tmp[1];
-
-	// _this->waitingACKListMutex.lock();
-	// auto it = _this->waitingACKPacketList.find(packet); 
-	// if(it != _this->waitingACKPacketList.end()) {
-	// 	if(packet->resend_times >= 5) {
-	// 		_this->waitingACKPacketList.erase(it);
-	// 		_this->waitingACKListMutex.unlock();
-	// 		delete packet;
-	// 	}
-	// 	else {
-	// 		_this->waitingACKListMutex.unlock();
-	// 		_this->outGoingSetMutex.lock();
-	// 		printf("[%d] resend ---------------- %d\n", getTime(), packet->getSequence());
-	// 		_this->outGoingPackets.insert(packet);
-	// 		_this->outGoingSetMutex.unlock();
-	// 		packet->resend_times++;
-
-	// 		_this->resendPackets++;
-	// 	}
-	// }
-	// else {
-	// 	_this->waitingACKListMutex.unlock();
-	// }
-}
-
-void* HtpSocket::htp_ack_handler(void* args) {
-	// HtpSocket* _this = (HtpSocket*) args;
-
-	// HtpPacket* ackPkt;
-	// HtpPacket* packet;
-	// uint32_t ack;
-	// uint32_t seq;
-	// ofstream* logfile = new ofstream("lostpacket.log");
-	// // char gap[10] = {0};
-	// while(1) {
-	// 	ackPkt = _this->receivedACKQueue.dequeueWait(1000);
-
-	// 	if(ackPkt != NULL) {
-	// 		ack = ackPkt->getSequence();
-	// 		// print track log
-	// 		printf("receive ack of %d\n", ack);
-
-	// 		// THIS ALGORITHM MIGHT BE WRONG
-			
-	// 		_this->waitingACKListMutex.lock();
-	// 		auto pktIt=_this->waitingACKPacketList.begin(); 
-	// 		while(pktIt!=_this->waitingACKPacketList.end()) {
-	// 			packet = *pktIt;
-	// 			seq = packet->getSequence();
-	// 			if(ack == seq) {
-	// 				//-- check source address
-	// 				pktIt = _this->waitingACKPacketList.erase(pktIt);
-	// 				delete packet;
-	// 				_this->successReceivedPackets++;
-	// 				// print track log
-	// 				// printf("send success   %d\n", seq);
-	// 			}
-	// 			else if(ack > seq){
-	// 				//ack > seq : packet might be lost, resend it and go to the next packet
-	// 				_this->outGoingPackets.insert(packet);
-	// 				_this->resendPackets++;
-	// 				printf("resend ---------------- %d\n", seq);
-	// 				// pktIt = _this->waitingACKPacketList.erase(pktIt);
-	// 				// print track log
-	// 				// printf("lose packet           %d\n", seq);
-	// 				// logfile->write((char*)&seq, 4);
-	// 				// logfile->write((char*)packet->packet, packet->packetLen);
-	// 				// logfile->write(gap, 10);
-	// 				// logPacket(logfile, seq, packet->packet, packet->packetLen);
-
-	// 				pktIt++;
-	// 				continue;
-	// 			}
-	// 			else {
-	// 				//invalid ack
-	// 			}
-
-	// 			delete ackPkt;
-	// 			break;
-	// 		}
-	// 		_this->waitingACKListMutex.unlock();
-	// 	}
-	// }
 }
 
 /*
@@ -394,22 +295,12 @@ void HtpSocket::sendACK(HtpPacket* packet) {
 
 		HtpPacket* ack_packet = new HtpPacket(htp_frame, ackLen);
 		ack_packet->setDstAddr(&(packet->srcAddr), packet->srcAddrLen);
-		outGoingSetMutex.lock();
-		this->outGoingPackets.insert(ack_packet);
-		outGoingSetMutex.unlock();
+		// outGoingSetMutex.lock();
+		// this->outGoingPackets.insert(ack_packet);
+		// outGoingSetMutex.unlock();
+		this->sendPacket(packet);
 	}
 }
-
-// void HtpSocket::sendACK(uint8_t* packet) {
-// 	int ackLen = 2 + ENDPOINTID_LENGTH + SEQUENCE_LENGTH;
-// 	uint8_t htp_frame[ackLen];
-// 	htp_frame[0] = HTP_ACK;
-// 	memcpy(htp_frame+2, packet + 2, ackLen-2);
-
-// 	HtpPacket* ack_packet = new HtpPacket(htp_frame, ackLen);
-// 	ack_packet->setDstAddr(&(packet->srcAddr), packet->srcAddrLen);
-// 	this->outGoingPackets.enqueue(ack_packet);
-// }
 
 void HtpSocket::sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tolen) {
 	this->missingPackets.insert(seq);
@@ -418,12 +309,14 @@ void HtpSocket::sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tole
 
 //======== HTP INTERFACE ==========
 int HtpSocket::bind(struct sockaddr *my_addr, socklen_t addrlen) {
-	printf("htp_bind\n");
+	if(PRINT_LOG)
+		printf("htp_bind\n");
 	return ::bind(UDPSocket, my_addr, addrlen);
 }
 
 int HtpSocket::close() {
-	printf("htp_close\n");
+	if(PRINT_LOG)
+		printf("htp_close\n");
 	return ::close(UDPSocket);
 }
 
@@ -462,15 +355,15 @@ int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct socka
 		// waitingACKListMutex.unlock();
 	}
 	//enqueue the packet to the outgoing queue
-	outGoingSetMutex.lock();
-	outGoingPackets.insert(packet);
-	outGoingSetMutex.unlock();
+	// outGoingSetMutex.lock();
+	// outGoingPackets.insert(packet);
+	// outGoingSetMutex.unlock();
 
 	sendCounter++;
 	// printf("packet %d sent\n", packet->getSequence());
 
 	// sentQueue.enqueue(htp_frame);
-	return 0;
+	return this->sendPacket(packet);
 }
 
 int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr *from, socklen_t *fromlen) {
@@ -480,15 +373,21 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 
 	// printf("htp_recvfrom\n");
 	// static int recvCounter = 0;
+	static bool track = false;
 
 	int r = 0;
-
+	if(track)
+		printf("[%d] recvfrom wait\n", getTime());
 	inComingBufferMutex.lock();
+	if(track)
+		printf("[%d] recvfrom notified\n", getTime());
 	if(!inComingQueue.empty()) {
+		track = true;
 		set<HtpPacket*, HtpPacketComparator>::iterator it = (inComingQueue.begin());
 		HtpPacket* packet = *it;
 		if(packet->getSequence() != receiverWindowLeftSideSeq) {
 			inComingBufferMutex.unlock();
+			printf(".\n\n");
 			return 0;
 		}
 		inComingQueue.erase(it);
@@ -530,6 +429,7 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 }
 
 HtpSocket::~HtpSocket() {
-	printf("htp_destructor\n");
+	if(PRINT_LOG)
+		printf("htp_destructor\n");
 	this->close();
 }

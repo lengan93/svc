@@ -14,8 +14,10 @@
 #include "../crypto/ECCurve.h"
 #include "../crypto/AESGCM.h"
 
-
 #define SVC_VERSION 0x01
+#define PRINT_LOG false
+
+#define _USING_HTP_
 
 using namespace std;
 
@@ -43,9 +45,12 @@ struct sockaddr_un daemonSockUnAddress;
 struct sockaddr_in daemonSockInAddress;
 
 int daemonUnSocket;
-//int daemonInSocket;
 
-HtpSocket* daemonHtpSocket;
+#ifdef _USING_HTP_
+	HtpSocket* daemonHtpSocket;
+#else
+	int daemonInSocket;
+#endif
 
 PacketHandler* daemonUnixIncomingPacketHandler;
 PacketHandler* daemonInetIncomingPacketHandler;
@@ -299,22 +304,22 @@ void DaemonEndpoint::shutdownEndpoint(){
 		this->aesgcm = NULL;
 		this->curve = NULL;
 		// printf("\ndaemon endpoint: %d packets received from client", readPacketCounter);
-		printf("\nHTP: %d inet packets sent, %d inet packets received", daemonHtpSocket->sendCounter, daemonHtpSocket->recvCounter);
+		// printf("\nHTP: %d inet packets sent, %d inet packets received", daemonHtpSocket->sendCounter, daemonHtpSocket->recvCounter);
 		
 		printf("\n\n========= Sender logs =========");
 		printf("\nHTP: %d packets sent successfully, %d packets resended", 
 			daemonHtpSocket->successReceivedPackets, daemonHtpSocket->resendPackets);
-		printf("\nDaemon endpoint: %d packets encrypted", encryptedSentPackets);
-		printf("\nDaemon endpoint: %d outgoing inet packets handled", daemonEpHandledOutPacketCounter);
+		// printf("\nDaemon endpoint: %d packets encrypted", encryptedSentPackets);
+		// printf("\nDaemon endpoint: %d outgoing inet packets handled", daemonEpHandledOutPacketCounter);
 		printf("\n========= /Sender logs =========\n");
 
-		printf("\n\n========= Receiver logs =========");
-		printf("\nDaemon: %d inet packets read", readPacketCounter);
-		printf("\nDaemon: %d recvd inet packets handled", handledPacketCounter);
-		printf("\nDaemon endpoint: %d recvd inet packets handled", daemonEpHandledInPacketCounter);
-		printf("\nDaemon endpoint: %d packets decrypted successfully", decryptSuccessPackets);
-		printf("\nDaemon endpoint: %d recvd packets forwarded to App", forwardedToAppPacketCounter);
-		printf("\n========= /Receiver logs =========\n");
+		// printf("\n\n========= Receiver logs =========");
+		// printf("\nDaemon: %d inet packets read", readPacketCounter);
+		// printf("\nDaemon: %d recvd inet packets handled", handledPacketCounter);
+		// printf("\nDaemon endpoint: %d recvd inet packets handled", daemonEpHandledInPacketCounter);
+		// printf("\nDaemon endpoint: %d packets decrypted successfully", decryptSuccessPackets);
+		// printf("\nDaemon endpoint: %d recvd packets forwarded to App", forwardedToAppPacketCounter);
+		// printf("\n========= /Receiver logs =========\n");
 
 		printf("\nendpoint shutdown: "); printBuffer((uint8_t*)&this->endpointID, ENDPOINTID_LENGTH); fflush(stdout);
 	}
@@ -432,9 +437,16 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 	while (_this->working || _this->inetOutgoingQueue.notEmpty() || _this->inetToBeSentQueue.notEmpty()){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
-			// sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 
-			sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			if(PRINT_LOG)
+				printf("[%d] send packet %d\n", getTime(), packet->getSequence());
+
+			#ifdef _USING_HTP_
+				sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+			#else
+				sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);
+			#endif
+
 			inetWritePacketCounter++;
 
 			//printf("\ndaemon inet writes packet %d: errno: %d", sendrs, errno); printBuffer(packet->packet, packet->dataLen); fflush(stdout);
@@ -479,10 +491,15 @@ void DaemonEndpoint::encryptPacket(SVCPacket* packet){
 	//printf("\ndata: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);
 	*/
 	
+	if(PRINT_LOG)
+		printf("[%d] encypt packet %d\n", getTime(), packet->getSequence());
+			
 	aesgcmMutex.lock();
 	this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
 	aesgcmMutex.unlock();
 	
+	if(PRINT_LOG)
+		printf("[%d] encypt packet %d done\n", getTime(), packet->getSequence());
 	/*//printf("\ngot:");
 	//printf("\nencrypted: "); printBuffer(encrypted, encryptedLen); fflush(stdout);
 	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
@@ -518,10 +535,15 @@ bool DaemonEndpoint::decryptPacket(SVCPacket* packet){
 	//printf("\ntag: "); printBuffer(tag, tagLen); fflush(stdout);
 	//printf("\nencrypted: "); printBuffer(packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen); fflush(stdout);*/
 	
+	if(PRINT_LOG)
+		printf("[%d] decrypt packet %d\n", getTime(), packet->getSequence());
+
 	aesgcmMutex.lock();
 	rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
 	aesgcmMutex.unlock();
 	
+	if(PRINT_LOG)
+		printf("[%d] decrypt packet %d done\n", getTime(), packet->getSequence());
 	/*//printf("\ngot:");
 	//printf("\ndecrypted: "); printBuffer(decrypted, decryptedLen); fflush(stdout);*/
 		
@@ -542,7 +564,10 @@ void* DaemonEndpoint::daemon_endpoint_unix_reading_loop(void* args){
 	while (_this->working){
 		readrs = recv(_this->dmnSocket, buffer, SVC_DEFAULT_BUFSIZ, 0);				
 		if (readrs>0){	
-			_this->unixIncomingQueue.enqueue(new SVCPacket(buffer, readrs));
+			SVCPacket* packet = new SVCPacket(buffer, readrs);
+			_this->unixIncomingQueue.enqueue(packet);
+			// if(PRINT_LOG)
+			// 	printf("[%d] unix recv packet %d\n", getTime(), packet->getSequence());
 			// _this->readPacketCounter++;
 			//printf("\ndaemon endpoint unix reads packet:"); printBuffer(buffer, readrs); fflush(stdout);
 		}
@@ -561,9 +586,12 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 		packet = _this->unixToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 			sendrs = send(_this->dmnSocket, packet->packet, packet->dataLen, 0);
+			if(PRINT_LOG)
+				printf("[%d] unix send packet %d\n", getTime(), packet->getSequence());
 			if (sendrs == -1){
-				//printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
+				printf("\ndaemon unix writes packet fail, errno: %d", errno); //111 or 107
 			}
+
 			delete packet;		
 		}
 	}
@@ -571,6 +599,8 @@ void* DaemonEndpoint::daemon_endpoint_unix_writing_loop(void* args){
 }
 
 void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* packet, void* args){
+	if(PRINT_LOG)
+		printf("[%d] handle packet %d\n", getTime(), packet->getSequence());
 	daemonEpHandledInPacketCounter++;
 	uint16_t paramLen;
 	uint8_t param[SVC_DEFAULT_BUFSIZ];	
@@ -673,6 +703,8 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 		}
 		else{
 			//-- forward to app
+			if(PRINT_LOG)
+				printf("[%d] forward packet %d\n", getTime(), packet->getSequence());
 			_this->unixOutgoingQueue.enqueue(packet);
 			forwardedToAppPacketCounter++;
 		}
@@ -831,7 +863,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				break;
 			
 			case SVC_CMD_CONNECT_INNER3:	
-				printf("SVC_CMD_CONNECT_INNER3\n");
+				if(PRINT_LOG)
+					printf("SVC_CMD_CONNECT_INNER3\n");
 
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER3){					
@@ -935,7 +968,8 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					
 						aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
 						
-						printf("SVC_CMD_CONNECT_INNER3 -> SVC_CMD_CONNECT_OUTER2\n");
+						if(PRINT_LOG)
+							printf("SVC_CMD_CONNECT_INNER3 -> SVC_CMD_CONNECT_OUTER2\n");
 						//-- switch command
 						packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
 						//-- attach Ey(gy) to packet
@@ -1129,14 +1163,20 @@ void* daemon_inet_reading_loop(void* args){
 	uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 
 	while (working){
-		srcAddrLen = sizeof(srcAddr);		
-		// readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
-		
-		readrs = daemonHtpSocket->recvfrom(buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		srcAddrLen = sizeof(srcAddr);	
+
+		#ifdef _USING_HTP_
+			readrs = daemonHtpSocket->recvfrom(buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		#else
+			readrs = recvfrom(daemonInSocket, buffer, SVC_DEFAULT_BUFSIZ, 0, (struct sockaddr*)&srcAddr, &srcAddrLen);		
+		#endif
+
 		if (readrs>0){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
 			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
+			if(PRINT_LOG)
+				printf("[%d] recv packet %d\n", getTime(), packet->getSequence());
 			daemonInetIncomingQueue.enqueue(packet);
 			readPacketCounter++;
 			//printf("."); fflush(stdout);
@@ -1298,7 +1338,8 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						}
 						appID = *((uint32_t*)param);					
 						
-						printf("SVC_CMD_CONNECT_OUTER1 -> SVC_CMD_CONNECT_INNER2\n");
+						if(PRINT_LOG)
+							printf("SVC_CMD_CONNECT_OUTER1 -> SVC_CMD_CONNECT_INNER2\n");
 						//-- send the packet to the corresponding app
 						packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
 						appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);
@@ -1431,27 +1472,32 @@ int startDaemonWithConfig(const char* configFile){
 	}
     
     //--TODO:	TO BE CHANGED TO HTP
-    //--	create htp socket and bind to localhost
- //    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
- //    memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
- //    daemonSockInAddress.sin_family = AF_INET;
- //    daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
-	// daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
- //    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
- //    	working = false;
- //    	pthread_join(daemonUnixReadingThread, NULL);
- //    	errorString = SVC_ERROR_BINDING;
- //    	goto error2;
- //    }
-	try {
-		daemonHtpSocket = new HtpSocket(SVC_DAEPORT);
-	}
-	catch(...) {
-		working = false;
-    	pthread_join(daemonUnixReadingThread, NULL);
-    	errorString = SVC_ERROR_BINDING;
-    	goto error2;
-	}
+    
+
+	#ifdef _USING_HTP_	
+		//--	create htp socket and bind to localhost
+		try {
+			daemonHtpSocket = new HtpSocket(SVC_DAEPORT);
+		}
+		catch(...) {
+			working = false;
+	    	pthread_join(daemonUnixReadingThread, NULL);
+	    	errorString = SVC_ERROR_BINDING;
+	    	goto error2;
+		}
+	#else
+	    daemonInSocket = socket(AF_INET, SOCK_DGRAM, 0);
+	    memset(&daemonSockInAddress, 0, sizeof(daemonSockInAddress));
+	    daemonSockInAddress.sin_family = AF_INET;
+	    daemonSockInAddress.sin_port = htons(SVC_DAEPORT);
+		daemonSockInAddress.sin_addr.s_addr = htonl(INADDR_ANY);      
+	    if (bind(daemonInSocket, (struct sockaddr*) &daemonSockInAddress, sizeof(daemonSockInAddress))){    	
+	    	working = false;
+	    	pthread_join(daemonUnixReadingThread, NULL);
+	    	errorString = SVC_ERROR_BINDING;
+	    	goto error2;
+	    }
+	#endif
 
     //-- then create a reading thread
 	if (pthread_create(&daemonInetReadingThread, &attr, daemon_inet_reading_loop, NULL) != 0){		
@@ -1485,8 +1531,13 @@ int startDaemonWithConfig(const char* configFile){
 	}    
     
     error3:
-    	// close(daemonInSocket);
-    	daemonHtpSocket->close();
+
+    	#ifdef _USING_HTP_
+    		daemonHtpSocket->close();
+    	#else
+    		close(daemonInSocket);
+    	#endif
+    		
     error2:
     	close(daemonUnSocket);
     error1:

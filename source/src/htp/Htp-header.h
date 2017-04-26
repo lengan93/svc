@@ -24,9 +24,16 @@
 // typedef uint8_t HtpFrame;
 
 // HTP Info byte
-#define HTP_DATA	0x80
-#define HTP_ACK		0x40
-#define HTP_NACK	0x20
+#define HTP_DATA		0x80
+#define HTP_ACK			0x40
+#define HTP_IMPT		0x20
+#define HTP_SEQ			0x10
+#define HTP_NACK		0x10
+
+#define HTP_PREV_DATA	0x08
+#define HTP_PREV_ACK	0x04
+#define HTP_PREV_IMPT	0x02
+#define HTP_PREV_SEQ	0x01
 
 #define HTP_SEND_TIMEOUT 1000 //in ms
 

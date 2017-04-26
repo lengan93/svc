@@ -93,12 +93,12 @@ int main(int argc, char** argv){
 						}
 						
 						//-- then send terminating packets
-						// buffer[0] = 0x03;
-						// for (int i=0;i<RETRY_TIME;i++){
-						// 	endpoint->sendData(buffer, 1);
-						// 	// counter++;
-						// }
-						// buffer[0] = 0x00;
+						buffer[0] = 0x03;
+						for (int i=0;i<RETRY_TIME;i++){
+							endpoint->sendData(buffer, 1);
+							// counter++;
+						}
+						buffer[0] = 0x00;
 						
 						//-- read to check that server send terminating signal
 						clock_gettime(CLOCK_REALTIME, &echelon);
