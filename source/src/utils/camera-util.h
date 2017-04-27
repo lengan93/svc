@@ -108,7 +108,9 @@ void initFFmpeg(int withDevice = 0) {
 
 bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx, int* streamIndex) {
 	//for linux only
-	AVInputFormat *inputFormat = av_find_input_format("v4l2");
+	AVInputFormat *inputFormat = av_find_input_format("video4linux2");
+
+
 
 	int code;
 	char errbuf[100];

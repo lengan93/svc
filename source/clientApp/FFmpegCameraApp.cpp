@@ -1,3 +1,7 @@
+/*
+	camclient2.exe [server address]
+*/
+
 #include <iostream>
 #include <time.h>
 
