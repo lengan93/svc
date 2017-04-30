@@ -1,8 +1,3 @@
-#include "../crypto/crypto-utils.h"
-#include "../crypto/SHA256.h"
-#include "../crypto/ECCurve.h"
-#include "../crypto/AESGCM.h"
-
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -17,6 +12,11 @@
 #include "svc-utils.h"
 #include "../utils/NamedPipe.h"
 #include "../utils/HTPSocket.h"
+
+#include "../crypto/crypto-utils.h"
+#include "../crypto/SHA256.h"
+#include "../crypto/ECCurve.h"
+#include "../crypto/AESGCM.h"
 
 using namespace std;
 using namespace svc_utils;
@@ -33,6 +33,7 @@ class SVCDaemonImage{
 	public:
 		struct SVCDaemonConfig config;
 };
+
 
 class SVCClient{
 	public:
@@ -208,6 +209,66 @@ class STSNegotiation{
 
 };
 
+class DaemonEndpoint;
+
+
+//================================= GLOBAL CONSTANT  ===============
+const string ARG_DEFAULT_CONFIG = "--default-config";
+const string ARG_HELP = "--help";
+const string ARG_START = "--start";
+const string ARG_SHUTDOWN = "--shutdown";
+const string ARG_CONFIG = "-c";
+const string ARG_IMAGE = "-i";
+const string ARG_CONFIG_PATH = "config_file_path";
+const string ARG_IMAGE_PATH = "image_file_path";
+
+const string svcDefaultConfigFilename = "svcdaemon.conf";
+
+static SVCDaemonConfig svcDefaultConfig = {
+	NETWORK_TYPE_IPv4, 	//-- networkType
+	"0.0.0.0:9293",		//-- localHost
+	9293				//-- daemonPort
+};
+
+//================================= GLOBAL VARIABLE ================
+NamedPipe* daemonLocalPipe;
+HTPSocket* htpSocket;
+
+MutexedQueue<SVCPacket*>* localIncomingQueue;
+SVCPacketReader* localPacketReader;
+SVCPacketHandler* localPacketHandler;
+
+MutexedQueue<SVCPacket*>* netIncomingQueue;
+SVCPacketReader* netPacketReader;
+SVCPacketHandler* netPacketHandler;
+
+struct SVCDaemonConfig daemonConfig;
+
+mutex stopMutex;
+condition_variable stopCV;
+bool working;
+
+//-- svcClients indexed by pipeID
+unordered_map<uint64_t, SVCClient*> svcClients;
+//-- indexed by pipeID
+unordered_map<uint64_t, DaemonEndpoint*> daemonEndpointsByPipeID;
+//-- indexed by sessionID 
+unordered_map<uint64_t, DaemonEndpoint*> daemonEndpointsBySessionID;
+
+//================================= DAEMON FUNCTIONS' DECLARATION ===========
+void waitStop();
+int exitWithError(string err);
+int showHelp();
+int startDaemon(SVCDaemonImage* image);
+int shutdownDaemon(bool saveImage, const string& imagePath);
+int saveDefaultConfig(const string& configPath);
+bool loadConfig(const string& filename, struct SVCDaemonConfig* config);
+bool loadImage(const string& filename, SVCDaemonImage** image);
+void shutdown();
+
+void daemon_local_packet_handler(SVCPacket* packet, void* args);
+
+
 class DaemonEndpoint{
 	public:
 		SVCClient* svcClient;
@@ -223,6 +284,9 @@ class DaemonEndpoint{
 		SVCPacketReader* localPacketReader;
 		MutexedQueue<SVCPacket*>* localReadingQueue;
 		SVCPacketHandler* localPacketHandler;
+
+		MutexedQueue<SVCPacket*>* netReadingQueue;
+		SVCPacketHandler* netPacketHandler;
 
 		static void local_incoming_packet_handler(SVCPacket* packet, void* args){
 			DaemonEndpoint* _this = (DaemonEndpoint*)args;
@@ -252,9 +316,34 @@ class DaemonEndpoint{
 							//-- switch commandID
 							packet->setCommand(SVC_CMD_CONNECT_OUTER1);
 
-							//-- TODO: send the packet to internet
-							packet->serialize(param, &paramLen);
+							//-- generate first 32 bits of sessionID
+							bool duplicatedID;
+							do{
+								duplicatedID = false;
+								uint32_t firstHalf;
+								crypto::generateRandomData(4, &firstHalf);
+								//-- check for duplicate
+								for (auto it = daemonEndpointsByPipeID.begin(); it!=daemonEndpointsByPipeID.end(); it++){
+									DaemonEndpoint* endpoint = (DaemonEndpoint*)it->second;
+									if (memcmp(&endpoint->sessionID, &firstHalf, 4) == 0){
+										duplicatedID = true;
+										break;
+									}
+								}
+								if (!duplicatedID){
+									memcpy(&_this->sessionID, &firstHalf, 4);
+									packet->setEndpointID(_this->sessionID);
+								}
+							}
+							while (duplicatedID);
 
+							//-- add appID
+							uint32_t appID = svcClients[_this->pipeID]->appID;
+							packet->pushDataChunk(&appID, APPID_LENGTH);
+
+							//-- send the packet to internet
+							packet->serialize(param, &paramLen);
+							htpSocket->writeTo(_this->hostAddr, param, paramLen, 0);
 							break;
 						}
 
@@ -292,9 +381,8 @@ class DaemonEndpoint{
 							//-- switch commandID
 							packet->setCommand(SVC_CMD_CONNECT_OUTER2);
 
-							//-- TODO: send the packet to internet
 							packet->serialize(param, &paramLen);				
-							
+							htpSocket->writeTo(_this->hostAddr, param, paramLen, 0);
 							break;
 						}
 
@@ -324,9 +412,8 @@ class DaemonEndpoint{
 							//-- switch commandID
 							packet->setCommand(SVC_CMD_CONNECT_OUTER3);
 
-							//-- TODO: send the packet to internet
-							packet->serialize(param, &paramLen);	
-
+							packet->serialize(param, &paramLen);
+							htpSocket->writeTo(_this->hostAddr, param, paramLen, 0);
 						}
 						break;
 
@@ -356,6 +443,27 @@ class DaemonEndpoint{
 						{
 							cout<<"received SVC_CMD_CONNECT_OUTER1"<<endl;
 
+							//-- generate last 32 bits of sessionID
+							bool duplicatedID;
+							do{
+								duplicatedID = false;
+								uint32_t lastHalf;
+								crypto::generateRandomData(4, &lastHalf);
+								//-- check for duplicate
+								for (auto it = daemonEndpointsByPipeID.begin(); it!=daemonEndpointsByPipeID.end(); it++){
+									DaemonEndpoint* endpoint = (DaemonEndpoint*)it->second;
+									if (memcmp(&endpoint->sessionID+4, &lastHalf, 4) == 0){
+										duplicatedID = true;
+										break;
+									}
+								}
+								if (!duplicatedID){
+									memcpy(&_this->sessionID+4, &lastHalf, 4);
+									packet->setEndpointID(_this->sessionID);
+								}
+							}
+							while (duplicatedID);
+
 							_this->sts->setGx((mpz_t*)((*packet)[1]->chunk), (mpz_t*)((*packet)[0]->chunk));
 
 							//-- pop out: gx.y, gx.y
@@ -368,12 +476,15 @@ class DaemonEndpoint{
 							//-- send the packet to client
 							packet->serialize(param, &paramLen);
 							_this->writePipe->write(param, paramLen, 0);
-						}
 							break;
+						}
 
 					case SVC_CMD_CONNECT_OUTER2:
 						{
 							cout<<"received SVC_CMD_CONNECT_OUTER2"<<endl;
+
+							//-- update sessionID
+							_this->sessionID = packet->getEndpointID();
 
 							//-- get Gy
 							_this->sts->setGy((mpz_t*)(*packet)[3]->chunk, (mpz_t*)(*packet)[2]->chunk);
@@ -450,13 +561,15 @@ class DaemonEndpoint{
 			this->option = option;
 			this->pipeID = pipeID;
 			this->hostAddr = hostAddr;
+			memset(&this->sessionID, 0, ENDPOINTID_LENGTH);
 			
 			this->readPipe = new NamedPipe(SVC_DAEMON_ENDPOINT_PIPE_PREFIX + to_string(pipeID), NamedPipeMode::NP_READ);
 			this->writePipe = new NamedPipe(SVC_ENDPOINT_PIPE_PREFIX + to_string(pipeID), NamedPipeMode::NP_WRITE);
 			this->localReadingQueue = new MutexedQueue<SVCPacket*>();
 			this->localPacketReader = new SVCPacketReader(this->readPipe, this->localReadingQueue, 0);
 			this->localPacketHandler = new SVCPacketHandler(this->localReadingQueue, DaemonEndpoint::local_incoming_packet_handler, this);
-
+			this->netReadingQueue = new MutexedQueue<SVCPacket*>();
+			this->netPacketHandler = new SVCPacketHandler(this->netReadingQueue, DaemonEndpoint::net_incoming_packet_handler, this);
 			this->working = true;
 		}
 
@@ -468,12 +581,16 @@ class DaemonEndpoint{
 				this->localPacketReader->stopWorking();
 				this->localReadingQueue->close();
 				this->localPacketHandler->stopWorking();
+				this->netReadingQueue->close();
+				this->netPacketHandler->stopWorking();
 
 				delete this->writePipe;
 				delete this->readPipe;
 				delete this->localPacketHandler;
 				delete this->localPacketReader;
 				delete this->localReadingQueue;
+				delete this->netReadingQueue;
+				delete this->netPacketHandler;
 				delete this->hostAddr;
 				cout<<"endpoint: "<<this->pipeID<<" shutdown"<<endl;
 			}
@@ -483,59 +600,6 @@ class DaemonEndpoint{
 			this->shutdown();
 		}
 };
-
-
-//================================= GLOBAL CONSTANT  ===============
-const string ARG_DEFAULT_CONFIG = "--default-config";
-const string ARG_HELP = "--help";
-const string ARG_START = "--start";
-const string ARG_SHUTDOWN = "--shutdown";
-const string ARG_CONFIG = "-c";
-const string ARG_IMAGE = "-i";
-const string ARG_CONFIG_PATH = "config_file_path";
-const string ARG_IMAGE_PATH = "image_file_path";
-
-const string svcDefaultConfigFilename = "svcdaemon.conf";
-
-static SVCDaemonConfig svcDefaultConfig = {
-	NETWORK_TYPE_IPv4, 	//-- networkType
-	"0.0.0.0:9293",		//-- localHost
-	9293				//-- daemonPort
-};
-
-//================================= GLOBAL VARIABLE ================
-NamedPipe* daemonLocalPipe;
-HTPSocket* htpSocket;
-
-MutexedQueue<SVCPacket*>* localIncomingQueue;
-SVCPacketReader* localPacketReader;
-SVCPacketHandler* localPacketHandler;
-
-MutexedQueue<SVCPacket*>* netIncomingQueue;
-SVCPacketReader* netPacketReader;
-SVCPacketHandler* netPacketHandler;
-
-struct SVCDaemonConfig daemonConfig;
-
-mutex stopMutex;
-condition_variable stopCV;
-bool working;
-
-unordered_map<uint64_t, SVCClient*> svcClients;
-unordered_map<uint64_t, DaemonEndpoint*> daemonEndpoints;
-
-//================================= FUNCTIONS' DECLARATION ===========
-void waitStop();
-int exitWithError(string err);
-int showHelp();
-int startDaemon(SVCDaemonImage* image);
-int shutdownDaemon(bool saveImage, const string& imagePath);
-int saveDefaultConfig(const string& configPath);
-bool loadConfig(const string& filename, struct SVCDaemonConfig* config);
-bool loadImage(const string& filename, SVCDaemonImage** image);
-void shutdown();
-
-void daemon_local_packet_handler(SVCPacket* packet, void* args);
 
 //================================= MAIN =============================
 int main(int argc, char* argv[]){
@@ -618,7 +682,7 @@ int main(int argc, char* argv[]){
 	}
 }
 
-//================================= BUSINESS FUNCTIONS' DEFINITION ===
+//================================= DAEMMON FUNCTIONS' DEFINITION ====
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
 	uint8_t infoByte = packet->getInfoByte();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
@@ -635,7 +699,6 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 						packet->popDataChunk(imagePath);
 						string strImagePath = string((char*)imagePath);
 						//-- TODO: pause all working instances and save their states to strImagePath
-
 					}
 
 					//-- send SVC_CMD_DAEMON_DOWN to all svc client
@@ -724,7 +787,7 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 						if (packet->popDataChunk(&option) && packet->popDataChunk(&pipeID) && packet->popDataChunk(&hostAddress)){
 							uint8_t result;
 							try{
-								DaemonEndpoint* daemonEndpoint = daemonEndpoints[pipeID];
+								DaemonEndpoint* daemonEndpoint = daemonEndpointsByPipeID[pipeID];
 								//-- remove dupplicated shutdowned endpoint to avoid mem leak
 								if (daemonEndpoint != NULL){
 									if (daemonEndpoint->working){
@@ -748,7 +811,7 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 								}
 								hostAddr = new HostAddr(daemonConfig.networkType, hostAddrStr);
 								daemonEndpoint = new DaemonEndpoint(svcClient, option, pipeID, hostAddr);
-								daemonEndpoints[pipeID] = daemonEndpoint;
+								daemonEndpointsByPipeID[pipeID] = daemonEndpoint;
 								result = SVC_SUCCESS;
 							}
 							catch(string& e){
@@ -785,19 +848,68 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 
 void daemon_net_packet_handler(SVCPacket* packet, void* args){
 	uint8_t infoByte = packet->getInfoByte();
+	uint64_t sessionID = packet->getEndpointID();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
 		switch (cmd){
+			case SVC_CMD_CONNECT_OUTER1:
+				{
+					uint32_t appID;
+					packet->popDataChunk(&appID);
+					//-- check if client exists
+					for (auto it = svcClients.begin(); it != svcClients.end(); it++){
+						SVCClient* client = (SVCClient*)it->second;
+						if (client->appID == appID){
+							daemonEndpointsByPipeID[client->pipeID]->netReadingQueue->enqueue(packet);
+							break;
+						}
+						delete packet;
+					}
+					break;
+				}
+
+			case SVC_CMD_CONNECT_OUTER2:
+				{
+					uint64_t sessionID = packet->getEndpointID();
+					//-- find the matched DaemonEndpoint
+					DaemonEndpoint* endpoint = NULL;
+					for (auto it = daemonEndpointsByPipeID.begin(); it != daemonEndpointsByPipeID.end(); it++){
+						endpoint = (DaemonEndpoint*)it->second;
+						if (memcmp(&endpoint->sessionID, &sessionID, 4) == 0){
+							break;
+						}
+					}
+					if (endpoint != NULL){
+						endpoint->netReadingQueue->enqueue(packet);
+					}
+					else
+					{
+						delete packet;
+					}
+					break;
+				}
+
 			default:
 				{
+					DaemonEndpoint* endpoint = daemonEndpointsBySessionID[sessionID];
+					if (endpoint != NULL){
+						endpoint->netReadingQueue->enqueue(packet);
+					}
+					else{
+						delete packet;
+					}
 					break;
 				}
 		}
-		delete packet;
 	}
 	else{
-		//-- ingore data packet to daemon
-		delete packet;
+		DaemonEndpoint* endpoint = daemonEndpointsBySessionID[sessionID];
+		if (endpoint != NULL){
+			endpoint->netReadingQueue->enqueue(packet);
+		}
+		else{
+			delete packet;
+		}
 	}
 }
 
@@ -969,7 +1081,7 @@ void shutdown(){
 		delete it->second;
 	}
 
-	for (auto it = daemonEndpoints.begin(); it != daemonEndpoints.end(); it++){
+	for (auto it = daemonEndpointsByPipeID.begin(); it != daemonEndpointsByPipeID.end(); it++){
 		if (it->second != NULL){
 			cout<<"removing endpoint: "<<((DaemonEndpoint*)it->second)->pipeID<<endl;
 		}

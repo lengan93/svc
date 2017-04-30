@@ -1,4 +1,4 @@
-﻿SVC FRAME FORMAT
+SVC FRAME FORMAT
 
 -------------------------------------------------
 - 1 byte info
@@ -12,18 +12,8 @@
 	0x02	: SVC_HIGH_PRIORITY
 	0x01	: SVC_NORMAL_PRIORITY
 	0x00	: SVC_LOW_PRIORITY
-- endpointID : 8 bytes
-- 4 bytes sequence
--------------------------------------------------
-- data packet structure
-	[encrypted]
-	+ data length: 4 byte	
-	+ data payload
-	+ HMAC
 
-- command packet structure
-	[encrypted]
-	+ command id: 1 byte
+- 1 byte extra info (for CMD)
 		
 		° SVC_CMD_CREATE_ENDPOINT:
 		  +  app to daemon: options
@@ -70,8 +60,21 @@
 		° SVC_CMD_CONNECT_INNER9:
 		  + endpoint2 to daemon2: <no param>
 
+
+- endpointID : 8 bytes
+- 4 bytes sequence
+-------------------------------------------------
+- data packet structure
+	[encrypted]
+	{+ data payload.       } = 1 chunk
+	{+ data length: 2 byte } 
+
+	[+ HMAC        ] = 1 chunk
+	[+ HMAC length ]
+
+- command packet structure
+	[encrypted]
 	+ [arguments arguments' followed by lengths in 2 bytes]
-	
 	+ HMAC (if encrypted)
 ------------------------------------------------------	
 
