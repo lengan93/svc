@@ -2,6 +2,7 @@
 #define __TOM_UTILS__
 
 	#include <cstdlib>
+	#include <cstring>
 	
 	#ifdef _WIN32
 		#include <direct.h>
