@@ -68,7 +68,9 @@ class HtpSocket {
 
 		// set<HtpPacket*, HtpPacketComparator> 		outGoingPackets;
 
-		set<HtpPacket*, HtpPacketComparator> 		inComingQueue;
+		MutexedQueue<HtpPacket*> 					inComingQueue;
+		set<HtpPacket*, HtpPacketComparator> 		reordedPackets;
+		// set<HtpPacket*, HtpPacketComparator> 		inComingQueue;
 
 		int sendPacket(HtpPacket* packet);
 

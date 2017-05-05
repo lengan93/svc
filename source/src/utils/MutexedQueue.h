@@ -176,7 +176,12 @@
 					haveData = waitData(timeout);
 				}
 				if (haveData){
-					*data = (*(this->first))->data;								
+					if (*(this->first)==NULL){
+						haveData = false;
+					}
+					else {
+						*data = (*(this->first))->data;								
+					}						
 				}				
 				pthread_mutex_unlock(&this->firstMutex);
 				return haveData;
