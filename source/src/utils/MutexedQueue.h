@@ -168,6 +168,20 @@
 				this->firstMutex.unlock();
 				return isData;
 			}
+
+			T find(T data, int (*compare)(T, T)) {
+				this->firstMutex->lock();
+				Node<T>* node = *(this->first);
+				while(node != NULL) {
+					if(compare(data, node->data) == 0) {
+						this->firstMutex->unlock();
+						return node->data;
+					}
+					node = node->next;
+				}
+				this->firstMutex->unique_lock();
+				return NULL;
+			}
 	};
 
 #endif
