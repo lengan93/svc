@@ -1,5 +1,5 @@
 #include "SVC.h"
-//--debug header, to be removed
+//--TODO: debug header, to be removed
 #include "iostream"
 using namespace std;
 
@@ -39,20 +39,18 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 	uint16_t packetLen;
 	packet->serialize(buffer, &packetLen);
 	delete packet;
-	// cout<<"sending:";
-	// printHexBuffer(buffer, packetLen);
+	
 	if (this->daemonPipe->write(buffer, packetLen, 0) < 0){
 		err = ERR_NOT_CONNECTED;
 		goto error_shutdown;
 	}
 
 	if (!this->packetHandler->waitCommand(SVC_CMD_REGISTER_SVC, this->pipeID, -1, &waitCommandData)){
-		// cout<<"waitCommand failed"<<endl;
 		err = ERR_TIMEOUT;
 		goto error_shutdown;
 	}
 	else{
-		//-- extract config from data
+		//-- TODO: extract config from data (if there are)
 	}
 
 	goto success_return;
@@ -63,7 +61,6 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 	
 	success_return:
 		this->working = true;
-		// cout<<"svc create success"<<endl;
 }
 
 void SVC::shutdown(){
@@ -169,7 +166,6 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 	}
 	else{
 		cout<<"received SVC_CMD_CREATE_ENDPOINT"<<endl;
-		//-- response received, extract param from packet
 		if (*result == SVC_SUCCESS){
 			endpoint = new SVCEndpoint(this, true, endpointNamedPipe, endpointPipeID);
 		}
@@ -181,7 +177,7 @@ SVCEndpoint* SVC::listenConnection(const std::string& remoteHost, uint8_t option
 	SVCPacket* request;
 	request = this->connectionRequests->dequeueWait(-1);
 	if (request != NULL){
-		//-- TODO: compare remoteHost vs request->senderAddr, if conform
+		//-- TODO: compare remoteHost vs request->senderAddr, if matched
 		if (true){
 			uint64_t pipeID = request->getEndpointID();
 			//-- create reading pipe for new endpoint
@@ -342,7 +338,6 @@ bool SVCEndpoint::negotiate(int timeout){
 	
 		//-- resolve this challenge to get challenge secret
 		this->challengeSet.challengeSecretReceived = this->svc->authenticator->resolveChallenge(this->challengeSet.challengeReceived);
-		//this->remoteIdentity = this->svc->authenticator->getRemoteIdentity(this->challengeSecretReceived);
 		//-- generate proof
 		this->challengeSet.proofSent = this->svc->authenticator->generateProof(this->challengeSet.challengeSecretReceived);		
 	
