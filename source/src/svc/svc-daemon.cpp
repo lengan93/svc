@@ -606,6 +606,7 @@ int main(int argc, char* argv[]){
 
 	//-- parse arguments
 	if (argc == 1){
+		cout <<"wth?";
 		return showHelp();
 	}
 	else{
@@ -683,7 +684,7 @@ int main(int argc, char* argv[]){
 	}
 }
 
-//================================= DAEMMON FUNCTIONS' DEFINITION ====
+// ================================= DAEMMON FUNCTIONS' DEFINITION ====
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
 	uint8_t infoByte = packet->getInfoByte();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){

@@ -121,7 +121,7 @@
 
 		static void printHexBuffer(const uint8_t* buffer, uint16_t bufferLen){
 			for (int i=0; i<bufferLen; i++){
-				printf("%0.2x ", buffer[i]);
+				printf("%.2x ", buffer[i]);
 			}
 			printf("\n");
 		}

@@ -342,7 +342,12 @@
 						rs = handler->waitingCond.wait_for(lock, std::chrono::milliseconds(timeout));
 						boolRs = (rs == cv_status::no_timeout);
 					}
-					if (*data != NULL){
+					// cout << boolRs <<endl;
+					if (data != NULL){
+						if (handler->data != NULL)
+							cout << *(handler->data) <<endl;
+						else
+							cout << "handler->data == null"<<endl;
 						*data = handler->data;
 					}
 					waitingMutex.unlock();
@@ -356,6 +361,10 @@
 						CommandHandler* handler = this->commandHandlerRegistra[i];
 						if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){
 							handler->processed = true;
+							
+							// error tracking code
+							cout <<data <<endl;
+
 							handler->data = data;
 							handler->waitingCond.notify_all();
 							//-- remove the handler

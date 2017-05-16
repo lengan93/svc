@@ -160,14 +160,21 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 	delete packet;
 
 	cout<<"wait for SVC_CMD_CREATE_ENDPOINT"<<endl;
-	uint8_t* result;
+	uint8_t* result = new uint8_t;
 	if (!this->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, this->pipeID, -1, &result)){
 		delete endpointNamedPipe;
 	}
 	else{
 		cout<<"received SVC_CMD_CREATE_ENDPOINT"<<endl;
-		if (*result == SVC_SUCCESS){
+		if (result != NULL && *result == SVC_SUCCESS){
 			endpoint = new SVCEndpoint(this, true, endpointNamedPipe, endpointPipeID);
+			cout << "endpoint " <<endpointPipeID << " created" <<endl;
+		}
+		else {
+			if(result == NULL)
+				cout <<"result == null" <<endl;
+			else
+				cout <<"result == " << *result <<endl;
 		}
 	}
 	return endpoint;
