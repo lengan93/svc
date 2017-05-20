@@ -194,7 +194,7 @@
 				static void reading_loop(void* args){
 					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 					SVCPacketReader* _this = (SVCPacketReader*) args;
-					while (_this->working){
+					while (_this && _this->working){
 						ssize_t dataLen = _this->dataEndpoint->read(buffer, SVC_DEFAULT_BUFSIZ, 0);
 						if (dataLen > 0){
 							try{
@@ -217,7 +217,7 @@
 				static void reading_loop_addr(void* args){
 					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 					SVCPacketReader* _this = (SVCPacketReader*) args;
-					while (_this->working){
+					while (_this && _this->working){
 						DataEndpointAddr* senderAddr;
 						ssize_t dataLen = _this->dataEndpoint->readFrom(&senderAddr, buffer, SVC_DEFAULT_BUFSIZ, 0);
 						if (dataLen > 0){
@@ -230,10 +230,12 @@
 									// printHexBuffer(buffer, dataLen);
 								}
 								else{
+									delete senderAddr;
 									//-- queue closed, ignore data
 								}
 							}
 							catch(std::string& e){
+								delete senderAddr;
 								//-- error packet malformed, log this buffer, or IP address, may be?
 							}
 						}

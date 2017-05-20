@@ -28,7 +28,9 @@ class SVCDaemonConfig{
 		string localHost;
 		int daemonPort;		//-- specific in INET network
 
-		SVCDaemonConfig(){}
+		SVCDaemonConfig(){
+			localHost = "";
+		}
 
 		~SVCDaemonConfig(){}
 

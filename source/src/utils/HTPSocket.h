@@ -124,6 +124,11 @@
                             readResult = -1;
                         }
                         break;
+                    default:
+                        {
+                            readResult = -1;
+                            break;
+                        }
                 }
                 return readResult;
             }
