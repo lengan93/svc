@@ -273,6 +273,7 @@ bool loadConfig(const string& filename, SVCDaemonConfig* config);
 bool loadImage(const string& filename, SVCDaemonImage** image);
 void shutdown();
 void loadDefaults();
+void unload();
 
 void daemon_local_packet_handler(SVCPacket* packet, void* args);
 
@@ -615,84 +616,86 @@ class DaemonEndpoint{
 int main(int argc, char* argv[]){
 
 	//-- default values
+	int ret;
 	loadDefaults();
 
 	//-- parse arguments
 	if (argc == 1){
-		return showHelp();
+		ret = showHelp();
 	}
 	else{
-		for (int i=1; i<argc; i++){
-			if (argv[i] == ARG_HELP){
-				return showHelp();
-			}
-			else if (argv[i] == ARG_START){
-				if (i+2 < argc){
-					SVCDaemonImage* image;
-					if (argv[i+1] == ARG_CONFIG){
-						image = new SVCDaemonImage();
-						if (loadConfig(string(argv[i+2]), image->config)){
-							return startDaemon(image);
-						}
-						else{
-							return exitWithError(ERR_NOCONFIG);
-						}
-					}
-					else if (argv[i+1] == ARG_IMAGE){
-						if (loadImage(string(argv[i+2]), &image)){
-							return startDaemon(image);
-						}
-						else{
-							return exitWithError(ERR_NOIMAGE);
-						}
-					}
-					else {
-						return exitWithError(ERR_PARAM);
-					}
-				}
-				else if (i == argc-1){
-					if (saveDefaultConfig(svcDefaultConfigFilename) == 0){
-						SVCDaemonImage* image = new SVCDaemonImage();
-						image->config = svcDefaultConfig;
-						return startDaemon(image);
+		int i = 1;
+		if (argv[i] == ARG_HELP){
+			ret = showHelp();
+		}
+		else if (argv[i] == ARG_START){
+			if (i+2 < argc){
+				SVCDaemonImage* image;
+				if (argv[i+1] == ARG_CONFIG){
+					image = new SVCDaemonImage();
+					if (loadConfig(string(argv[i+2]), image->config)){
+						ret = startDaemon(image);
 					}
 					else{
-						return exitWithError(ERR_PERM);
+						ret = exitWithError(ERR_NOCONFIG);
 					}
 				}
-				else{
-					return exitWithError(ERR_PARAM);
-				}
-			}
-			else if (argv[i] == ARG_SHUTDOWN){
-				if (i+2 < argc){
-					if (argv[i+1] == ARG_IMAGE){
-						return shutdownDaemon(true, argv[i+2]);
+				else if (argv[i+1] == ARG_IMAGE){
+					if (loadImage(string(argv[i+2]), &image)){
+						ret = startDaemon(image);
 					}
 					else{
-						return exitWithError(ERR_PARAM);
+						ret = exitWithError(ERR_NOIMAGE);
 					}
 				}
-				else if (i == argc-1){
-					return shutdownDaemon(false, "");
-				}
-				else{
-					return exitWithError(ERR_PARAM);
+				else {
+					ret = exitWithError(ERR_PARAM);
 				}
 			}
-			else if (argv[i] == ARG_DEFAULT_CONFIG){
-				if (i+1 < argc){
-					return saveDefaultConfig(argv[i+1]);
+			else if (i == argc-1){
+				if (saveDefaultConfig(svcDefaultConfigFilename) == 0){
+					SVCDaemonImage* image = new SVCDaemonImage();
+					image->config = svcDefaultConfig;
+					ret = startDaemon(image);
 				}
 				else{
-					return saveDefaultConfig(svcDefaultConfigFilename);
+					ret = exitWithError(ERR_PERM);
 				}
 			}
 			else{
-				return exitWithError(ERR_PARAM);
+				ret = exitWithError(ERR_PARAM);
 			}
 		}
+		else if (argv[i] == ARG_SHUTDOWN){
+			if (i+2 < argc){
+				if (argv[i+1] == ARG_IMAGE){
+					ret = shutdownDaemon(true, argv[i+2]);
+				}
+				else{
+					ret = exitWithError(ERR_PARAM);
+				}
+			}
+			else if (i == argc-1){
+				ret = shutdownDaemon(false, "");
+			}
+			else{
+				ret = exitWithError(ERR_PARAM);
+			}
+		}
+		else if (argv[i] == ARG_DEFAULT_CONFIG){
+			if (i+1 < argc){
+				ret = saveDefaultConfig(argv[i+1]);
+			}
+			else{
+				ret = saveDefaultConfig(svcDefaultConfigFilename);
+			}
+		}
+		else{
+			ret = exitWithError(ERR_PARAM);
+		}
 	}
+	unload();
+	return ret;
 }
 
 //================================= DAEMMON FUNCTIONS' DEFINITION ====
@@ -701,6 +704,10 @@ void loadDefaults(){
 	svcDefaultConfig->networkType = NETWORK_TYPE_IPv4;
 	svcDefaultConfig->localHost = "0.0.0.0:9293";
 	svcDefaultConfig->daemonPort = 9293;
+}
+
+void unload(){
+	delete svcDefaultConfig;
 }
 
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
