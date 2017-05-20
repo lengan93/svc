@@ -22,18 +22,28 @@ using namespace std;
 using namespace svc_utils;
 
 //================================ TYPE DEFINITION =================
-struct SVCDaemonConfig{
+class SVCDaemonConfig{
 	public:
 		uint8_t networkType;
 		string localHost;
 		int daemonPort;		//-- specific in INET network
 
+		SVCDaemonConfig(){}
+
 		~SVCDaemonConfig(){}
+
+		SVCDaemonConfig* clone(){
+			SVCDaemonConfig* result = new SVCDaemonConfig();
+			result->networkType = this->networkType;
+			result->localHost = this->localHost;
+			result->daemonPort = this->daemonPort;
+			return result;
+		}
 };
 
 class SVCDaemonImage{
 	public:
-		struct SVCDaemonConfig config;
+		SVCDaemonConfig* config;
 };
 
 
@@ -223,14 +233,9 @@ const string ARG_CONFIG = "-c";
 const string ARG_IMAGE = "-i";
 const string ARG_CONFIG_PATH = "config_file_path";
 const string ARG_IMAGE_PATH = "image_file_path";
-
 const string svcDefaultConfigFilename = "svcdaemon.conf";
 
-static SVCDaemonConfig svcDefaultConfig = {
-	NETWORK_TYPE_IPv4, 	//-- networkType
-	"0.0.0.0:9293",		//-- localHost
-	9293				//-- daemonPort
-};
+SVCDaemonConfig* svcDefaultConfig;
 
 //================================= GLOBAL VARIABLE ================
 NamedPipe* daemonLocalPipe;
@@ -244,7 +249,7 @@ MutexedQueue<SVCPacket*>* netIncomingQueue;
 SVCPacketReader* netPacketReader;
 SVCPacketHandler* netPacketHandler;
 
-struct SVCDaemonConfig daemonConfig;
+SVCDaemonConfig* daemonConfig;
 
 mutex stopMutex;
 condition_variable stopCV;
@@ -264,9 +269,10 @@ int showHelp();
 int startDaemon(SVCDaemonImage* image);
 int shutdownDaemon(bool saveImage, const string& imagePath);
 int saveDefaultConfig(const string& configPath);
-bool loadConfig(const string& filename, struct SVCDaemonConfig* config);
+bool loadConfig(const string& filename, SVCDaemonConfig* config);
 bool loadImage(const string& filename, SVCDaemonImage** image);
 void shutdown();
+void loadDefaults();
 
 void daemon_local_packet_handler(SVCPacket* packet, void* args);
 
@@ -604,8 +610,12 @@ class DaemonEndpoint{
 		}
 };
 
+
 //================================= MAIN =============================
 int main(int argc, char* argv[]){
+
+	//-- default values
+	loadDefaults();
 
 	//-- parse arguments
 	if (argc == 1){
@@ -621,7 +631,7 @@ int main(int argc, char* argv[]){
 					SVCDaemonImage* image;
 					if (argv[i+1] == ARG_CONFIG){
 						image = new SVCDaemonImage();
-						if (loadConfig(string(argv[i+2]), &(image->config))){
+						if (loadConfig(string(argv[i+2]), image->config)){
 							return startDaemon(image);
 						}
 						else{
@@ -686,6 +696,13 @@ int main(int argc, char* argv[]){
 }
 
 //================================= DAEMMON FUNCTIONS' DEFINITION ====
+void loadDefaults(){
+	svcDefaultConfig = new SVCDaemonConfig();
+	svcDefaultConfig->networkType = NETWORK_TYPE_IPv4;
+	svcDefaultConfig->localHost = "0.0.0.0:9293";
+	svcDefaultConfig->daemonPort = 9293;
+}
+
 void daemon_local_packet_handler(SVCPacket* packet, void* args){
 	uint8_t infoByte = packet->getInfoByte();
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
@@ -803,16 +820,16 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 								}
 								string hostAddrStr = string((char*)hostAddress);
 								//-- how to process this host address depends on which network used
-								switch (daemonConfig.networkType){
+								switch (daemonConfig->networkType){
 									case NETWORK_TYPE_IPv4:
 										{
-											hostAddrStr = hostAddrStr + ":" +  to_string(daemonConfig.daemonPort);
+											hostAddrStr = hostAddrStr + ":" +  to_string(daemonConfig->daemonPort);
 										}
 										break;
 									default:
 										break;
 								}
-								hostAddr = new HostAddr(daemonConfig.networkType, hostAddrStr);
+								hostAddr = new HostAddr(daemonConfig->networkType, hostAddrStr);
 								daemonEndpoint = new DaemonEndpoint(svcClient, option, pipeID, hostAddr);
 								daemonEndpointsByPipeID[pipeID] = daemonEndpoint;
 								result = SVC_SUCCESS;
@@ -966,7 +983,7 @@ int showHelp(){
 int startDaemon(SVCDaemonImage* image){
 	try{
 		//-- copy config
-		memcpy(&daemonConfig, &image->config, sizeof(SVCDaemonConfig));
+		daemonConfig = image->config->clone();
 		
 		//-- TODO: all socket file instances are created in this temp folder.
 		//-- If daemon failed to bind, due to a previous crash, just run: rm <path>/svc*
@@ -980,8 +997,8 @@ int startDaemon(SVCDaemonImage* image){
 		localPacketHandler = new SVCPacketHandler(localIncomingQueue, daemon_local_packet_handler, NULL);
 
 		//-- bind htp to localhost
-		htpSocket = new HTPSocket(daemonConfig.networkType, 0);
-		htpSocket->bind(new HostAddr(daemonConfig.networkType, daemonConfig.localHost));
+		htpSocket = new HTPSocket(daemonConfig->networkType, 0);
+		htpSocket->bind(new HostAddr(daemonConfig->networkType, daemonConfig->localHost));
 		netIncomingQueue = new MutexedQueue<SVCPacket*>();
 		netPacketReader = new SVCPacketReader(htpSocket, netIncomingQueue, SVCPacketReader::WITH_SENDER_ADDR);
 		netPacketHandler = new SVCPacketHandler(netIncomingQueue, daemon_net_packet_handler, NULL);
@@ -1042,9 +1059,11 @@ int saveDefaultConfig(const string& configPath){
 	}
 }
 
-bool loadConfig(const string& filename, struct SVCDaemonConfig* config){
-	//-- TODO: this is for testing purpose. need implementing file reading and parsing.
-	memcpy(config, &svcDefaultConfig, sizeof(struct SVCDaemonConfig));
+bool loadConfig(const string& filename, SVCDaemonConfig* config){
+	//-- TODO: this is for testing purpose. need implementing real file reading and parsing.
+	config->networkType = svcDefaultConfig->networkType;
+	config->localHost = svcDefaultConfig->localHost;
+	config->daemonPort = svcDefaultConfig->daemonPort;
 	return true;
 }
 
