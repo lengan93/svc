@@ -56,7 +56,7 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 		}
 	}
 
-	delete waitCommandData;
+	free(waitCommandData);
 	goto success_return;
 
 	error_shutdown:
@@ -185,7 +185,7 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 			cout<<"endpoint created"<<endl;
 		}
 	}
-	delete result;
+	free(result);
 	return endpoint;
 }
 
@@ -346,7 +346,7 @@ bool SVCEndpoint::negotiate(int timeout){
 		else{
 			negotiationResult = false;
 		}
-		delete result;
+		free(result);
 	}
 	else{
 		//-- read challenge from request packet
@@ -376,7 +376,7 @@ bool SVCEndpoint::negotiate(int timeout){
 		else{
 			negotiationResult = false;
 		}
-		delete result;
+		free(result);
 	}
 	return negotiationResult;
 }

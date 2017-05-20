@@ -27,6 +27,8 @@ struct SVCDaemonConfig{
 		uint8_t networkType;
 		string localHost;
 		int daemonPort;		//-- specific in INET network
+
+		~SVCDaemonConfig(){}
 };
 
 class SVCDaemonImage{
