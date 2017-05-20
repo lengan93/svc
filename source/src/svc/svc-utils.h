@@ -297,7 +297,7 @@
 					SVCPacket* packet = NULL;
 					uint8_t infoByte;
 					
-					while (_this->working){
+					while (_this && _this->working){
 						packet = _this->readingQueue->dequeueWait(-1);
 						//-- process the packet
 						if (packet != NULL){						

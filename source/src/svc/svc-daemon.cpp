@@ -702,7 +702,7 @@ int main(int argc, char* argv[]){
 void loadDefaults(){
 	svcDefaultConfig = new SVCDaemonConfig();
 	svcDefaultConfig->networkType = NETWORK_TYPE_IPv4;
-	svcDefaultConfig->localHost = "0.0.0.0:9293";
+	svcDefaultConfig->localHost = string("0.0.0.0:9293");
 	svcDefaultConfig->daemonPort = 9293;
 }
 
@@ -734,6 +734,7 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 					uint16_t bufferLen;
 					uint8_t buffer[SVC_DEFAULT_BUFSIZ];
 					p->serialize(buffer, &bufferLen);
+					delete p;
 					for (auto it = svcClients.begin(); it != svcClients.end(); it++){
 						if (it->second != NULL){
 							SVCClient* client = (SVCClient*)it->second;
