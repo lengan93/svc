@@ -4,6 +4,7 @@
 #include <string>
 #include <unistd.h>
 #include <errno.h>
+#include <cstdio>
 
 using namespace std;
 

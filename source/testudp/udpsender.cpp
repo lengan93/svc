@@ -4,6 +4,7 @@
 #include <string>
 #include <unistd.h>
 #include <errno.h>
+#include <cstdio>
 
 using namespace std;
 
@@ -12,7 +13,7 @@ int main(int argc, char** argv){
 
 	struct sockaddr_in addr;
 	inet_pton(AF_INET, "149.56.142.13", &(addr.sin_addr));
-	addr.sin_port = htons(stoi("9293"));
+	addr.sin_port = htons(9293);
 	addr.sin_family = AF_INET;
 	string data = "there is con khi";
 
