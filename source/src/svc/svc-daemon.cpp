@@ -216,7 +216,7 @@ class DaemonEndpoint;
 const string ARG_DEFAULT_CONFIG = "--default-config";
 const string ARG_HELP = "--help";
 const string ARG_START = "--start";
-const string ARG_SHUTDOWN = "--shutdown";
+const string ARG_SHUTDOWN = "--stop";
 const string ARG_CONFIG = "-c";
 const string ARG_IMAGE = "-i";
 const string ARG_CONFIG_PATH = "config_file_path";
@@ -338,8 +338,7 @@ class DaemonEndpoint{
 							while (duplicatedID);
 
 							//-- add appID
-							uint32_t appID = svcClients[_this->pipeID]->appID;
-							packet->pushDataChunk(&appID, APPID_LENGTH);
+							packet->pushDataChunk(&_this->svcClient->appID, APPID_LENGTH);
 
 							//-- send the packet to internet
 							packet->serialize(param, &paramLen);
@@ -561,6 +560,7 @@ class DaemonEndpoint{
 			this->option = option;
 			this->pipeID = pipeID;
 			this->hostAddr = hostAddr;
+			this->sts = new STSNegotiation();
 			memset(&this->sessionID, 0, ENDPOINTID_LENGTH);
 			
 			this->readPipe = new NamedPipe(SVC_DAEMON_ENDPOINT_PIPE_PREFIX + to_string(pipeID), NamedPipeMode::NP_READ);
@@ -592,6 +592,7 @@ class DaemonEndpoint{
 				delete this->netReadingQueue;
 				delete this->netPacketHandler;
 				delete this->hostAddr;
+				delete this->sts;
 				cout<<"endpoint: "<<this->pipeID<<" shutdown"<<endl;
 			}
 		}
@@ -733,7 +734,7 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 							memcpy(&appID, buffer, APPID_LENGTH);
 							SVCClient* svcClient = new SVCClient();
 							svcClient->appID = appID;
-							// cout<<"appID: "<<appID<<endl;
+							cout<<"svc register with appID: "<<appID<<endl;
 							try{
 								string pipeName = to_string(pipeID);
 								svcClient->pipeID = pipeID;
@@ -766,7 +767,7 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 					SVCClient* svcClient = svcClients[endpointID];
 					delete svcClient;
 					svcClients[endpointID] = NULL;
-					// cout<<"removing svcClient: "<<endpointID<<endl;
+					cout<<"removing svcClient: "<<endpointID<<endl;
 					break;
 				}
 
@@ -824,11 +825,13 @@ void daemon_local_packet_handler(SVCPacket* packet, void* args){
 						}
 						else{
 							//-- request not valid, ignore
+							cout<<"SVC_CMD_CREATE_ENDPOINT request not valid"<<endl;
 						}
 
 					}
 					else{
 						//-- request sent from unknown svc client, ignore
+						cout<<"SVC_CMD_CREATE_ENDPOINT unknown client"<<endl;
 					}
 					break;
 				}
@@ -854,6 +857,7 @@ void daemon_net_packet_handler(SVCPacket* packet, void* args){
 		switch (cmd){
 			case SVC_CMD_CONNECT_OUTER1:
 				{
+					printf("SVC_CMD_CONNECT_OUTER1 received\n");
 					uint32_t appID;
 					packet->popDataChunk(&appID);
 					//-- check if client exists

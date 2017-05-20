@@ -113,8 +113,12 @@
 				bool popDataChunk(void* buffer = NULL, uint16_t* bufferLen = NULL){
 					if (!this->packetBody.empty()){
 						DataChunk* chunk = this->packetBody.back();
-						if (buffer != NULL) memcpy(buffer, chunk->chunk, chunk->chunkLen);
-						if (bufferLen != NULL) *bufferLen = chunk->chunkLen;
+						if (buffer != NULL){
+							memcpy(buffer, chunk->chunk, chunk->chunkLen);
+						}
+						if (bufferLen != NULL){
+							*bufferLen = chunk->chunkLen;
+						}
 						this->packetBody.pop_back();
 						delete chunk;
 						return true;
@@ -272,6 +276,7 @@
 						
 						CommandHandler(){
 							this->processed = false;
+							this->data = NULL;
 						}
 						~CommandHandler(){
 						}
@@ -316,7 +321,9 @@
 					stopWorking();
 				}
 				
-				//--	methods			
+				//--	waitCommand
+				//--	To simplify the signature, the calling method of this function must know exactly the size of returned data
+				//--	If a structure is expected, should he cast it in a structure pointer
 				bool waitCommand(enum SVCCommand cmd, uint64_t endpointID, int timeout, uint8_t** data){
 					CommandHandler* handler = new CommandHandler();		
 					handler->cmd = cmd;
@@ -342,7 +349,7 @@
 						rs = handler->waitingCond.wait_for(lock, std::chrono::milliseconds(timeout));
 						boolRs = (rs == cv_status::no_timeout);
 					}
-					if (*data != NULL){
+					if (data != NULL){
 						*data = handler->data;
 					}
 					waitingMutex.unlock();
@@ -350,13 +357,16 @@
 					return boolRs;
 				}
 
-				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* data){
+				void notifyCommand(enum SVCCommand cmd, uint64_t endpointID, uint8_t* data = NULL, ssize_t dataLen = 0){
 					this->commandHandlerRegistraMutex.lock();
 					for (int i=0;i<this->commandHandlerRegistra.size(); i++){
 						CommandHandler* handler = this->commandHandlerRegistra[i];
 						if ((handler->cmd == cmd) && (handler->endpointID == endpointID)){
 							handler->processed = true;
-							handler->data = data;
+							if ((dataLen > 0) && (data != NULL)){
+								handler->data = (uint8_t*)malloc(dataLen);
+								memcpy(handler->data, data, dataLen);
+							}
 							handler->waitingCond.notify_all();
 							//-- remove the handler
 							this->commandHandlerRegistra.erase(this->commandHandlerRegistra.begin() + i);

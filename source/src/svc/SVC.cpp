@@ -50,9 +50,13 @@ SVC::SVC(const std::string& appIdentity, SVCAuthenticator* authenticator){
 		goto error_shutdown;
 	}
 	else{
-		//-- TODO: extract config from data (if there are)
+		if (waitCommandData != NULL){
+			//-- TODO: need to check it again because we don't know about the notify
+			//-- TODO: extract config from data (if there are)
+		}
 	}
 
+	delete waitCommandData;
 	goto success_return;
 
 	error_shutdown:
@@ -102,13 +106,28 @@ SVC::~SVC(){
 void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){	
 	SVC* _this = (SVC*)args;
 	uint8_t infoByte = packet->getInfoByte();
-
+	cout<<"SVC incoming packet handler called"<<endl;
 	if ((infoByte & SVC_COMMAND_FRAME) != 0x00){
 		//-- incoming command
+		cout<<"processing command"<<endl;
 		enum SVCCommand cmd = (enum SVCCommand)packet->getExtraInfoByte();
 		uint64_t endpointID = packet->getEndpointID();
 		switch(cmd){
 			case SVC_CMD_REGISTER_SVC:
+				{
+					//-- TODO: read config from client (if any), then add add notifyCommand below
+					_this->packetHandler->notifyCommand(cmd, endpointID, NULL, 0);
+				}
+				break;
+
+			case SVC_CMD_CREATE_ENDPOINT:
+				{
+					//-- get register result from packet
+					uint8_t result = -1;
+					packet->popDataChunk(&result);
+					printf("create endpoint result: %d \n", result); fflush(stdout);
+					_this->packetHandler->notifyCommand(cmd, endpointID, &result, 1);
+				}
 				break;
 
 			case SVC_CMD_DAEMON_DOWN:
@@ -123,12 +142,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 			default:	
 				break;
 		}
-		if (_this->packetHandler != NULL){
-			_this->packetHandler->notifyCommand(cmd, endpointID, NULL);
-		}
-		else{
-			delete packet;
-		}
+		delete packet;
 	}
 	else{
 		//-- svc doesn't allow data
@@ -139,7 +153,7 @@ void SVC::svc_incoming_packet_handler(SVCPacket* packet, void* args){
 SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t option){
 	
 	SVCEndpoint* endpoint;
-
+	cout<<"establish conenction called"<<endl;
 	//-- create a unique named pipe
 	uint64_t endpointPipeID;
 	NamedPipe* endpointNamedPipe = NamedPipe::createUniqueNamedPipe(SVC_ENDPOINT_PIPE_PREFIX, &endpointPipeID);
@@ -160,7 +174,7 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 	delete packet;
 
 	cout<<"wait for SVC_CMD_CREATE_ENDPOINT"<<endl;
-	uint8_t* result;
+	uint8_t* result = NULL;
 	if (!this->packetHandler->waitCommand(SVC_CMD_CREATE_ENDPOINT, this->pipeID, -1, &result)){
 		delete endpointNamedPipe;
 	}
@@ -168,8 +182,10 @@ SVCEndpoint* SVC::establishConnection(const std::string& remoteHost, uint8_t opt
 		cout<<"received SVC_CMD_CREATE_ENDPOINT"<<endl;
 		if (*result == SVC_SUCCESS){
 			endpoint = new SVCEndpoint(this, true, endpointNamedPipe, endpointPipeID);
+			cout<<"endpoint created"<<endl;
 		}
 	}
+	delete result;
 	return endpoint;
 }
 
@@ -267,7 +283,7 @@ void SVCEndpoint::incoming_packet_handler(SVCPacket* packet, void* args){
 					packet->pushDataChunk(_this->challengeSet.challengeSecretReceived.c_str(), _this->challengeSet.challengeSecretReceived.size());
 					packet->serialize(param, &paramLen);
 					_this->writingPipe->write(param, paramLen, 0);
-					_this->packetHandler->notifyCommand(cmd, endpointID, NULL);
+					_this->packetHandler->notifyCommand(cmd, endpointID);
 				}
 				break;
 				
@@ -290,7 +306,7 @@ void SVCEndpoint::incoming_packet_handler(SVCPacket* packet, void* args){
 						//-- proof verification failed
 						connectSuccess = SVC_FAILED;
 					}
-					_this->packetHandler->notifyCommand(cmd, endpointID, &connectSuccess);
+					_this->packetHandler->notifyCommand(cmd, endpointID, &connectSuccess, 1);
 				}
 				break;
 				
@@ -323,13 +339,14 @@ bool SVCEndpoint::negotiate(int timeout){
 		this->writingPipe->write(buffer, bufferLen, 0);
 		delete packet;
 
-		uint8_t* result;
+		uint8_t* result = NULL;
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->pipeID, timeout, &result)){
 			negotiationResult = *result == SVC_SUCCESS;
 		}
 		else{
 			negotiationResult = false;
 		}
+		delete result;
 	}
 	else{
 		//-- read challenge from request packet
@@ -352,13 +369,14 @@ bool SVCEndpoint::negotiate(int timeout){
 		this->writingPipe->write(buffer, bufferLen, 0);
 		delete packet;
 
-		uint8_t* result;
+		uint8_t* result = NULL;
 		if (this->packetHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->pipeID, timeout, &result)){
 			negotiationResult = *result == SVC_SUCCESS;
 		}
 		else{
 			negotiationResult = false;
 		}
+		delete result;
 	}
 	return negotiationResult;
 }
