@@ -12,7 +12,7 @@ int main(int argc, char** argv){
 
 	struct sockaddr_in addr;
 	inet_pton(AF_INET, "0.0.0.0", &(addr.sin_addr));
-	addr.sin_port = htons(stoi("9293"));
+	addr.sin_port = htons(9293);
 	addr.sin_family = AF_INET;
 
 	char buffer[1000];
