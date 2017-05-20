@@ -12,6 +12,7 @@
     #include <cstring>
     #include "DataEndpoint.h"
     #include "HostAddr.h"
+    #include "./utils.h"
 
     class SocketAddr : public DataEndpointAddr{
         public:
@@ -92,13 +93,23 @@
             }
 
             ssize_t read(uint8_t* buffer, uint16_t bufferLen, uint8_t option){
-                //-- TODO: option should be processed
-                return ::recv(this->socket, buffer, bufferLen, 0);
+                //-- TODO: option MUST be processed
+                ssize_t result = ::recv(this->socket, buffer, bufferLen, 0);
+                if (result >= 0){
+                    printf("htp read: ");
+                    printHexBuffer(buffer, bufferLen);
+                }
+                return result;
             }
 
             ssize_t write(const uint8_t* buffer, uint16_t bufferLen, uint8_t option){
-                //-- TODO: option should be processed
-                return ::send(this->socket, buffer, bufferLen, 0);;
+                //-- TODO: option MUST be processed
+                ssize_t result = ::send(this->socket, buffer, bufferLen, 0);
+                if (result >= 0){
+                    printf("htp write: ");
+                    printHexBuffer(buffer, bufferLen);
+                }
+                return result;
             }
 
             ssize_t readFrom(DataEndpointAddr** addr, uint8_t* buffer, uint16_t bufferLen, uint8_t option){
@@ -114,6 +125,8 @@
                                 hostAddr->networkType = networkType;
                                 memcpy(hostAddr->networkAddr, &sa, sizeof(sa));
                                 *addr = hostAddr;
+                                printf("htp read from: ");
+                                printHexBuffer(buffer, bufferLen);
                             }
                         }
                         break;
@@ -143,6 +156,8 @@
                         {
                             struct sockaddr_in sa;
                             memcpy(&sa, hostAddr->networkAddr, sizeof(sa));
+                            printf("htp write to: ");
+                            printHexBuffer(buffer, bufferLen);
                             return ::sendto(this->socket, buffer, bufferLen, 0, (const struct sockaddr*) &sa, sizeof(sa));
                         }
                         break;

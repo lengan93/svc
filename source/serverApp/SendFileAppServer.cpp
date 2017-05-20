@@ -21,7 +21,7 @@ int main(int argc, char** argv){
 
 	int RETRY_TIME = atoi(argv[1]);
 
-	string appID = string("SEND_FILE_APP_SERVER");	
+	string appID = string("SEND_FILE_APP");	
 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 	
 	try{

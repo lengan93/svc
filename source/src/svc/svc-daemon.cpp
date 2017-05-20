@@ -354,6 +354,7 @@ class DaemonEndpoint{
 							//-- send the packet to internet
 							packet->serialize(param, &paramLen);
 							htpSocket->writeTo(_this->hostAddr, param, paramLen, 0);
+							printf("send out SVC_CMD_CONNECT_OUTER1\n");
 							break;
 						}
 
