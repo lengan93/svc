@@ -26,6 +26,7 @@
 							struct sockaddr_in sa;
 							std::string ip = networkAddr.substr(0, networkAddr.find(":"));
 							std::string port = networkAddr.substr(networkAddr.find(":")+1);
+							printf("host addr created: ip=%s, port=%s\n", ip.c_str(), port.c_str());
 							inet_pton(AF_INET, ip.c_str(), &(sa.sin_addr));
 							sa.sin_port = htons(std::stoi(port));
 

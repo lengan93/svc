@@ -12,7 +12,7 @@ int main(int argc, char** argv){
 	int sock = socket(AF_INET, SOCK_DGRAM, 0);
 
 	struct sockaddr_in addr;
-	inet_pton(AF_INET, "149.56.142.13", &(addr.sin_addr));
+	inet_pton(AF_INET, "0.0.0.0", &(addr.sin_addr));
 	addr.sin_port = htons(9293);
 	addr.sin_family = AF_INET;
 	string data = "there is con khi";

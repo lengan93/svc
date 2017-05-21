@@ -22,7 +22,6 @@
     class HTPSocket : public DataEndpoint{
         private:
             uint8_t networkType;
-
             int socket;
 
         public:
@@ -52,7 +51,8 @@
                             {         
                                 struct sockaddr_in sa;
                                 memcpy(&sa, hostAddr->networkAddr, sizeof(sa));
-                                bindResult = ::bind(socket, (const struct sockaddr*)&sa, sizeof(sa));
+                                bindResult = ::bind(this->socket, (const struct sockaddr*)&sa, sizeof(sa));
+                                printf("binding result: %d\n", bindResult);
                             }
                             break;
 
@@ -97,7 +97,7 @@
                 ssize_t result = ::recv(this->socket, buffer, bufferLen, 0);
                 if (result >= 0){
                     printf("htp read: ");
-                    printHexBuffer(buffer, bufferLen);
+                    printHexBuffer(buffer, result);
                 }
                 return result;
             }
@@ -126,7 +126,7 @@
                                 memcpy(hostAddr->networkAddr, &sa, sizeof(sa));
                                 *addr = hostAddr;
                                 printf("htp read from: ");
-                                printHexBuffer(buffer, bufferLen);
+                                printHexBuffer(buffer, readResult);
                             }
                         }
                         break;
