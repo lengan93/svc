@@ -1,3 +1,7 @@
+/**
+	/.mnclient.exe filename dstaddr
+*/
+
 #include <fstream>
 #include <time.h>
 #include <cstring>
@@ -33,8 +37,14 @@ int main(int argc, char** argv){
 	// int counter = 0;
 
 	Multinet connect;
-	connect.bind(1221, "wlp8s0", "enp9s0");
+	// if (connect.bind(1221, "wlp8s0", "enp9s0") != 0) {
+	// 	printf("error: bind\n");
+	// }
 
+	// if (connect.setInterface("wlp8s0") != 0) {
+	// 	printf("error: setInterface\n");
+	// }
+		
 	if (argc>1){
 		string hostAddr = "192.168.43.149";
 		if(argc > 2) {

@@ -70,6 +70,10 @@
 			uint32_t getSequence(){
 				return *((uint32_t*)(this->packet+1+ENDPOINTID_LENGTH));
 			}
+
+			uint32_t getEndpointID(){
+				return *((uint32_t*)(this->packet+1));
+			}
 			
 			void setSrcAddr(const struct sockaddr_storage* srcAddr, socklen_t addrLen){
 				memset(&this->srcAddr, 0, sizeof(this->srcAddr));

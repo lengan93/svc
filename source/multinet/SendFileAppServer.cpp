@@ -1,3 +1,7 @@
+/**
+	./mnserver.exe
+*/
+
 #include <iostream>
 #include <fstream>
 #include <time.h>
@@ -37,7 +41,7 @@ int main(int argc, char** argv){
 	printf("\nserver is listenning..."); fflush(stdout);
 
 	Multinet connect;
-	connect.bind(1221, "eno1");
+	connect.bind(1221, "eno1","");
 
 	printf("\nConnection established!");
 	

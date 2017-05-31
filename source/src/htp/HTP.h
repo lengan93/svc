@@ -11,10 +11,12 @@
 
 #include <unistd.h>
 #include <netinet/in.h>
+#include <unordered_map>
 
 #include "../utils/MutexedQueue.h"
 #include "Htp-header.h"
 #include "HtpPacket.h"
+#include "htp_session.h"
 
 class HtpSocket {
 	public:
@@ -85,11 +87,13 @@ class HtpSocket {
 		static void* htp_writing_loop(void* args);
 		static void htp_retransmission_timeout_handler(void* args);
 
-		bool checkSequence(uint32_t seq);
+		bool checkSequence(HtpPacket* packet);
 
 		uint32_t biggestSeq = 0; //the biggest sequence number received
 		uint32_t currentSeq = 1;
 		uint32_t receiverWindowLeftSideSeq = 1;
+
+		unordered_map<uint32_t, HTPSession*> sessions;
 };
 
 #endif

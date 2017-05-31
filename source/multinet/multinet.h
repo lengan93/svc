@@ -20,6 +20,8 @@ public:
 	Multinet();
 
 	int bind(int port, const char* interface, const char* interface2);
+	
+	int setInterface(char* interface);
 
 	bool setDstAddress(string addr, int port);
 

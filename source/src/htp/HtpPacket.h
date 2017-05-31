@@ -24,9 +24,10 @@ class HtpPacket{
 
 		int8_t resend_times = 0;
 		
-		HtpPacket(){
-			packet = (uint8_t*)malloc(HTP_DEFAULT_BUFSIZ);	
-			this->packetLen = 0;	
+		HtpPacket(uint32_t bufferLen = HTP_DEFAULT_BUFSIZ){
+			packet = (uint8_t*)malloc(bufferLen);
+			memset(this->packet, 0, bufferLen);
+			this->packetLen = bufferLen;
 			this->srcAddrLen = sizeof(srcAddr);
 			memset(&(this->srcAddr), 0, srcAddrLen);
 			this->dstAddrLen = sizeof(dstAddr);
@@ -43,7 +44,7 @@ class HtpPacket{
 		// 	}
 		// }
 		
-		HtpPacket(const uint8_t* buffer, uint32_t bufferLen):HtpPacket(){				
+		HtpPacket(const uint8_t* buffer, uint32_t bufferLen):HtpPacket(bufferLen){				
 			this->packetLen = bufferLen;
 			memcpy(this->packet, buffer, this->packetLen);
 		}
@@ -59,19 +60,45 @@ class HtpPacket{
 		// 	return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
 		// }
 		
-		void setBody(const uint8_t* body, uint32_t bodyLen){
+		void setBody(const void* body, uint32_t bodyLen){
 			memcpy(this->packet + HTP_HEADER_LENGTH, body, bodyLen);
 			this->packetLen = HTP_HEADER_LENGTH + bodyLen;
 		}
 		
+		void setSessionID(uint32_t sessionID) {
+			memcpy(this->packet+1, &sessionID, HTP_SESSIONID_LENGTH);
+		}
+		
+		uint32_t getSessionID() {
+			uint32_t rs = -1;
+			if(this->checkLength()){
+				rs = *((uint32_t*)(packet+1));
+			}
+			return rs;
+		}
+
 		void setSequence(uint32_t sequence){
-			memcpy(this->packet+1, &sequence, HTP_SEQUENCE_LENGTH);
+			memcpy(this->packet+1+HTP_SESSIONID_LENGTH, &sequence, HTP_SEQUENCE_LENGTH);
 		}
 		
 		uint32_t getSequence() {
 			uint32_t rs = -1;
 			if(this->checkLength()){
-				rs = *((uint32_t*)(packet+1));
+				rs = *((uint32_t*)(packet+1+HTP_SESSIONID_LENGTH));
+			}
+			return rs;
+		}
+
+		void setStream(uint16_t stream) {
+			memcpy(this->packet+1+HTP_SESSIONID_LENGTH+HTP_SEQUENCE_LENGTH, 
+				&stream, HTP_STREAMID_LENGTH);
+
+		}
+
+		uint16_t getStream() {
+			uint16_t rs = -1;
+			if(this->checkLength()){
+				rs = *((uint16_t*)(packet+1+HTP_SESSIONID_LENGTH+HTP_SEQUENCE_LENGTH));
 			}
 			return rs;
 		}
@@ -113,6 +140,9 @@ class HtpPacket{
 			return true;
 		}
 
+		bool isStreamed() {
+			return (packet[0] & HTP_STREAMED) != 0;
+		}
 		// bool isEncrypted() {
 		// 	if(!this->checkLength()) return false;
 		// 	return (packet[1] & SVC_ENCRYPTED) != 0;

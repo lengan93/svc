@@ -12,21 +12,31 @@ int Multinet::bind(int port, const char* interface, const char* interface2) {
 	localAddress.sin_addr.s_addr = htonl(INADDR_ANY); 
 	
 	int rs = ::bind(UDPSocket, (struct sockaddr*) &localAddress, sizeof(localAddress));
-	int rs2 = ::bind(UDPSocket2, (struct sockaddr*) &localAddress, sizeof(localAddress));
 	
+	return rs;
+}
+
+int Multinet::setInterface(char* interface) {
+
 	struct ifreq ifr;
 
 	memset(&ifr, 0, sizeof(ifr));
 	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), interface);
-	if (setsockopt(UDPSocket, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-	    return -1;
-	}
+	return setsockopt(UDPSocket, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr));
 
-	snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), interface2);
-	if (setsockopt(UDPSocket2, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
-	    return -1;
-	}
-	return rs;
+	// int rs = 1;
+
+	// for(char* interface : interfaces) {
+	// 	rs *= ::bind(UDPSocket, (struct sockaddr*) &localAddress, sizeof(localAddress));
+
+	// }
+
+	// int rs2 = ::bind(UDPSocket2, (struct sockaddr*) &localAddress, sizeof(localAddress));
+
+	// snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), interface2);
+	// if (setsockopt(UDPSocket2, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) < 0) {
+	//     return -1;
+	// }
 }
 
 bool Multinet::setDstAddress(string addr, int port) {
