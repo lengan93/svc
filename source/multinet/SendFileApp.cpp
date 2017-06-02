@@ -1,5 +1,5 @@
 /**
-	/.mnclient.exe filename dstaddr
+	/.mnclient.exe filename
 */
 
 #include <fstream>
@@ -33,7 +33,7 @@ float timeDistance(const struct timespec* greater, const struct timespec* smalle
 int main(int argc, char** argv){
 
 	// int RETRY_TIME = atoi(argv[2]);
-	int RETRY_TIME = 1;
+	int RETRY_TIME = 10;
 	// int counter = 0;
 
 	Multinet connect;
@@ -46,22 +46,23 @@ int main(int argc, char** argv){
 	// }
 		
 	if (argc>1){
-		string hostAddr = "192.168.43.149";
-		if(argc > 2) {
-			hostAddr = argv[2];
-		}
+		// string hostAddr = "192.168.43.149";
+		// if(argc > 2) {
+		// 	hostAddr = argv[2];
+		// }
 		// SVCHost* remoteHost = new SVCHostIP(hostAddr);
-		connect.setDstAddress(hostAddr, 1221);
-	
+		connect.setDstAddress(0,"192.168.0.11", 1221);
+		connect.setDstAddress(1,"192.168.43.149", 1221);
+		
+		// connect.bind(1221);
+
 		struct timespec startingTime;
 		struct timespec echelon;
 		clock_gettime(CLOCK_REALTIME, &startingTime);
 		
-		// SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
-		// if (endpoint!=NULL){
-			// if (endpoint->negotiate()){
+	
 		clock_gettime(CLOCK_REALTIME, &echelon);
-		printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
+		printf("\n[%0.2f] Connection established.\n", timeDistance(&echelon, &startingTime));
 		
 		uint32_t bufferSize = 1300;
 		uint8_t buffer[bufferSize+1] = "";
@@ -70,7 +71,7 @@ int main(int argc, char** argv){
 		string fileName = string(argv[1]);
 		int fileSize = GetFileSize(fileName);
 		if (fileSize >=0){
-			printf("\nSending file: %s, size: %d", fileName.c_str(), fileSize); fflush(stdout);						
+			printf("Sending file: %s, size: %d\n", fileName.c_str(), fileSize);					
 							
 			//-- firstly send the file description, 4 byte filesize, then the rest will be fileName
 			buffer[0]=0x01;
@@ -109,7 +110,7 @@ int main(int argc, char** argv){
 			
 			//-- read to check that server send terminating signal
 			clock_gettime(CLOCK_REALTIME, &echelon);
-			printf("\n[%0.2f] All data sent, waiting ACK", timeDistance(&echelon, &startingTime)); fflush(stdout);
+			printf("[%0.2f] All data sent, waiting ACK\n", timeDistance(&echelon, &startingTime));
 			// printf("\n%d packets sent", counter); fflush(stdout);
 			bool fileSent = false;
 			do{
@@ -123,7 +124,8 @@ int main(int argc, char** argv){
 			
 			clock_gettime(CLOCK_REALTIME, &echelon);
 			float totalTime = timeDistance(&echelon, &startingTime);
-			printf("\n[%0.2f] File sent, average speed: %0.0f KB/s", totalTime, fileSize/totalTime/1024); fflush(stdout);
+			printf("[%0.2f] File sent, average speed: %0.0f KB/s\n", totalTime, fileSize/totalTime/1024);
+
 		// 		// }
 		// 		// else{
 		// 		// 	printf("\nFile not valid\n");
@@ -138,7 +140,7 @@ int main(int argc, char** argv){
 		// delete svc;
 		
 		clock_gettime(CLOCK_REALTIME, &echelon);
-		printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
+		printf("[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime));
 		// }
 		// catch (const char* str){
 		// 	printf("\nError: %s\n", str);

@@ -36,14 +36,14 @@ int GetFileSize(std::string filename){
 int main(int argc, char** argv){
 
 	// int RETRY_TIME = atoi(argv[1]);
-	int RETRY_TIME = 1;
+	int RETRY_TIME = 10;
 
-	printf("\nserver is listenning..."); fflush(stdout);
+	printf("\nserver is listenning...\n"); 
 
 	Multinet connect;
-	connect.bind(1221, "eno1","");
+	connect.bind(1221);
 
-	printf("\nConnection established!");
+	printf("Connection established!\n");
 	
 	uint32_t bufferSize = 1400;
 	uint8_t buffer[bufferSize+1];
@@ -66,7 +66,7 @@ int main(int argc, char** argv){
 						myFile = new ofstream(fileName.c_str());
 						
 						readSize = 0;
-						printf("\nReceiving file: %s, size: %d\n", fileName.c_str(), fileSize); fflush(stdout);
+						printf("Receiving file: %s, size: %d\n", fileName.c_str(), fileSize); 
 					}
 					break;
 					
@@ -101,23 +101,24 @@ int main(int argc, char** argv){
 			myFile->close();
 
 			if (fileSize>0){
-				printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
-				printf("\nblocs = %d", blocs);
+				printf("File received %d/%d bytes, lost rate: %0.2f\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100);
+				printf("blocs = %d\n", blocs);
 			}
 			else{
 				printf("\nEmpty file received");
 			}
 													
-			//printf("\nsend back 0x03"); fflush(stdout);
+			//printf("\nsend back 0x03"); 
 			buffer[0]=0x03;						
 			buffer[1]=0xFF;						
 			for (int i=0; i<RETRY_TIME; i++){
 				connect.send(buffer, 2);
 				//printf(".");
 			}
-			fflush(stdout);
+			
 			break;
 		}				
 	}
 	printf("\nProgram terminated!\n");
+	getchar();	
 }
