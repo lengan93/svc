@@ -18,7 +18,7 @@ void Multinet::writing_loop(int index, Multinet* _this) {
 		MNPacket* packet = _this->outgoingPackets.dequeueWait(1000);
 		if(packet != NULL) {
 			::sendto(_this->UDPSocket, packet->msg, packet->len, 0, (sockaddr *)&(_this->dstAddr[index]), _this->dstAddrSize[index]);
-			cout <<"send a packet" << endl;
+			cout << "send a packet to " << inet_ntoa(_this->dstAddr[index].sin_addr) <<":" << ntohs(_this->dstAddr[index].sin_port) <<endl;
 			// cout <<endl;
 			// printInfo(_this);
 			// cout <<endl;
@@ -135,6 +135,7 @@ int Multinet::recv(void* buf, int len) {
 	// printInfo(this);
 	// cout << endl;
 	cout << "recieve a packet" <<endl;
+	cout << "recieve a packet from " << inet_ntoa(dstAddr[0].sin_addr) <<":" << ntohs(dstAddr[0].sin_port) <<endl;
 	return r;
 
 	// MNPacket* packet = _this->incomingPackets.dequeueWait(-1);
