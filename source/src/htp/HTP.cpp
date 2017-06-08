@@ -4,12 +4,43 @@
 #include "../utils/utils-functions.h"
 
 /*
-TODO: retransmission timeout, set a timeout for every important packet, so that the sender will
-resend the packet if it doesn't receive the ack after pass the timeout
+TODO: update session ID in case the other side change IP address
 */
 
 #define PRINT_LOG true
 
+/* ======== utility functions ========= */
+int HtpPacketCompare (HtpPacket* p1, HtpPacket* p2) {
+    if(p1==NULL || p2==NULL) return -1;
+    uint32_t s1 = p1->getSequence();
+    uint32_t s2 = p2->getSequence();
+
+    if(p1->getSessionID() == p2->getSessionID()) {
+	    if(s1 < s2) return -1;
+	    else if (s1 > s2) return 1;
+	    else return 0;
+	}
+	else {
+		return -1;
+	}
+}
+
+HTPSession* findSession(unordered_map<uint32_t, HTPSession*> sessions, const struct sockaddr* addr) {
+	
+	for(auto i : sessions) {
+		HTPSession* s = i.second;
+		// cout << inet_ntoa(((sockaddr_in*)addr)->sin_addr) <<" - ";
+		// cout << inet_ntoa(((sockaddr_in*)&(s->dstAddr))->sin_addr) <<endl;
+
+		if( ((sockaddr_in*)addr)->sin_addr.s_addr == ((sockaddr_in*)&(s->dstAddr))->sin_addr.s_addr ) {
+			return s;
+		}
+	}
+
+	return NULL;
+}
+
+/* ========= HtpSocket methods ============ */
 HtpSocket::HtpSocket() throw(){
 	if(PRINT_LOG)
 		printf("default constructor\n");
@@ -65,6 +96,7 @@ int HtpSocket::sendPacket(HtpPacket* packet) {
 	return r;
 }
 
+
 // TODO: prevent sequence prediction attack
 bool HtpSocket::checkSequence(HtpPacket* packet) {
 
@@ -72,10 +104,23 @@ bool HtpSocket::checkSequence(HtpPacket* packet) {
 	uint32_t sessionID = packet->getSessionID();
 	uint32_t seq = packet->getSequence();
 	if(sessions.find(sessionID) == sessions.end()) {
+		HTPSession * tmp = findSession(sessions, (sockaddr*) &packet->srcAddr);
+		if(tmp != NULL) {
+
+			cout << "update session for " << inet_ntoa(((sockaddr_in*)&packet->srcAddr)->sin_addr) <<endl;
+			sessions.erase(tmp->getID());
+			delete tmp;
+		}
 		session = new HTPSession(sessionID, seq);
 		session->setDstAddr(&packet->srcAddr, packet->srcAddrLen);
 		sessions[sessionID] = session;
 		return true;
+	}
+	// this is the first packet of the session
+	// TODO: use the HTP_START_SS bit 
+	else if(seq == 1) {
+		sessions[sessionID]->setCurrentRecvSEQ(0);
+		sessions[sessionID]->setRecvWindowLeftSeq(1);
 	}
 
 	session = sessions[sessionID];
@@ -95,21 +140,6 @@ bool HtpSocket::checkSequence(HtpPacket* packet) {
 		}
 		session->missingPackets.erase(it);
 		return true;
-	}
-}
-
-int HtpPacketCompare (HtpPacket* p1, HtpPacket* p2) {
-    if(p1==NULL || p2==NULL) return -1;
-    uint32_t s1 = p1->getSequence();
-    uint32_t s2 = p2->getSequence();
-
-    if(p1->getSessionID() == p2->getSessionID()) {
-	    if(s1 < s2) return -1;
-	    else if (s1 > s2) return 1;
-	    else return 0;
-	}
-	else {
-		return -1;
 	}
 }
 
@@ -135,8 +165,9 @@ void* HtpSocket::htp_reading_loop(void* args) {
 				//-- what if the packet has a faked seq? 
 				if(!_this->checkSequence(packet)) {
 					_this->sendACK(packet);
+					printf("[%d][%d] reject packet %d(%d): \n", getTime(), packet->getSessionID(), packet->getSequence(), packet->packetLen);
 					delete packet;
-					break;
+					continue;
 				}
 
 				// print track log
@@ -152,7 +183,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 
 				
 				// print track log
-				// printf("send ack for %d\n", packet->getSequence());
+				printf("send ack for %d\n", packet->getSequence());
 				_this->sendACK(packet);
 
 			}
@@ -167,6 +198,9 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					auto tmp = _this->waitingACKPacketList.find(packet, &HtpPacketCompare); 
 					if(tmp != NULL) {
 						tmp->acked = true;
+						if(PRINT_LOG)
+							printf("[%d][%d] ACK packet %d\n", getTime(), packet->getSessionID(), packet->getSequence());
+
 						_this->successReceivedPackets++;
 					}
 				}
@@ -271,20 +305,6 @@ int HtpSocket::close() {
 	return ::close(UDPSocket);
 }
 
-HTPSession* findSession(unordered_map<uint32_t, HTPSession*> sessions, const struct sockaddr* addr) {
-	
-	for(auto i : sessions) {
-		HTPSession* s = i.second;
-		cout << inet_ntoa(((sockaddr_in*)addr)->sin_addr) <<" - ";
-		cout << inet_ntoa(((sockaddr_in*)&(s->dstAddr))->sin_addr) <<endl;
-
-		if( ((sockaddr_in*)addr)->sin_addr.s_addr == ((sockaddr_in*)&(s->dstAddr))->sin_addr.s_addr ) {
-			return s;
-		}
-	}
-
-	return NULL;
-}
 
 int HtpSocket::sendto(const void *msg, size_t len, int flags, const struct sockaddr *to, socklen_t tolen) {
 	// return ::sendto(UDPSocket, msg, len, flags, to, tolen);

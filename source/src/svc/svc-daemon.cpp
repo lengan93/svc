@@ -438,8 +438,10 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 		packet = _this->inetToBeSentQueue.dequeueWait(1000);
 		if (packet!=NULL){
 
-			if(PRINT_LOG)
+			if(PRINT_LOG) {
 				printf("[%d] send packet %d\n", getTime(), packet->getSequence());
+				// printBuffer(packet->packet, packet->dataLen);
+			}
 
 			#ifdef _USING_HTP_
 				sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
@@ -647,6 +649,8 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 					break;
 					
 				case SVC_CMD_CONNECT_OUTER2:
+					if(PRINT_LOG)
+						printf("receive SVC_CMD_CONNECT_OUTER2\n");
 					pthread_mutex_lock(&_this->stateMutex);
 					if (_this->state < SVC_CMD_CONNECT_OUTER2){		
 						//-- pop encrypted proof					
@@ -673,6 +677,10 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 						packet->packet[1+6]=0x00;
 						packet->packet[1+7]=0x00;				
 						_this->unixOutgoingQueue.enqueue(packet);
+
+						if(PRINT_LOG)
+							printf("send SVC_CMD_CONNECT_INNER4\n");
+
 						_this->state = SVC_CMD_CONNECT_OUTER2;
 						pthread_mutex_unlock(&_this->stateMutex);
 					}
@@ -683,9 +691,17 @@ void DaemonEndpoint::daemon_endpoint_inet_incoming_packet_handler(SVCPacket* pac
 					break;
 			
 				case SVC_CMD_CONNECT_OUTER3:
+
+					if(PRINT_LOG)
+						printf("receive SVC_CMD_CONNECT_OUTER3\n");
+
 					pthread_mutex_lock(&_this->stateMutex);
 					if (_this->state < SVC_CMD_CONNECT_OUTER3){					
 						packet->switchCommand(SVC_CMD_CONNECT_INNER8);
+
+						if(PRINT_LOG)
+							printf("send SVC_CMD_CONNECT_INNER8\n");
+
 						_this->unixOutgoingQueue.enqueue(packet);
 						_this->state = SVC_CMD_CONNECT_OUTER3;
 						pthread_mutex_unlock(&_this->stateMutex);
@@ -789,6 +805,10 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				break;
 			
 			case SVC_CMD_CONNECT_INNER1:
+
+				if(PRINT_LOG)
+					printf("receive SVC_CMD_CONNECT_INNER1\n");
+
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER1){				
 					//-- extract remote address
@@ -853,6 +873,10 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
 					//-- send the packet to internet					
 					_this->inetOutgoingQueue.enqueue(packet);
+
+					if(PRINT_LOG)
+						printf("send SVC_CMD_CONNECT_OUTER1\n");
+
 					_this->state = SVC_CMD_CONNECT_INNER1;
 					pthread_mutex_unlock(&_this->stateMutex);
 				}
@@ -864,10 +888,11 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 			
 			case SVC_CMD_CONNECT_INNER3:	
 				if(PRINT_LOG)
-					printf("SVC_CMD_CONNECT_INNER3\n");
+					printf("receive SVC_CMD_CONNECT_INNER3\n");
 
 				pthread_mutex_lock(&_this->stateMutex);
-				if (_this->state < SVC_CMD_CONNECT_INNER3){					
+				if (_this->state < SVC_CMD_CONNECT_INNER3){
+
 					//-- app responded with CONNECT_INNER3, now can connect to app socket
 					_this->connectToAppSocket();
 				
@@ -888,7 +913,9 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				
 					//-- !! check if the decrypt ecpoint data is at least VALID, by verifying the null-terminator at the end of each number
 					//-- otherwise the new ECPoint will be created with buffer-overflow error
+
 					if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
+
 						ecpoint = new ECPoint((char*)(data + 2) , (char*)(data + 4 + paramLen));				
 						//-- extract challengeSecret y
 						if (!packet->popCommandParam(param, &paramLen)){
@@ -968,8 +995,6 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 					
 						aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
 						
-						if(PRINT_LOG)
-							printf("SVC_CMD_CONNECT_INNER3 -> SVC_CMD_CONNECT_OUTER2\n");
 						//-- switch command
 						packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
 						//-- attach Ey(gy) to packet
@@ -1002,9 +1027,13 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 						pthread_mutex_unlock(&_this->stateMutex);
 						//-- send this packet to internet
 						_this->inetOutgoingQueue.enqueue(packet);
+
+						if(PRINT_LOG)
+							printf("send SVC_CMD_CONNECT_OUTER2\n");
 					}
 					else{
 						//-- decryted gx is damaged
+						printf("2\n");
 						pthread_mutex_unlock(&_this->stateMutex);	
 						delete packet;
 					}
@@ -1017,6 +1046,10 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				break;		
 			
 			case SVC_CMD_CONNECT_INNER5:
+				
+				if(PRINT_LOG)
+					printf("receive SVC_CMD_CONNECT_INNER5\n");
+
 				pthread_mutex_lock(&_this->stateMutex);
 				if (_this->state < SVC_CMD_CONNECT_INNER5){
 					requested_security_strength = _this->curve->getRequestSecurityLength();		
@@ -1078,6 +1111,10 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 								packet->pushCommandParam(decrypted, decryptedLen);	
 								_this->state = SVC_CMD_CONNECT_INNER5;											
 								_this->unixOutgoingQueue.enqueue(packet);
+
+								if(PRINT_LOG)
+									printf("send SVC_CMD_CONNECT_INNER6\n");
+
 								pthread_mutex_unlock(&_this->stateMutex);
 							}
 							else{							
@@ -1103,7 +1140,11 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				}
 				break;
 			
-			case SVC_CMD_CONNECT_INNER7:				
+			case SVC_CMD_CONNECT_INNER7:
+
+				if(PRINT_LOG)				
+					printf("receive SVC_CMD_CONNECT_INNER7\n");
+
 				//-- authenticated
 				pthread_mutex_lock(&_this->stateMutex);
 				_this->state = SVC_CMD_CONNECT_INNER7;
@@ -1111,10 +1152,18 @@ void DaemonEndpoint::daemon_endpoint_unix_incoming_packet_handler(SVCPacket* pac
 				packet->switchCommand(SVC_CMD_CONNECT_OUTER3);
 				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 				_this->inetOutgoingQueue.enqueue(packet);
+
+				if(PRINT_LOG)
+					printf("send SVC_CMD_CONNECT_OUTER3\n");
+
 				pthread_mutex_unlock(&_this->stateMutex);
 				break;							
 			
 			case SVC_CMD_CONNECT_INNER9:
+
+				if(PRINT_LOG)				
+					printf("receive SVC_CMD_CONNECT_INNER9\n");
+
 				//-- connection established
 				pthread_mutex_lock(&_this->stateMutex);
 				_this->state = SVC_CMD_CONNECT_INNER9;
@@ -1175,8 +1224,11 @@ void* daemon_inet_reading_loop(void* args){
 			//printf("\ndaemon_inet_reading_loop read a packet: "); printBuffer(buffer, readrs);
 			packet = new SVCPacket(buffer, readrs);
 			packet->setSrcAddr((struct sockaddr_storage*)&srcAddr, srcAddrLen);			
-			if(PRINT_LOG)
+			if(PRINT_LOG) {
 				printf("[%d] recv packet %d\n", getTime(), packet->getSequence());
+				// printBuffer(packet->packet, packet->dataLen);
+			}
+
 			daemonInetIncomingQueue.enqueue(packet);
 			readPacketCounter++;
 			//printf("."); fflush(stdout);
@@ -1309,6 +1361,10 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 	
 				switch (cmd){
 					case SVC_CMD_CONNECT_OUTER1:
+
+						if(PRINT_LOG)
+							printf("receive SVC_CMD_CONNECT_OUTER1\n");
+
 						//-- extract DH-1
 						if (!packet->popCommandParam(param, &paramLen)){
 							delete packet;
@@ -1338,8 +1394,6 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						}
 						appID = *((uint32_t*)param);					
 						
-						if(PRINT_LOG)
-							printf("SVC_CMD_CONNECT_OUTER1 -> SVC_CMD_CONNECT_INNER2\n");
 						//-- send the packet to the corresponding app
 						packet->switchCommand(SVC_CMD_CONNECT_INNER2);					
 						appSockPath = string(SVC_CLIENT_PATH_PREFIX) + to_string(appID);
@@ -1348,10 +1402,18 @@ void daemon_inet_incoming_packet_handler(SVCPacket* packet, void* args){
 						//-- replace the oldEndpointID by the newEndpointID
 						memcpy(packet->packet+1, (uint8_t*)&newEndpointID, ENDPOINTID_LENGTH);
 						sendrs = sendto(daemonUnSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&appSockAddr, sizeof(appSockAddr));
+
+						if(PRINT_LOG)
+							printf("send SVC_CMD_CONNECT_INNER2\n");
+
 						delete packet;
 						break;
 			
 					case SVC_CMD_CONNECT_OUTER2:
+
+						if(PRINT_LOG)
+							printf("receive SVC_CMD_CONNECT_OUTER2\n");
+
 						//-- newEndpointID contains old ID			
 						newEndpointID = endpointID;
 						endpointID = newEndpointID & 0x0000FFFFFFFFFFFF;			
