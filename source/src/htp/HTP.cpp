@@ -7,7 +7,7 @@
 TODO: update session ID in case the other side change IP address
 */
 
-#define PRINT_LOG true
+#define PRINT_LOG false
 
 /* ======== utility functions ========= */
 int HtpPacketCompare (HtpPacket* p1, HtpPacket* p2) {
@@ -171,7 +171,7 @@ void* HtpSocket::htp_reading_loop(void* args) {
 				}
 
 				// print track log
-				// if(PRINT_LOG)
+				if(PRINT_LOG)
 					printf("[%d][%d] receive data packet %d(%d): \n", getTime(), packet->getSessionID(), packet->getSequence(), packet->packetLen);
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 

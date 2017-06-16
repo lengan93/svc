@@ -306,13 +306,15 @@ void DaemonEndpoint::shutdownEndpoint(){
 		// printf("\ndaemon endpoint: %d packets received from client", readPacketCounter);
 		// printf("\nHTP: %d inet packets sent, %d inet packets received", daemonHtpSocket->sendCounter, daemonHtpSocket->recvCounter);
 		
+		#ifdef _USING_HTP_
 		printf("\n\n========= Sender logs =========");
 		printf("\nHTP: %d packets sent successfully, %d packets resended", 
 			daemonHtpSocket->successReceivedPackets, daemonHtpSocket->resendPackets);
 		// printf("\nDaemon endpoint: %d packets encrypted", encryptedSentPackets);
 		// printf("\nDaemon endpoint: %d outgoing inet packets handled", daemonEpHandledOutPacketCounter);
 		printf("\n========= /Sender logs =========\n");
-
+		#endif
+		
 		// printf("\n\n========= Receiver logs =========");
 		// printf("\nDaemon: %d inet packets read", readPacketCounter);
 		// printf("\nDaemon: %d recvd inet packets handled", handledPacketCounter);
