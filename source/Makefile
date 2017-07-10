@@ -39,3 +39,7 @@ multinetclient:
 multinetserver:
 	$(CCOMPL) -o $(BINDIR)/mnserver.exe ./multinet/SendFileAppServer.cpp ./multinet/multinet.cpp $(CFLAGS)
 
+htpclient:	
+	$(CCOMPL) -o $(BINDIR)/htpclient.exe ./clientApp/htpTest.cpp $(SRCDIR)/htp/HTP.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
+htpserver:	
+	$(CCOMPL) -o $(BINDIR)/htpserver.exe ./serverApp/htpTestServer.cpp $(SRCDIR)/htp/HTP.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)

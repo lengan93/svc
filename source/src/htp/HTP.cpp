@@ -144,17 +144,16 @@ void* HtpSocket::htp_reading_loop(void* args) {
 					printf("[%d][%d] receive data packet %d(%d): \n", getTime(), packet->getSessionID(), packet->getSequence(), packet->packetLen);
 				// printBuffer(packet->packet, HTP_PACKET_MINLEN);
 
-				// printf("[%d] reading_loop wait\n", getTime());
-				// _this->inComingBufferMutex.lock();
-				// printf("[%d] reading_loop notified\n", getTime());
-				_this->inComingQueue.enqueue(packet);
-				// _this->inComingBufferMutex.unlock();
-
 				
 				// print track log
 				// printf("send ack for %d\n", packet->getSequence());
 				_this->sendACK(packet);
 
+				// printf("[%d] reading_loop wait\n", getTime());
+				// _this->inComingBufferMutex.lock();
+				// printf("[%d] reading_loop notified\n", getTime());
+				_this->inComingQueue.enqueue(packet);
+				// _this->inComingBufferMutex.unlock();
 			}
 			else if (packet->isACK()) {
 				if(PRINT_LOG)
@@ -202,7 +201,7 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 			if(packet->acked || packet->resend_times >= 5) {
 				_this->waitingACKPacketList.dequeue();
 				if(PRINT_LOG)
-					printf("delete from buffer packet %d\n", packet->getSequence());
+					printf("[%d] delete from buffer packet %d\n", getTime(), packet->getSequence());
 				delete packet;
 				// _this->waitingACKListMutex.unlock();
 			}
@@ -211,7 +210,7 @@ void* HtpSocket::htp_retransmission_loop(void* args) {
 				packet->resend_times++;
 				// _this->waitingACKListMutex.unlock();
 				if(PRINT_LOG)
-					printf("resend ---------------- %d\n", packet->getSequence());
+					printf("[%d] resend ---------------- %d\n", getTime(), packet->getSequence());
 				// _this->outGoingSetMutex.lock();
 				// _this->outGoingPackets.insert(packet);
 				// _this->outGoingSetMutex.unlock();
@@ -250,6 +249,7 @@ void HtpSocket::sendACK(HtpPacket* packet) {
 		// this->outGoingPackets.insert(ack_packet);
 		// outGoingSetMutex.unlock();
 		this->sendPacket(ack_packet);
+		delete ack_packet;
 	}
 }
 
@@ -275,8 +275,8 @@ HTPSession* findSession(unordered_map<uint32_t, HTPSession*> sessions, const str
 	
 	for(auto i : sessions) {
 		HTPSession* s = i.second;
-		cout << inet_ntoa(((sockaddr_in*)addr)->sin_addr) <<" - ";
-		cout << inet_ntoa(((sockaddr_in*)&(s->dstAddr))->sin_addr) <<endl;
+		// cout << inet_ntoa(((sockaddr_in*)addr)->sin_addr) <<" - ";
+		// cout << inet_ntoa(((sockaddr_in*)&(s->dstAddr))->sin_addr) <<endl;
 
 		if( ((sockaddr_in*)addr)->sin_addr.s_addr == ((sockaddr_in*)&(s->dstAddr))->sin_addr.s_addr ) {
 			return s;
@@ -386,7 +386,7 @@ int HtpSocket::recvfrom(void *buf, int len, unsigned int flags, struct sockaddr 
 
 		if(packet->getSequence() == session->getRecvWindowLeftSeq()) {
 			session->setRecvWindowLeftSeq(packet->getSequence()+1);
-			printf("leftside=%d\n", session->getRecvWindowLeftSeq());
+			// printf("leftside=%d\n", session->getRecvWindowLeftSeq());
 
 			r = packet->packetLen - HTP_HEADER_LENGTH;
 			memcpy(buf, packet->packet + HTP_HEADER_LENGTH, r);

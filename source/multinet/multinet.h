@@ -32,43 +32,43 @@ class MNPacket
 	}
 };
 
-class Multinet
-{
-public:
-	Multinet();
+// class Multinet
+// {
+// public:
+// 	Multinet();
 
-	int bind(int port);
+// 	int bind(int port);
 	
-	int setInterface(char* interface);
+// 	int setInterface(char* interface);
 
-	bool setDstAddress(int index, string addr, int port);
+// 	bool setDstAddress(int index, string addr, int port);
 
-	int send(void* msg, size_t len);
+// 	int send(void* msg, size_t len);
 
-	int recv(void* buf, int len);
+// 	int recv(void* buf, int len);
 
-	~Multinet();
+// 	~Multinet();
 	
-private:
-	int UDPSocket;
-	int UDPSocket2;
-	sockaddr_in dstAddr[2];
-	socklen_t dstAddrSize[2];
-	// SOCKADDR_IN lastSrcAddr = { 0 };
-	// int srcAddrSize = sizeof lastSrcAddr;
+// private:
+// 	int UDPSocket;
+// 	int UDPSocket2;
+// 	sockaddr_in dstAddr[2];
+// 	socklen_t dstAddrSize[2];
+// 	// SOCKADDR_IN lastSrcAddr = { 0 };
+// 	// int srcAddrSize = sizeof lastSrcAddr;
 
-	MutexedQueue<MNPacket*> outgoingPackets;
-	MutexedQueue<MNPacket*> incomingPackets;
+// 	MutexedQueue<MNPacket*> outgoingPackets;
+// 	MutexedQueue<MNPacket*> incomingPackets;
 
-	static void writing_loop(int index, Multinet*);
-	static void reading_loop(int index, Multinet*);
+// 	static void writing_loop(int index, Multinet*);
+// 	static void reading_loop(int index, Multinet*);
 	
-	thread * firstSendThread;
-	thread * secondSendThread;
+// 	thread * firstSendThread;
+// 	thread * secondSendThread;
 
-	thread * firstRecvThread;
-	thread * secondRecvThread;
-	friend void printInfo(Multinet* m);
-};
+// 	thread * firstRecvThread;
+// 	thread * secondRecvThread;
+// 	friend void printInfo(Multinet* m);
+// };
 
 #endif

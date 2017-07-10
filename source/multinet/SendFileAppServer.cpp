@@ -23,38 +23,53 @@ int GetFileSize(std::string filename){
 	return file.tellg();
 }
 
-// void send_server_beat(void* args){
-// 	uint8_t buffer[1];
-// 	SVCEndpoint* ep = (SVCEndpoint*)args;
-// 	buffer[0] = 0xFF;
-// 	// ep->sendData(buffer, 1);
-// 	if (headerReceived &!fileReceived){
-// 		printf("\rReceived: %d/%d", readSize, fileSize); fflush(stdout);
-// 	}
-// }
-
 int main(int argc, char** argv){
 
 	// int RETRY_TIME = atoi(argv[1]);
 	int RETRY_TIME = 10;
 
+	
+	int socket_desc , client_sock , c , read_size;
+    struct sockaddr_in server , client = {0};
+    int fromsize = sizeof client;
+     
+    //Create socket
+    socket_desc = socket(AF_INET , SOCK_DGRAM , 0);
+    if (socket_desc == -1)
+    {
+        printf("Could not create socket");
+    }
+     
+    //Prepare the sockaddr_in structure
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_port = htons( 8888 );
+     
+    //Bind
+    if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
+    {
+        //print the error message
+        perror("bind failed. Error");
+        return 1;
+    }
+	// Multinet connect;
+	// connect.bind(1221);
+	
 	printf("\nserver is listenning...\n"); 
 
-	Multinet connect;
-	connect.bind(1221);
-
-	printf("Connection established!\n");
+	// printf("Connection established!\n");
 	
 	uint32_t bufferSize = 1400;
 	uint8_t buffer[bufferSize+1];
 	
 	ofstream* myFile;
 	int blocs = 0;
+	
 
 	//-- try to read file size and name from the first message				
 	int trytimes = 0;
 	while (!fileReceived){
-		if ((bufferSize = connect.recv(buffer, 1400)) > 0){
+		if ((bufferSize = recvfrom(socket_desc, buffer, 1400, 0, (sockaddr *)&client, (socklen_t*)&fromsize)) > 0){
 			trytimes = 0;
 			switch (buffer[0]){
 				case 0x01:
@@ -112,7 +127,9 @@ int main(int argc, char** argv){
 			buffer[0]=0x03;						
 			buffer[1]=0xFF;						
 			for (int i=0; i<RETRY_TIME; i++){
-				connect.send(buffer, 2);
+				// connect.send(buffer, 2);
+				client.sin_port = htons( 8888 );
+				sendto(socket_desc, buffer, 2, 0, (sockaddr *)&client, fromsize);
 				//printf(".");
 			}
 			
