@@ -71,6 +71,7 @@ int main(int argc, char** argv){
 	while (!fileReceived){
 		if ((bufferSize = recvfrom(socket_desc, buffer, 1400, 0, (sockaddr *)&client, (socklen_t*)&fromsize)) > 0){
 			trytimes = 0;
+			printf("%d : %d\n", blocs, buffer[0]);
 			switch (buffer[0]){
 				case 0x01:
 					if (!headerReceived){
@@ -128,9 +129,9 @@ int main(int argc, char** argv){
 			buffer[1]=0xFF;						
 			for (int i=0; i<RETRY_TIME; i++){
 				// connect.send(buffer, 2);
-				client.sin_port = htons( 8888 );
+				// client.sin_port = htons( 9999 );
 				sendto(socket_desc, buffer, 2, 0, (sockaddr *)&client, fromsize);
-				//printf(".");
+				printf(".");
 			}
 			
 			break;

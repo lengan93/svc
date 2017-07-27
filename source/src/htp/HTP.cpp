@@ -10,40 +10,28 @@ resend the packet if it doesn't receive the ack after pass the timeout
 
 #define PRINT_LOG true
 
-HtpSocket::HtpSocket() throw(){
-	if(PRINT_LOG)
-		printf("default constructor\n");
-
-	UDPSocket = socket(AF_INET, SOCK_DGRAM, 0);
-	// currentSeq = 0;
-}
-
-HtpSocket::HtpSocket(in_port_t localPort) throw() : HtpSocket() {
+HtpSocket::HtpSocket(in_port_t localPort) throw() {
 	if(PRINT_LOG)
 		printf("constructor with localPort\n");
 
-	struct sockaddr_in localAddress = {0};
-    localAddress.sin_family = AF_INET;
-    localAddress.sin_port = htons(localPort);
-	localAddress.sin_addr.s_addr = htonl(INADDR_ANY); 
-	if( this->bind((struct sockaddr*) &localAddress, sizeof(localAddress)) ) {
-		throw;
-	}
+	
+	// pthread_attr_t attr;
+	// pthread_attr_init(&attr);
 
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
+	thread reading_thread(htp_reading_loop, this);
+	// if (pthread_create(&htp_reading_thread, &attr, htp_reading_loop, this) != 0){
+	// 	throw;
+	// }
 
-	if (pthread_create(&htp_reading_thread, &attr, htp_reading_loop, this) != 0){
-		throw;
-	}
-
+	thread writing_thread(htp_writing_loop, this);
 	// if (pthread_create(&htp_writing_thread, &attr, htp_writing_loop, this) != 0){
 	// 	throw;
 	// }
 
-	if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
-		throw;
-	}
+	thread retransmission_thread(htp_retransmission_loop, this);
+	// if (pthread_create(&htp_retransmission_thread, &attr, htp_retransmission_loop, this) != 0){
+	// 	throw;
+	// }
 
 	// if (pthread_create(&htp_ack_handle_thread, &attr, htp_ack_handler, this) != 0){
 	// 	throw;
@@ -119,6 +107,17 @@ void* HtpSocket::htp_reading_loop(void* args) {
 	if(PRINT_LOG)
 		printf("reading thread created\n");
 
+	int UDPSocket = socket(AF_INET, SOCK_DGRAM, 0);
+
+	struct sockaddr_in localAddress = {0};
+    localAddress.sin_family = AF_INET;
+    localAddress.sin_port = htons(localPort);
+	localAddress.sin_addr.s_addr = htonl(INADDR_ANY); 
+	// if( this->bind((struct sockaddr*) &localAddress, sizeof(localAddress)) ) {
+	if(::bind(UDPSocket, (struct sockaddr*) &localAddress, sizeof(localAddress))) {
+		throw;
+	}
+
 	HtpPacket* packet;
 	uint32_t readbytes;
 
@@ -191,6 +190,50 @@ void* HtpSocket::htp_reading_loop(void* args) {
 	}
 }
 
+/**
+	htp_writing_loop: callback for writing threads
+	args: IP address of the interface
+*/
+void* HtpSocket::htp_writing_loop(void* args) {
+	
+	printf("writing thread created\n");
+
+	HtpSocket* _this = (HtpSocket*) args;
+
+	HtpPacket* packet;
+	while(1) {
+		packet = _this->outGoingPackets.dequeueWait(1000);
+		if(packet != NULL) {
+			// print track log
+			printf("[%d] send packet %d\n", getTime(), packet->getSequence());
+			// printBuffer(packet->packet, HTP_PACKET_MINLEN);
+
+			if(packet->isData() && packet->nolost()) {
+				packet->setTimestamp();
+				// if(packet->timer == nullptr) {
+				// 	void* args[] = {_this, packet};
+				// 	Timer *timer = new Timer(htp_retransmission_timeout_handler, args);
+				// 	packet->setTimer(timer);
+				// 	packet->timer->start(true);
+				// }
+				// else {
+				// 	packet->timer->stop();
+				// 	packet->timer->start(true);
+				// }
+			}
+
+			::sendto(_this->UDPSocket, packet->packet, packet->packetLen, 0, 
+				(sockaddr*) &(packet->dstAddr), packet->dstAddrLen);
+			// if(packet->isData()) {
+			// 	_this->waitingACKPacketList.push_back(packet);
+			// }
+			if(!packet->nolost()) {
+				delete packet;
+			}
+		}
+	}
+}
+
 void* HtpSocket::htp_retransmission_loop(void* args) {
 	HtpSocket* _this = (HtpSocket*) args;
 
@@ -259,11 +302,11 @@ void HtpSocket::sendNACK(uint32_t seq, const struct sockaddr *to, socklen_t tole
 
 
 //======== HTP INTERFACE ==========
-int HtpSocket::bind(struct sockaddr *my_addr, socklen_t addrlen) {
-	if(PRINT_LOG)
-		printf("htp_bind\n");
-	return ::bind(UDPSocket, my_addr, addrlen);
-}
+// int HtpSocket::bind(struct sockaddr *my_addr, socklen_t addrlen) {
+// 	if(PRINT_LOG)
+// 		printf("htp_bind\n");
+// 	return ::bind(UDPSocket, my_addr, addrlen);
+// }
 
 int HtpSocket::close() {
 	if(PRINT_LOG)

@@ -26,13 +26,11 @@ class HtpSocket {
 		int successReceivedPackets = 0;
 		int resendPackets = 0;
 
-		HtpSocket() throw();
-
 		HtpSocket(in_port_t localPort) throw();
 
 		// HtpSocket(size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 		
-		int bind(struct sockaddr *my_addr, socklen_t addrlen);
+		// int bind(struct sockaddr *my_addr, socklen_t addrlen);
 
 		int close();
 
@@ -48,7 +46,7 @@ class HtpSocket {
 
 	private:
 
-		int UDPSocket;	
+			
 		
 		// static ssize_t sendto(/*int sockfd*/ HtpSocket* socket, const void *buf);
 

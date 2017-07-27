@@ -34,10 +34,10 @@ armcamclient:
 	$(ARMCOMPL) -ggdb `pkg-config --cflags opencv` -o $(BINDIR)/camclient.exe ./clientApp/CameraApp.cpp `pkg-config --libs opencv` $(SRCDIR)/svc/SVC.cpp $(SRCDIR)/svc/svc-utils.cpp $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/svc/authenticator/SVCAuthenticatorSharedSecret.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
 
 multinetclient:
-	$(CCOMPL) -o $(BINDIR)/mnclient.exe ./multinet/SendFileApp.cpp ./multinet/multinet.cpp $(CFLAGS)
+	$(CCOMPL) -o $(BINDIR)/mnclient.exe ./multinet/SendFileApp.cpp $(CFLAGS)
 
 multinetserver:
-	$(CCOMPL) -o $(BINDIR)/mnserver.exe ./multinet/SendFileAppServer.cpp ./multinet/multinet.cpp $(CFLAGS)
+	$(CCOMPL) -o $(BINDIR)/mnserver.exe ./multinet/SendFileAppServer.cpp $(CFLAGS)
 
 htpclient:	
 	$(CCOMPL) -o $(BINDIR)/htpclient.exe ./clientApp/htpTest.cpp $(SRCDIR)/htp/HTP.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)

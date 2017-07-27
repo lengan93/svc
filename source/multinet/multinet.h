@@ -19,11 +19,11 @@ using namespace std;
 class MNPacket
 {
 	public:
-	void* msg;
+	uint8_t* msg;
 	int len;
-	MNPacket(void* msg, int len) {
+	MNPacket(uint8_t* msg, int len) {
 		this->len = len;
-		this->msg = malloc(len);
+		this->msg = (uint8_t*) malloc(len);
 		memcpy(this->msg, msg, len);
 	};
 
