@@ -1,5 +1,5 @@
 /**
-	/.mnclient.exe filename
+	/.mnclient.exe filename address
 */
 
 #include <fstream>
