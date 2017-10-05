@@ -12,10 +12,10 @@ using namespace cv;
 
 using namespace std;
 
-int GetFileSize(std::string filename){
-    ifstream file(filename.c_str(), ios::binary | ios::ate);
-	return file.tellg();
-}
+// int GetFileSize(std::string filename){
+//     ifstream file(filename.c_str(), ios::binary | ios::ate);
+// 	return file.tellg();
+// }
 
 float timeDistance(const struct timespec* greater, const struct timespec* smaller){
 	float sec = greater->tv_sec - smaller->tv_sec;
@@ -34,7 +34,7 @@ float timeDistance(const struct timespec* greater, const struct timespec* smalle
 
 void sendStream(void *arg)
 {
-		printf("0");
+	// printf("0");
 	SVCEndpoint* endpoint = (SVCEndpoint*) arg;
 
 	VideoCapture capture(0); // open the default camera
@@ -114,20 +114,20 @@ void sendStream(void *arg)
 		}
 		printf("\nFrame %d sent, framesize = %d, lastPacketSize = %d", frameSeq, imgSize, lastPacketSize);
 
-		bool goOn = false;
-		uint32_t s;
-		while(!goOn) {
-			if (endpoint->readData(buffer, &s, 40) == 0){
-				if (buffer[0] = 0x03 && frameSeq==*((int*)(buffer+1))){
-					goOn = true;																		
-				}
-			}
-			capture.read(frame);
-        	imshow("MyVideo", frame);
-		}
+		// bool goOn = false;
+		// uint32_t s;
+		// while(!goOn) {
+		// 	if (endpoint->readData(buffer, &s, 40) == 0){
+		// 		if (buffer[0] = 0x03 && frameSeq==*((int*)(buffer+1))){
+		// 			goOn = true;																		
+		// 		}
+		// 	}
+		// 	capture.read(frame);
+  //       	imshow("MyVideo", frame);
+		// }
 
 		frameSeq++;
-        if(waitKey(30) == 27) //wait for 'esc' key press for 30 ms. If 'esc' key is pressed, break loop
+        if(waitKey(300) == 27) //wait for 'esc' key press for 30 ms. If 'esc' key is pressed, break loop
 		{
 		    cout << "esc key is pressed by user" << endl; 
 		    break; 
@@ -141,60 +141,60 @@ int main(int argc, char** argv){
 	//int RETRY_TIME = atoi(argv[2]);
 	SVCHost* remoteHost;
 	
-		// string appID = string("CAMERA_APP");
-		string appID = string("CAMERA_APP");
-		// SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
-		if (argc>1){
-			remoteHost = new SVCHostIP(argv[1]);
+	// string appID = string("CAMERA_APP");
+	string appID = string("CAMERA_APP");
+	// SVCHost* remoteHost = new SVCHostIP("149.56.142.13");
+	if (argc>1){
+		remoteHost = new SVCHostIP(argv[1]);
+	}
+	else {
+		remoteHost = new SVCHostIP("192.168.43.149");
+	}
+
+	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
+
+	try{
+		SVC* svc = new SVC(appID, authenticator);
+		struct timespec startingTime;
+		struct timespec echelon;
+		clock_gettime(CLOCK_REALTIME, &startingTime);
+		
+		SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
+		if (endpoint!=NULL){
+			if (endpoint->negotiate()){
+				clock_gettime(CLOCK_REALTIME, &echelon);
+				printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
+
+				//pthread_t my_thread;
+
+					//pthread_create(&my_thread, NULL, sendStream, endpoint);
+				sendStream(endpoint);
+					// printf("\nPress any key to exit!\n");
+					// getchar();
+
+					//pthread_cancel(my_thread);
+
+			}
+			else{
+				printf("\nCannot establish connection. Program terminated.\n");
+			}
+			delete endpoint;
 		}
 		else {
-			remoteHost = new SVCHostIP("192.168.43.149");
+			printf("\nCannot create the endpoint. Program terminated.\n");
 		}
-
-		SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
-	
-		try{
-			SVC* svc = new SVC(appID, authenticator);
-			struct timespec startingTime;
-			struct timespec echelon;
-			clock_gettime(CLOCK_REALTIME, &startingTime);
-			
-			SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
-			if (endpoint!=NULL){
-				if (endpoint->negotiate()){
-					clock_gettime(CLOCK_REALTIME, &echelon);
-					printf("\n[%0.2f] Connection established.", timeDistance(&echelon, &startingTime)); fflush(stdout);
-
-					//pthread_t my_thread;
-
-   					//pthread_create(&my_thread, NULL, sendStream, endpoint);
-					sendStream(endpoint);
-   					// printf("\nPress any key to exit!\n");
-   					// getchar();
-
-   					//pthread_cancel(my_thread);
-
-				}
-				else{
-					printf("\nCannot establish connection. Program terminated.\n");
-				}
-				delete endpoint;
-			}
-			else {
-				printf("\nCannot create the endpoint. Program terminated.\n");
-			}
-			svc->shutdownSVC();
-			delete svc;
-			
-			clock_gettime(CLOCK_REALTIME, &echelon);
-			printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
-		}
-		catch (const char* str){
-			printf("\nError: %s\n", str);
-		}
+		svc->shutdownSVC();
+		delete svc;
 		
-		delete authenticator;
-		delete remoteHost;
+		clock_gettime(CLOCK_REALTIME, &echelon);
+		printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
+	}
+	catch (const char* str){
+		printf("\nError: %s\n", str);
+	}
+	
+	delete authenticator;
+	delete remoteHost;
 	
 		
 }

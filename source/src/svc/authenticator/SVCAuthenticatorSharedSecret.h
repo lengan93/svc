@@ -4,6 +4,7 @@
 	//#include <iostream>
 	#include <fstream>
 	#include <sstream>
+	#include <iostream>
 
 	#include "SVCAuthenticator.h"
 	#include "../../crypto/AESGCM.h"
@@ -11,7 +12,7 @@
 
 	class SVCAuthenticatorSharedSecret : public SVCAuthenticator{
 			
-		static const int HASH_TIME = 10;
+		static const int HASH_TIME = 1;
 				
 		AESGCM* aesGCM;
 		SHA256* sha256;

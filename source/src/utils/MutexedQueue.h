@@ -181,7 +181,7 @@
 					}
 					else {
 						*data = (*(this->first))->data;								
-					}						
+					}
 				}				
 				pthread_mutex_unlock(&this->firstMutex);
 				return haveData;

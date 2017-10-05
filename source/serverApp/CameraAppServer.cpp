@@ -43,9 +43,9 @@ int main(int argc, char** argv){
 		SVC* svc = new SVC(appID, authenticator);		
 		printf("\nserver is listenning..."); fflush(stdout);
 		SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT);
-		printf("1\n");
+		// printf("1\n");
 		if (endpoint!=NULL){
-			printf("2\n");
+			// printf("2\n");
 			if (endpoint->negotiate()){
 				printf("\nConnection established!");
 				
@@ -119,11 +119,12 @@ int main(int argc, char** argv){
 									delete [] imgData;
         							imshow("MyVideo", img); //show the frame in "MyVideo" window
 
-        							buffer[0] = 0x03;
-									memcpy(buffer+1, &frameSeq, 4);
-									for (int i=0;i<RETRY_TIME;i++){
-										endpoint->sendData(buffer, 1+4);
-									}
+        							// send the ack
+        	// 						buffer[0] = 0x03;
+									// memcpy(buffer+1, &frameSeq, 4);
+									// for (int i=0;i<RETRY_TIME;i++){
+									// 	endpoint->sendData(buffer, 1+4);
+									// }
 								}
 								break;
 								
