@@ -1,4 +1,5 @@
 #include <iostream>
+#include <thread>
 
 #include "../src/utils/PeriodicWorker.h"
 #include "../src/svc/SVC.h"
@@ -6,6 +7,7 @@
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
 #include "../src/utils/camera-util.h"
+#include "../src/utils/MutexedQueue.h"
 
 #define RETRY_TIME 5
 
@@ -14,6 +16,54 @@ using namespace std;
 int frameSeq = 0;
 
 bool working = true;
+
+MutexedQueue<AVPacket*> frameBuffer;
+
+void SVC_display_video(int width, int height) {
+
+	Graphics* g = new Graphics(width,  height, "My Window");
+	if(strcmp(g->getError(), "") != 0) {
+		printf("SDL error: %s\n", g->getError());
+		return;
+	}
+
+	SDL_Event       event;
+
+	SDL_Rect sdlRect;  
+    sdlRect.x = 0;  
+    sdlRect.y = 0;  
+    sdlRect.w = width;  
+    sdlRect.h = height;
+
+    AVCodecContext* decoderCtx;
+	initDecoderContext(&decoderCtx, width, height);
+
+	AVFrame* decodedFrame = NULL;
+	decodedFrame = av_frame_alloc();
+
+	int frameFinished;
+
+    while(1) {
+    	AVPacket* framePacket = frameBuffer.dequeueWait(-1);
+    	if(framePacket != NULL) {
+    		avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, framePacket);
+    		av_free(framePacket);
+			if(frameFinished) {
+				g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
+				SDL_Delay(50);
+				SDL_PollEvent(&event);
+		        if(event.type == SDL_QUIT) {
+					g->close();
+					break;
+				}
+			}
+    	}
+    }
+	
+
+	g->close();
+	av_free(decodedFrame);
+}
 
 void receiveStream(SVCEndpoint* endpoint) {
 
@@ -41,6 +91,8 @@ void receiveStream(SVCEndpoint* endpoint) {
 		return;
 	}
 
+	std::thread display(SVC_display_video, width, height);
+
 	unsigned char* imgData;
 	int imgSize;
 	int blocs; //number of blocs of an image
@@ -49,29 +101,9 @@ void receiveStream(SVCEndpoint* endpoint) {
 	bool firstPacketReceived = false;
 	bool lastPacketReceived = false;
 	int receivedBytes = 0;
-	int frameFinished;
 
-	AVCodecContext* decoderCtx;
-	initDecoderContext(&decoderCtx, width, height);
-
-	AVFrame* decodedFrame = NULL;
-	decodedFrame = av_frame_alloc();
-
-	Graphics* g = new Graphics(width,  height, "My Window");
-	if(strcmp(g->getError(), "") != 0) {
-		printf("SDL error: %s\n", g->getError());
-		return;
-	}
-
-	SDL_Event       event;
-
-	SDL_Rect sdlRect;  
-    sdlRect.x = 0;  
-    sdlRect.y = 0;  
-    sdlRect.w = width;  
-    sdlRect.h = height;
-
-    AVPacket rcvPacket;
+	
+    AVPacket* rcvPacket;
 
 	while (trytimes < 3){
 		if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
@@ -113,28 +145,14 @@ void receiveStream(SVCEndpoint* endpoint) {
 						//decode the image received
 						// if(frameSeq == 50)
 							// memset(imgData+imgSize/2, 0, imgSize-imgSize/2);
-						av_init_packet(&rcvPacket);
-	          			rcvPacket.data = imgData;
-	          			rcvPacket.size = imgSize;
+    					rcvPacket = new AVPacket;
+						av_init_packet(rcvPacket);
+	          			rcvPacket->data = imgData;
+	          			rcvPacket->size = imgSize;
 
-	          			avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, &rcvPacket);
-				    	if(frameFinished) {
-				    		g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
-				    		SDL_Delay(50);
-							SDL_PollEvent(&event);
-					        if(event.type == SDL_QUIT) {
-								g->close();
-								break;
-							}
-				    	}
-						delete [] imgData;
+	          			frameBuffer.enqueue(rcvPacket);
 
-						// send the ack
-// 						buffer[0] = 0x03;
-						// memcpy(buffer+1, &frameSeq, 4);
-						// for (int i=0;i<RETRY_TIME;i++){
-						// 	endpoint->sendData(buffer, 1+4);
-						// }
+						//delete [] imgData;
 					}
 					break;
 					
@@ -147,8 +165,6 @@ void receiveStream(SVCEndpoint* endpoint) {
 		}
 	}
 
-	g->close();
-	av_free(decodedFrame);
 }
 
 void* process(void* arg) {
@@ -231,3 +247,8 @@ int main(int argc, char** argv){
 	pthread_join(tid, NULL);
 	
 }
+
+
+/*
+It's not multi-connections. The buffer queue is commun
+*/
