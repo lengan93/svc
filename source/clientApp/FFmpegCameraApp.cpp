@@ -84,6 +84,36 @@ public:
 	 	return con;
 	}
 
+	static Connector* get_UDP_server_connector(char* host_addr){
+		
+		Connector* con = new Connector();
+	    con->type = UDP_CONNECTOR;
+	    //Create socket
+	    con->udpsock = socket(AF_INET , SOCK_DGRAM , 0);
+	    if (con->udpsock == -1)
+	    {
+	        printf("Could not create socket");
+	        return NULL;
+	    }
+	     
+	    con->server.sin_addr.s_addr = INADDR_ANY;
+	    // server.sin_addr.s_addr = inet_addr("127.0.0.1");
+	    con->server.sin_family = AF_INET;
+	    int serverport = 8888;
+	    con->server.sin_port = htons( serverport );
+	 	
+	 	con->server_size = sizeof con->server;
+
+	 	if( bind(con->udpsock,(struct sockaddr *)&con->server , con->server_size) < 0)
+	    {
+	        //print the error message
+	        printf("bind failed. Error");
+	        return NULL;
+	    }
+
+	 	return con;
+	}
+
 	int sendData(uint8_t* data, uint32_t len) {
 		switch(type) {
 			case SVC_CONNECTOR:

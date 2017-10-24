@@ -1,10 +1,7 @@
 #include <iostream>
 
 #include "../src/utils/PeriodicWorker.h"
-#include "../src/svc/SVC.h"
-#include "../src/svc/host/SVCHostIP.h"
-#include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
-
+#include "../connector/connector.h"
 
 using namespace std;
 
@@ -20,10 +17,10 @@ int GetFileSize(std::string filename){
 }
 
 void send_server_beat(void* args){
-	uint8_t buffer[1];
-	SVCEndpoint* ep = (SVCEndpoint*)args;
-	buffer[0] = 0xFF;
-	ep->sendData(buffer, 1);
+	// uint8_t buffer[1];
+	// SVCEndpoint* ep = (SVCEndpoint*)args;
+	// buffer[0] = 0xFF;
+	// ep->sendData(buffer, 1);
 	if (headerReceived &!fileReceived){
 		printf("\rReceived: %d/%d", readSize, fileSize); fflush(stdout);
 	}
@@ -31,18 +28,23 @@ void send_server_beat(void* args){
 
 int main(int argc, char** argv){
 
-	int RETRY_TIME = atoi(argv[1]);
+	if(argc > 1) {
+		int RETRY_TIME = atoi(argv[1]);
+		
+		Connector* endpoint;
+		try {
 
-	string appID = string("SEND_FILE_APP");	
-	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
-	
-	try{
-		SVC* svc = new SVC(appID, authenticator);		
-		printf("\nserver is listenning..."); fflush(stdout);
-		SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT);
-		if (endpoint!=NULL){
-			if (endpoint->negotiate()){
-				printf("\nConnection established!");
+			if(argc > 2 && strcmp(argv[2],"--udp")==0) {
+				endpoint = Connector::get_UDP_server_connector();
+			}
+			else {
+				endpoint = Connector::get_SVC_server_connector();
+			}
+
+		// 	SVC* svc = new SVC(appID, authenticator);		
+		// 	printf("\nserver is listenning..."); fflush(stdout);
+		// 	SVCEndpoint* endpoint = svc->listenConnection(SVC_DEFAULT_TIMEOUT);
+			if (endpoint!=NULL){			
 				
 				//pw to sent beat
 				PeriodicWorker* pw = new PeriodicWorker(1000, send_server_beat, endpoint);								
@@ -56,7 +58,7 @@ int main(int argc, char** argv){
 				//-- try to read file size and name from the first message				
 				int trytimes = 0;
 				while (!fileReceived){
-					if (endpoint->readData(buffer, &bufferSize, 1000) == 0){
+					if (endpoint->readData(buffer, &bufferSize) == 0){
 						trytimes = 0;
 						switch (buffer[0]){
 							case 0x01:
@@ -125,21 +127,13 @@ int main(int argc, char** argv){
 				pw->stopWorking();
 				pw->waitStop();
 				delete pw;
-								
-				endpoint->shutdownEndpoint();			
+							
 				printf("\nProgram terminated!\n");
+			
 			}
-			else{
-				printf("\nCannot establish connection!\n");
-			}
-			delete endpoint;
 		}
-		svc->shutdownSVC();
-		delete svc;
+		catch (const char* str){
+			printf("\nError: %s\n", str);
+		}
 	}
-	catch (const char* str){
-		printf("\nError: %s\n", str);
-	}
-	
-	delete authenticator;
 }

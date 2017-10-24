@@ -131,6 +131,7 @@ void receiveStream(SVCEndpoint* endpoint) {
 						imgData = new unsigned char[imgSize];
 						memset(imgData, 0, imgSize);
 						// printf("\nreceiving image");
+						echelon1 = getTime();
 					}
 					break;
 					
@@ -165,7 +166,6 @@ void receiveStream(SVCEndpoint* endpoint) {
 	          			total_size += imgSize;
 	          			v_inst = (imgSize/1024.0)/((echelon2 - echelon1)/1000.0);
 	          			v_avg = (total_size/1024.0)/((echelon2 - starting_time)/1000.0);
-	          			echelon1 = echelon2;
 						printf("\n %d\t%.3f Kb\t%.3f KB/s\t%.3f KB/s(avg)", frameSeq, imgSize/1000.0, v_inst, v_avg);
 						// printf("\nframe %d (%d) received, v_inst = %f KB/s, v_avg = %f KB/s", frameSeq, imgSize, v_inst, v_avg);
 
@@ -337,6 +337,7 @@ void udp_main_loop() {
 						imgData = new unsigned char[imgSize];
 						memset(imgData, 0, imgSize);
 						// printf("\nreceiving image");
+						echelon1 = getTime();
 					}
 					break;
 					
@@ -372,7 +373,6 @@ void udp_main_loop() {
 	          			total_size += imgSize;
 	          			v_inst = (imgSize/1024.0)/((echelon2 - echelon1)/1000.0);
 	          			v_avg = (total_size/1024.0)/((echelon2 - starting_time)/1000.0);
-	          			echelon1 = echelon2;
 						printf("\n %d\t%.3f Kb\t%.3f KB/s\t%.3f KB/s(avg)", frameSeq, imgSize/1000.0, v_inst, v_avg);
 
 						//delete [] imgDta;
