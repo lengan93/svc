@@ -43,10 +43,18 @@ int main(int argc, char** argv){
 		
 		Connector* endpoint;
 		if(argc > 4 && strcmp(argv[4],"--udp")==0) {
-			endpoint = Connector::get_UDP_connector(hostAddr);
+			endpoint = UDP_Connector::get_client_instance(hostAddr);
+		}
+		if(argc > 4) {
+			if(strcmp(argv[4],"--udp")==0) {
+				endpoint = UDP_Connector::get_client_instance(hostAddr);
+			}
+			else if(strcmp(argv[4],"--tcp")==0) {
+				endpoint = TCP_Connector::get_client_instance(hostAddr);
+			}
 		}
 		else {
-			endpoint = Connector::get_SVC_connector(hostAddr);
+			endpoint = SVC_Connector::get_client_instance(hostAddr);
 		}
 		try {
 			if(endpoint != NULL) {

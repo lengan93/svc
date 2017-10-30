@@ -34,11 +34,16 @@ int main(int argc, char** argv){
 		Connector* endpoint;
 		try {
 
-			if(argc > 2 && strcmp(argv[2],"--udp")==0) {
-				endpoint = Connector::get_UDP_server_connector();
+			if(argc > 2) {
+				if(strcmp(argv[2],"--udp")==0) {
+					endpoint = UDP_Connector::get_server_instance();
+				}
+				else if(strcmp(argv[2],"--tcp")==0) {
+					endpoint = TCP_Connector::get_server_instance();
+				}
 			}
 			else {
-				endpoint = Connector::get_SVC_server_connector();
+				endpoint = SVC_Connector::get_server_instance();
 			}
 
 		// 	SVC* svc = new SVC(appID, authenticator);		
@@ -57,6 +62,7 @@ int main(int argc, char** argv){
 
 				//-- try to read file size and name from the first message				
 				int trytimes = 0;
+				printf("before receiving loop\n");
 				while (!fileReceived){
 					if (endpoint->readData(buffer, &bufferSize) == 0){
 						trytimes = 0;
@@ -102,7 +108,8 @@ int main(int argc, char** argv){
 						if (!fileReceived){
 							fileReceived = true;
 						}
-						myFile->close();
+						if(myFile->is_open())
+							myFile->close();
 
 						if (fileSize>0){
 							printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
