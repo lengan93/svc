@@ -83,7 +83,7 @@ int main(int argc, char** argv){
 							case 0x02:
 								if (headerReceived){
 									readSize+=bufferSize-1;
-									blocs++;
+									printf("%d\n",++blocs);
 									// printf("%d\n", bufferSize);
 
 									//save to file

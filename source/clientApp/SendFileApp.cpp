@@ -65,7 +65,7 @@ int main(int argc, char** argv){
 				string fileName = string(argv[1]);
 				int fileSize = GetFileSize(fileName);
 				if (fileSize >=0){
-					printf("\nSending file: %s, size: %d", fileName.c_str(), fileSize); fflush(stdout);						
+					printf("\nSending file: %s, size: %d\n", fileName.c_str(), fileSize); fflush(stdout);						
 									
 					//-- firstly send the file description, 4 byte filesize, then the rest will be fileName
 					buffer[0]=0x01;
@@ -77,6 +77,7 @@ int main(int argc, char** argv){
 					}						
 			
 					//-- then send the content
+					int counter = 0;
 					if (fileSize>0){
 						ifstream bigFile(argv[1]);
 						int blocsize;
@@ -88,12 +89,15 @@ int main(int argc, char** argv){
 								blocsize = bigFile.gcount();
 							}
 
+							printf("%d.\t%d\n", ++counter, blocsize);
 							endpoint->sendData(buffer, blocsize+1);
+							printf(".\n");
 							// counter++;
 						}													
 						bigFile.close();
 					}
 					
+					printf("send END message\n");
 					//-- then send terminating packets
 					buffer[0] = 0x03;
 					for (int i=0;i<RETRY_TIME;i++){

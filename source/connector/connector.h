@@ -238,11 +238,14 @@ public:
 	}
 
 	int sendData(uint8_t* data, uint32_t len) {
+		printf("%d\n", len);
 		return send(tcpsock, data, len, 0);
 	}
 
 	int readData(uint8_t* data, uint32_t* len) {
-		*len = recv(tcpsock, data, 6000, 0);
+		printf("receiving sth\n");
+		*len = recv(tcpsock, data, 1400, 0);
+		printf("%d\n", *len);
 		return 0;
 	}
 
