@@ -741,6 +741,9 @@ int SVCEndpoint::sendData(const uint8_t* data, uint32_t dataLen){
 		//-- try to send		
 		SVCPacket* packet = new SVCPacket(this->endpointID);
 		packet->setData(data, dataLen);
+		if((this->sockOption & SVC_NOLOST) != 0) {
+			packet->packet[INFO_BYTE] |= SVC_NOLOST;
+		}
 		//this->outgoingQueue->enqueue(packet);
 		this->tobesentQueue->enqueue(packet);
 		

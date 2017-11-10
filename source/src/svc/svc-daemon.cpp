@@ -446,7 +446,11 @@ void* DaemonEndpoint::daemon_endpoint_inet_writing_loop(void* args){
 			}
 
 			#ifdef _USING_HTP_
-				sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
+				uint8_t flags = 0;
+				if((packet->packet[INFO_BYTE] & SVC_NOLOST) != 0) {
+					flags = HTP_IMPT;
+				}
+				sendrs = daemonHtpSocket->sendto(packet->packet, packet->dataLen, flags, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);			
 			#else
 				sendrs = sendto(daemonInSocket, packet->packet, packet->dataLen, 0, (struct sockaddr*)&_this->remoteAddr, _this->remoteAddrLen);
 			#endif

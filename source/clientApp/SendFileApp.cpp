@@ -50,7 +50,7 @@ int main(int argc, char** argv){
 			struct timespec echelon;
 			clock_gettime(CLOCK_REALTIME, &startingTime);
 			
-			SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
+			SVCEndpoint* endpoint = svc->establishConnection(remoteHost, SVC_NOLOST);
 			if (endpoint!=NULL){
 				if (endpoint->negotiate()){
 					clock_gettime(CLOCK_REALTIME, &echelon);

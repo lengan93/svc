@@ -54,11 +54,13 @@ class HtpPacket{
 			delete this->timer;
 		}
 
-		//-- operator== ?????
-		
-		// bool isCommand(){
-		// 	return ((this->packet[INFO_BYTE] & SVC_COMMAND_FRAME) != 0);
-		// }
+		void setFlag(uint8_t flag) {
+			packet[0] |= flag;
+		}
+
+		void unsetFlag(uint8_t flag) {
+			packet[0] ^= flag;
+		}
 		
 		void setBody(const void* body, uint32_t bodyLen){
 			memcpy(this->packet + HTP_HEADER_LENGTH, body, bodyLen);
@@ -116,31 +118,33 @@ class HtpPacket{
 		}
 		
 		bool checkLength() {
+
 			return (packetLen >= HTP_PACKET_MINLEN);
 		}
 
 		bool isData() {
-			if(!this->checkLength()) return false;
+			if(this->packetLen <= 0) return false;
 			return (packet[0] & HTP_DATA) != 0;
 		}
 
 		bool isACK() {
-			if(!this->checkLength()) return false;
+			if(this->packetLen <= 0) return false;
 			return (packet[0] & HTP_ACK) != 0;
 		}
 
 		bool isNACK() {
-			if(!this->checkLength()) return false;
+			if(this->packetLen <= 0) return false;
 			return (packet[0] & HTP_NACK) != 0;
 		}
 
-		bool nolost() {
-			if(!this->checkLength()) return false;
-			// return (packet[1] & SVC_NOLOST) != 0;
-			return true;
+		bool isImportant() {
+			if(this->packetLen <= 0) return false;
+			return (packet[1] & HTP_IMPT) != 0;
+			// return true;
 		}
 
 		bool isStreamed() {
+			if(this->packetLen <= 0) return false;
 			return (packet[0] & HTP_STREAMED) != 0;
 		}
 		// bool isEncrypted() {
