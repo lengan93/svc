@@ -46,3 +46,7 @@ multinetclient:
 multinetserver:
 	$(CCOMPL) -o $(BINDIR)/mnserver.exe ./multinet/SendFileAppServer.cpp ./multinet/multinet.cpp $(CFLAGS)
 
+client2:	
+	$(CCOMPL) -o $(BINDIR)/client2.exe ./clientApp/SendFileApp.cpp $(SRCDIR)/svc/svc-utils.cpp $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/ECPoint.cpp $(SRCDIR)/crypto/ECCurve.cpp $(SRCDIR)/svc/authenticator/SVCAuthenticatorSharedSecret.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)
+server2:	
+	$(CCOMPL) -static -o $(BINDIR)/server2.exe ./serverApp/SendFileAppServer.cpp $(SRCDIR)/svc/svc-utils.cpp $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/svc/authenticator/SVCAuthenticatorSharedSecret.cpp $(CFLAGS) $(CINCLU) $(CDEBUG)

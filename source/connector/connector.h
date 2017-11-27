@@ -3,7 +3,7 @@
 #ifndef __CONNECTOR__
 #define __CONNECTOR__
 
-#include "../src/svc/SVC.h"
+#include "../src/svc/SVC.hpp"
 #include "../src/svc/host/SVCHostIP.h"
 #include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
 
@@ -46,10 +46,11 @@ public:
 		
 		con->endpoint = con->svc->establishConnection(remoteHost, 0);
 		if (con->endpoint!=NULL){
-			if (con->endpoint->negotiate()){
-				printf("Connection established.\n");
+			// if (con->endpoint->negotiate()){
+			// 	printf("Connection established.\n");
+			// 	return con;
+			// }
 				return con;
-			}
 		}
 		return NULL;
 	}
@@ -65,10 +66,11 @@ public:
 		
 		con->endpoint = con->svc->listenConnection(SVC_DEFAULT_TIMEOUT);
 		if (con->endpoint!=NULL){
-			if (con->endpoint->negotiate()){
-				printf("Connection established.\n");
+			// if (con->endpoint->negotiate()){
+			// 	printf("Connection established.\n");
+			// 	return con;
+			// }
 				return con;
-			}
 		}
 		return NULL;
 	}
