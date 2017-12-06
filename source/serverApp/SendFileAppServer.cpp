@@ -57,7 +57,7 @@ int main(int argc, char** argv){
 				uint32_t bufferSize = 1400;
 				uint8_t buffer[bufferSize+1];
 				
-				ofstream* myFile;
+				ofstream* myFile = NULL;
 				int blocs = 0;
 
 				//-- try to read file size and name from the first message				
@@ -108,7 +108,7 @@ int main(int argc, char** argv){
 						if (!fileReceived){
 							fileReceived = true;
 						}
-						if(myFile->is_open())
+						if(myFile != NULL && myFile->is_open())
 							myFile->close();
 
 						if (fileSize>0){
@@ -137,6 +137,9 @@ int main(int argc, char** argv){
 							
 				printf("\nProgram terminated!\n");
 			
+			}
+			else {
+				printf("\nCannot establish connection\n");
 			}
 		}
 		catch (const char* str){

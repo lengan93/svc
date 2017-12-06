@@ -14,7 +14,8 @@
 	#include "../crypto/AES256.h"
 	#include "../crypto/SHA256.h"
 	#include "../crypto/ECCurve.h"
-	#include "../crypto/AESGCM.h"
+	// #include "../crypto/AESGCM.h"
+	#include "../crypto/AESGCM-openssl.hpp"
 
 	#include <csignal>
 	#include <sys/un.h>
@@ -77,7 +78,10 @@
 			std::string challengeReceived;
 			std::string proof;
 			std::string remoteIdentity;
-		
+			
+			AESGCM_SSL* aesgcm;
+			// AESGCM* aesgcm;
+
 			SVCEndpoint(uint64_t endpointID, bool isInitiator) {
 				// this->svc = svc;
 				this->endpointID = endpointID;
@@ -113,14 +117,72 @@
 			void changeEndpointID(uint64_t endpointID) {}		
 
 			int send_packet(SVCPacket* packet) {
-				return transport->sendData(packet->packet, packet->dataLen);
+				int r = transport->sendData(packet->packet, packet->dataLen);
+				return r;
 			}
 
 			SVCPacket* receive_packet() {
 				SVCPacket* packet = new SVCPacket();
-				transport->recvData(packet->packet, packet->dataLen);
+				transport->recvData(packet->packet, &packet->dataLen);
+				// printBuffer(packet->packet, packet->dataLen);
 				return packet;
-			}			
+			}	
+
+			void encryptPacket(SVCPacket* packet){
+
+				uint8_t* iv = packet->packet+ENDPOINTID_LENGTH+1;
+				uint16_t ivLen = SEQUENCE_LENGTH;	
+				
+				uint8_t* tag;
+				uint16_t tagLen;	
+				uint8_t* encrypted;
+				uint32_t encryptedLen;
+
+				//-- set infoByte
+				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
+				
+				// aesgcmMutex.lock();
+				// this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
+				this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, encryptedLen, &tag);
+				// aesgcmMutex.unlock();
+				
+				//-- set body to be encrypted
+				packet->setBody(encrypted, encryptedLen);
+				//-- copy tag and tagLen to the end of packet
+				packet->pushCommandParam(tag, 16);	
+				
+
+				free(encrypted);
+				free(tag);
+			}
+
+			bool decryptPacket(SVCPacket* packet){
+				bool rs;
+				uint8_t* iv = (uint8_t*)(packet->packet + ENDPOINTID_LENGTH + 1);
+				uint16_t ivLen = SEQUENCE_LENGTH;
+				uint8_t* aad = packet->packet;
+				uint16_t aadLen = SVC_PACKET_HEADER_LEN;	
+				
+				uint16_t tagLen = *((uint16_t*)(packet->packet+packet->dataLen - 2));
+				uint8_t* tag = packet->packet+packet->dataLen-2-tagLen;
+				
+				uint8_t* decrypted;
+				uint32_t decryptedLen;
+				
+				// aesgcmMutex.lock();
+				// rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
+				this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, &decrypted, decryptedLen);
+				// aesgcmMutex.unlock();
+
+				//-- set body to be decrypted
+				if (decryptedLen > 0){
+					packet->setBody(decrypted, decryptedLen);
+					packet->packet[INFO_BYTE] &= ~SVC_ENCRYPTED;
+					free(decrypted);
+					return true;
+				}
+				return false;
+			}		
 
 		public:
 			~SVCEndpoint();
@@ -132,11 +194,11 @@
 
 				SHA256 sha256;
 				AES256* aes256;
-				AESGCM* aesgcm;
 
 				int requested_security_strength;
 				ECCurve* curve = new ECCurve();
 				mpz_t randomX;
+				mpz_t randomNumber;
 				ECPoint* ecpoint;
 				ECPoint* gxy;
 				uint8_t* iv;
@@ -149,8 +211,6 @@
 
 				uint8_t* decrypted;
   				uint32_t decryptedLen;
-
-				mpz_t randomNumber;
 
 				uint8_t solutionProof[SVC_DEFAULT_BUFSIZ];
   			 	uint16_t solutionProofLen;
@@ -168,25 +228,17 @@
 				SVCPacket* encryptedECPoint;
 				SVCPacket* encryptedProof;
 
+				isAuth = false;
+
 				if (this->isInitiator){
 					//-- get challenge secret and challenge		
 					this->challengeSecretSent = authenticator->generateChallengeSecret();		
+					// cout << "challenge secret: " <<challengeSecretSent <<endl;
 					// cout << "challengeSecretSent: " <<this->challengeSecretSent << endl;
 
-					// SHA256 sha;
-					// std::string dg = sha.hash(this->challengeSecretSent);
-					// cout << "expected hash: " << dg <<endl;
-
 					this->challengeSent = authenticator->generateChallenge(challengeSecretSent);		
+					// cout << "challenge sent: " <<challengeSent <<endl;
 					
-					// packet->pushCommandParam((uint8_t*)&this->svc->appID, APPID_LENGTH);
-					// packet->pushCommandParam((uint8_t*)challengeSecretSent.c_str(), challengeSecretSent.size());
-					// uint32_t remoteAddr = this->remoteHost->getHostAddress();
-					// packet->pushCommandParam((uint8_t*)&remoteAddr, HOST_ADDR_LENGTH);
-					
-					// from daemon
-					//-- extract challengeSecret x
-					// packet->popCommandParam(param, &paramLen);
 					//-- use SHA256(x) as an AES256 key
 					hashValue = sha256.hash(challengeSecretSent.c_str());
 					stringToHex(hashValue, aeskey); //AES key is guaranteed to be 256 bits length
@@ -194,7 +246,8 @@
 					aes256 = new AES256(aeskey);
 					
 					//-- generate STS-gx
-					requested_security_strength = curve->getRequestSecurityLength();					
+					requested_security_strength = curve->getRequestSecurityLength();	
+					mpz_init(randomX);
 					generateRandomNumber(&randomX, requested_security_strength);
 					ecpoint = new ECPoint();
 					curve->mul(ecpoint, curve->g, &randomX);
@@ -217,79 +270,65 @@
 					paramLen += ecpointHexLen;					
 				
 					aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
-
+					
+					// cout << "gx: " << endl;
+					// printBuffer(param, paramLen);
+					
+					// cout << "encrypted gx: " << endl;
+					// printBuffer(encrypted, encryptedLen);
+					
 					packet = new SVCPacket(this->endpointID);
-					packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
 					packet->pushCommandParam(encrypted, encryptedLen);
+					packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
 					
 					free(encrypted);
 					delete aes256;
 					delete ecpoint;
 					
-					//-- switch commandID
-					// packet->switchCommand(SVC_CMD_CONNECT_OUTER1);
 					//-- send the packet to internet					
 					this->send_packet(packet);
+					// cout << "Packet sent: " << endl;
+					// printBuffer(packet->packet, packet->dataLen);
 					delete packet;
-					//this->outgoingQueue->enqueue(packet);
-					// this->tobesentQueue->enqueue(packet);
 					
 					// wait for the response
-					// packet = this->dataholdQueue->dequeueWait(timeout);
 					packet = receive_packet();
 
 					if (!packet->popCommandParam(param, &paramLen)){
 						delete packet;
-						
+						return false;
 					}
 					encryptedProof = new SVCPacket(param, paramLen);
 				
 					if (!packet->popCommandParam(param, &paramLen)){
 						delete encryptedProof;
 						delete packet;
-						
+						return false;
 					}
+
+					// cout << "encrypted gy: " << endl;
+					// printBuffer(param, paramLen);
+
 					encryptedECPoint = new SVCPacket(param, paramLen);
 	
-					//-- change command to INNER_4				
-					// packet->switchCommand(SVC_CMD_CONNECT_INNER4);
-					//-- app svc is still waiting for the 'old' endpointID, push the current endpointID as new param
-					// packet->pushCommandParam(packet->packet+1, ENDPOINTID_LENGTH);
-					// //-- clear the 6&7 byte of endpointID
-					// packet->packet[1+6]=0x00;
-					// packet->packet[1+7]=0x00;				
-					// _this->unixOutgoingQueue.enqueue(packet);
-
-					// //--	new endpointID
-					// packet->popCommandParam(param, &paramLen);
-					// _this->changeEndpointID(*((uint64_t*)param));
-					//-- replace packet endpointID with the new one
-					// memcpy(packet->packet+1, param, ENDPOINTID_LENGTH);		
-
 					packet->popCommandParam(param, &paramLen);
 					challengeReceived = std::string((char*)param, paramLen);
 					
-					//--	resolve challenge then send back to daemon
+					//--	resolve challenge
 					challengeSecretReceived = authenticator->resolveChallenge(challengeReceived);
-					// cout << "SVC_CMD_CONNECT_INNER4 challengeSecretReceived: "_this->challengeSecretReceived <<endl;
-					//- packet updated with new endpointID
-					// packet->switchCommand(SVC_CMD_CONNECT_INNER5);				
-					// packet->pushCommandParam((uint8_t*)_this->challengeSecretReceived.c_str(), _this->challengeSecretReceived.size());
-					//_this->outgoingQueue->enqueue(packet);
-					// _this->tobesentQueue->enqueue(packet);
+					
+					// cout << "challengeReceived: " << challengeReceived <<endl;
+					// cout << "challengeSecretReceived: " << challengeSecretReceived <<endl;
 
-					// if (!packet->popCommandParam(solution, &solutionLen)){
-					// 	delete packet;
-					// 	pthread_mutex_unlock(&_this->stateMutex);
-					// 	break;
-					// }
-			
-					//-- hash this solution to create the aes256 key to decrypt encryptedECPoint from CONNECT_OUTER2
+					//-- hash this solution to create the aes256 key to decrypt encryptedECPoint 
 					hashValue = sha256.hash(string(challengeSecretReceived.c_str(), challengeSecretReceived.size()));
 					stringToHex(hashValue, aeskey); //-- aes key used to decrypt k1
 					aes256 = new AES256(aeskey);
 					aes256->decrypt(encryptedECPoint->packet, encryptedECPoint->dataLen, &data, &dataLen);
-				
+					
+					// cout << "gy: " << endl;
+					// printBuffer(data, dataLen);
+
 					delete aes256;
 					//-- construct gy from decrypted k2
 			
@@ -320,8 +359,11 @@
 							//-- aesgcm key = hash(gxy.x || gxy.y)
 							hashValue = sha256.hash(string((char*)param, paramLen));
 							stringToHex(hashValue, aeskey);						
-							aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);
-						
+							// aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);
+							aesgcm = new AESGCM_SSL(aeskey);
+
+							cout << "aesgcm key: " <<hashValue <<endl;
+
 							//-- decrypt the solution proof
 							iv = encryptedProof->packet+2;
 							ivLen = *((uint16_t*)encryptedProof->packet);						
@@ -329,52 +371,54 @@
 							encryptedLen = *((uint16_t*)(encryptedProof->packet + 2 + ivLen));								
 							tag = encryptedProof->packet + 6 + ivLen + encryptedLen;
 							tagLen = *((uint16_t*)(encryptedProof->packet + 4 + ivLen + encryptedLen));						
-							if (aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+							// if (aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
+							
+							// cout<< "encrypted proof (" << encryptedLen<<") :" <<endl;
+							printBuffer(encrypted, encryptedLen);
+
+							// cout <<"decrypt tag (" <<tagLen <<"): ";
+	    		// 			printBuffer(tag, tagLen);
+
+							if (aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, &decrypted, decryptedLen) > 0){
+								// cout<< "decrypted proof (" << decryptedLen<<") :" <<endl;
+								// printBuffer(decrypted, decryptedLen);
 								//-- solution proof decrypted succeeded by aesgcm							
-								//-- forward CONNECT_INNER6 to app
-								// packet->switchCommand(SVC_CMD_CONNECT_INNER6);
-								// packet->pushCommandParam(decrypted, decryptedLen);	
-								// state = SVC_CMD_CONNECT_INNER5;											
-								// unixOutgoingQueue.enqueue(packet);
-								if (authenticator->verifyProof(challengeSecretSent, std::string((char*)encrypted, encryptedLen))){
+								if (authenticator->verifyProof(challengeSecretSent, std::string((char*)decrypted, decryptedLen))){
 									//-- proof verified, generate proof then send back to daemon
 									proof = authenticator->generateProof(challengeSecretReceived);
-									// packet->switchCommand(SVC_CMD_CONNECT_INNER7);				
 									packet->pushCommandParam((uint8_t*)proof.c_str(), proof.size());
-									//outgoingQueue->enqueue(packet);
-									tobesentQueue->enqueue(packet);
+
+									send_packet(packet);
+									
 									//-- ok, connection established
 									// printf("\n2\n");						
 									isAuth = true;
 								}
-								else{					
-									//-- proof verification failed
-									delete packet;
-									// printf("\n3\n");						
-									isAuth = false;
+								else {
+									cout << "failed 1";
 								}
 
 							}
+							else {
+								cout << "failed 2, proof = " <<decrypted <<endl;
+							}
 						}
-
-
-					// if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER4, this->endpointID, SVC_DEFAULT_TIMEOUT)){
-					// 	this->isAuth = false;
-					// }
-					// else{
-					// 	if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER6, this->endpointID, SVC_DEFAULT_TIMEOUT)){
-					// 		this->isAuth = false;
-					// 	}
 					}
 				}
 				else{
 					//-- read challenge from request packet
 					// printf("negotiate server\n");
+					// cout << "request received: " << endl;
+					// printBuffer(request->packet, request->dataLen);
+
 					this->request->popCommandParam(param, &paramLen);
 					this->challengeReceived = std::string((char*)param, paramLen);
 					
 					//-- resolve this challenge to get challenge secret
 					this->challengeSecretReceived = authenticator->resolveChallenge(this->challengeReceived);
+					// cout << "challenge recv: " <<challengeReceived <<endl;
+					// cout << "challenge secret: " <<challengeSecretReceived <<endl;
+
 					this->remoteIdentity = authenticator->getRemoteIdentity(this->challengeSecretReceived);
 					// cout << "challengeSecretReceived: " << this->challengeSecretReceived << endl;
 
@@ -385,41 +429,40 @@
 					//-- generate challenge
 					this->challengeSecretSent = authenticator->generateChallengeSecret();		
 					this->challengeSent = authenticator->generateChallenge(this->challengeSecretSent);		
-					// cout<< "challengeSecretSent: " << this->challengeSecretSent <<endl;
+					// cout<< "challengeSecretSent: " << endl <<this->challengeSecretSent <<endl;
+					// cout<< "challengeSent: " << endl <<this->challengeSent <<endl;
 
-					// packet->setCommand(SVC_CMD_CONNECT_INNER3);
-					// packet->pushCommandParam((uint8_t*)this->challengeSent.c_str(), this->challengeSent.size());
-					// packet->pushCommandParam((uint8_t*)this->proof.c_str(), this->proof.size());
-					// packet->pushCommandParam((uint8_t*)this->challengeSecretSent.c_str(), this->challengeSecretSent.size());
-					// packet->pushCommandParam((uint8_t*)this->challengeSecretReceived.c_str(),  this->challengeSecretReceived.size());
-					// //this->outgoingQueue->enqueue(packet);
-					// this->tobesentQueue->enqueue(packet);
-					
+					packet = new SVCPacket(this->endpointID);
+					packet->pushCommandParam((uint8_t*)challengeSent.c_str(), challengeSent.size());
+
 					hashValue = sha256.hash(challengeSecretReceived);
 					stringToHex(hashValue, aeskey); //-- aes key used to decrypt k1
 				
-					aes256 = new AES256(aeskey);				
-					aes256->decrypt(encryptedECPoint->packet, encryptedECPoint->dataLen, &data, &dataLen);
-				
+					aes256 = new AES256(aeskey);	
+					request->popCommandParam(param, &paramLen);
+					
+					// cout << "encrypted gx: " <<endl;
+					// printBuffer(param, paramLen);
+
+					if(aes256->decrypt(param, paramLen, &data, &dataLen)) {
+						// cout << "gx: " <<endl;
+						// printBuffer(data, dataLen);
+					}
+					else {
+						cout << "aes256 decrypt failed" <<endl;
+						return false;
+					}
 					//-- construct gx from decrypted K1				
 					paramLen = *((uint16_t*)data);
-					
 					//-- !! check if the decrypt ecpoint data is at least VALID, by verifying the null-terminator at the end of each number
 					//-- otherwise the new ECPoint will be created with buffer-overflow error
 
 					if ((data[1+paramLen] == 0x00) && (data[dataLen-1] == 0x00)){
 
 						ecpoint = new ECPoint((char*)(data + 2) , (char*)(data + 4 + paramLen));				
-						//-- extract challengeSecret y
-						if (!packet->popCommandParam(param, &paramLen)){
-							free(data);
-							delete aes256;
-							delete packet;
-							delete ecpoint;
-							// break;
-						}
+						
 						//-- use SHA256(y) as an AES256 key
-						hashValue = sha256.hash(string((char*)param, paramLen));
+						hashValue = sha256.hash(challengeSecretSent);
 						//-- create new aes key to encrypt
 						stringToHex(hashValue, aeskey);
 						delete aes256;
@@ -430,6 +473,7 @@
 						requested_security_strength = curve->getRequestSecurityLength();
 						mpz_init(randomNumber);
 						generateRandomNumber(&randomNumber,requested_security_strength);			
+						
 						//-- generate shared secret gxy			
 						gxy = new ECPoint();
 						curve->mul(gxy, ecpoint, &randomNumber);					
@@ -450,21 +494,12 @@
 							//-- aesgcm key = hash(gxy.x || gxy.y)
 							hashValue = sha256.hash(string((char*)param, paramLen));
 							stringToHex(hashValue, aeskey);
-							aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);					
+							// aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);					
+							aesgcm = new AESGCM_SSL(aeskey);
+
+							cout << "aesgcm key: " <<hashValue <<endl;
 						}
 					
-						//-- pop solution proof to be encrypted
-						if (!packet->popCommandParam(solutionProof, &solutionProofLen)){
-							free(data);
-							delete aesgcm;
-							aesgcm = NULL;
-							delete packet;
-							delete aes256;
-							delete ecpoint;	
-							// pthread_mutex_unlock(&stateMutex);					
-							// break;
-						}
-				
 						//-- gererate STS-gy
 						curve->mul(ecpoint, curve->g, &randomNumber);
 						mpz_clear(randomNumber);
@@ -487,8 +522,9 @@
 					
 						aes256->encrypt(param, paramLen, &encrypted, &encryptedLen);
 						
-						//-- switch command
-						packet->switchCommand(SVC_CMD_CONNECT_OUTER2);
+						// cout << "gy :" <<endl;
+						// printBuffer(param, paramLen);
+
 						//-- attach Ey(gy) to packet
 						packet->pushCommandParam(encrypted, encryptedLen);					
 						free(encrypted);
@@ -496,9 +532,18 @@
 						//-- encrypt solution proof then attach to packet
 						//-- generate random iv, the first 2 byte are used to store ivLen				
 						generateRandomData(requested_security_strength, param + 2);
-				
-						aesgcm->encrypt(param + 2, requested_security_strength, solutionProof, solutionProofLen, NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);					
-						//-- add iv, encrypted and tag to param				
+					
+						// cout << "proof (" <<proof.size() <<"): " <<proof <<endl;
+						// aesgcm->encrypt(param + 2, requested_security_strength, (uint8_t*) proof.c_str(), proof.size(), NULL, 0, &encrypted, &encryptedLen, &tag, &tagLen);					
+						aesgcm->encrypt(param + 2, requested_security_strength, (uint8_t*) proof.c_str(), proof.size(), NULL, 0, &encrypted, encryptedLen, &tag);					
+						// cout<< "encrypted proof (" << encryptedLen<<") :" <<endl;
+						// printBuffer(encrypted, encryptedLen);
+
+						// cout<< "encrypted tag :" ;
+						// printBuffer(tag, 16);
+
+						//-- add iv, encrypted and tag to param	
+						tagLen = 16;			
 						paramLen = 0;
 						memcpy(param + paramLen, &requested_security_strength, 2);
 						paramLen += 2 + requested_security_strength;
@@ -515,35 +560,19 @@
 						free(encrypted);
 						free(tag);
 						delete aes256;
-						// state = SVC_CMD_CONNECT_INNER3;
-						// pthread_mutex_unlock(&stateMutex);
 						//-- send this packet to internet
 						send_packet(packet);
-					}
 
-					//-- wait for the last message 
-					packet = receive_packet();
-					packet->popCommandParam(param, &paramLen);
-					if (authenticator->verifyProof(challengeSecretSent, std::string((char*)param, paramLen))){
-						//-- send confirm to daemon
-						// packet->setCommand(SVC_CMD_CONNECT_INNER9);					
-						//outgoingQueue->enqueue(packet);
-						// tobesentQueue->enqueue(packet);
-						// printf("\n5\n");						
-						isAuth = true;
+						//-- wait for the last message 
+						packet = receive_packet();
+						packet->popCommandParam(param, &paramLen);
+						if (authenticator->verifyProof(challengeSecretSent, std::string((char*)param, paramLen))){
+							isAuth = true;
+						}
 					}
-					else{
-						//-- proof verification failed
-						delete packet;
-						// printf("\n6\n");						
-						isAuth = false;
-					}
-
-					// if (!this->incomingPacketHandler->waitCommand(SVC_CMD_CONNECT_INNER8, this->endpointID, SVC_DEFAULT_TIMEOUT)){
-					// 	this->isAuth = false;
-					// }
 				}
 				// free(param);
+				delete packet;
 				return this->isAuth;
 			}
 			
@@ -556,11 +585,20 @@
 			 * Send data over the connector to the other endpoint of communication.
 			 * The data will be automatically encrypted by the under layer
 			 * */			 						 
-			int sendData(const uint8_t* data, uint32_t dalalen) {
+			int sendData(const uint8_t* data, uint32_t datalen) {
+				static uint64_t seq = 0;
+				SVCPacket* packet = new SVCPacket(this->endpointID);
+
+				packet->setSequence(seq++);
+				packet->setData(data, datalen);
+				encryptPacket(packet);
+				send_packet(packet);
+				delete packet;
 				return 0;
 			}
 
 			int sendData(const uint8_t* data, uint32_t datalen, uint8_t option){
+				
 				return 0;
 			}
 			
@@ -568,8 +606,13 @@
 			 * Read data from the buffer. The data had already been decrypted by lower layer
 			 * */
 			int readData(uint8_t* data, uint32_t* len, int timeout){
-				
-				return 0;				
+				SVCPacket* packet = receive_packet();
+				if((packet->dataLen > 0) && decryptPacket(packet)) {
+					packet->extractData(data, len);
+					delete packet;
+					return 0;
+				}
+				return -1;				
 			}
 			
 			/*

@@ -4,8 +4,8 @@
 class TransportHandler
 {
 public:
-	virtual int sendData(uint8_t* data, int len) = 0;
-	virtual int recvData(uint8_t* data, int len) = 0;
+	virtual int sendData(uint8_t* data, uint32_t len) = 0;
+	virtual int recvData(uint8_t* data, uint32_t* len) = 0;
 	
 	virtual int connect_to(SVCHost* host) = 0;
 	virtual int listen() = 0;
