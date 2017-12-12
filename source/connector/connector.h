@@ -240,14 +240,26 @@ public:
 	}
 
 	int sendData(uint8_t* data, uint32_t len) {
-		printf("%d\n", len);
-		return send(tcpsock, data, len, 0);
+		// printf("%d\n", len);
+		if(send(tcpsock, &len, 4, 0) != -1) {
+			return send(tcpsock, data, len, 0);
+		}
+		return -1;
 	}
 
 	int readData(uint8_t* data, uint32_t* len) {
-		printf("receiving sth\n");
-		*len = recv(tcpsock, data, 1400, 0);
-		printf("%d\n", *len);
+		// printf("receiving sth\n");
+		int bytes = 0;
+		recv(tcpsock, len, 4, 0);
+		
+		for (int i = 0; i < *len; i += bytes) {
+			if ((bytes = recv(tcpsock, data +i, *len  - i, 0)) == -1) {
+				printf("recv failed");
+				return 1;
+			}
+		}
+		
+		// printf("%d\n", *len);
 		return 0;
 	}
 

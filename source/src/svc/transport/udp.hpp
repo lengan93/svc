@@ -11,21 +11,22 @@ class UDP : public TransportHandler {
 private :
 	int sock;
     struct sockaddr_in me, other;
-    socklen_t other_socken = sizeof other;
+    socklen_t other_socklen = sizeof other;
 
 public:
 	UDP() {
 		sock = socket(AF_INET , SOCK_DGRAM , 0);
+		if(sock == -1) throw "Could not create socket";
 	}
 
 	int sendData(uint8_t* data, uint32_t len) {
-		int r = sendto(sock, data, len, 0, (sockaddr *)&other, other_socken);
+		int r = sendto(sock, data, len, 0, (sockaddr *)&other, other_socklen);
 		// cout << "sent a packet to " << inet_ntoa(other.sin_addr) << ":" << ntohs(other.sin_port) <<endl;
 		return r;
 	}
 
 	int recvData(uint8_t* data, uint32_t* len) {
-		*len = recvfrom(sock, data, UDP_UTM, 0, (sockaddr *)&other, &other_socken);
+		*len = recvfrom(sock, data, UDP_UTM, 0, (sockaddr *)&other, &other_socklen);
 		// cout << "received a packet from "  << inet_ntoa(other.sin_addr) << ":" << ntohs(other.sin_port) <<endl;
 		// printBuffer(data,*len);
 		return *len;
@@ -35,7 +36,7 @@ public:
 		other.sin_addr.s_addr = host->getHostAddress();
 	    other.sin_family = AF_INET;
 	    other.sin_port = htons( 9999 );
-	    return 1;
+	    return 0;
 	}
 	
 	int listen() {

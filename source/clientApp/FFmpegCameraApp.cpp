@@ -6,9 +6,7 @@
 #include <time.h>
 #include <thread>
 
-#include "../src/svc/SVC.h"
-#include "../src/svc/host/SVCHostIP.h"
-#include "../src/svc/authenticator/SVCAuthenticatorSharedSecret.h"
+#include "../connector/connector.h"
 
 #include "../src/utils/camera-util.h"
 #include "../src/utils/utils-functions.h"
@@ -23,118 +21,6 @@ const uint32_t bufferSize = 1400;
 uint8_t buffer[bufferSize] = "";
 
 bool working = true;
-
-class Connector
-{
-private:
-	int type;
-	SVCAuthenticatorSharedSecret* authenticator = NULL;
-	SVC* svc = NULL;
-	SVCEndpoint* endpoint = NULL;
-
-	int udpsock;
-	struct sockaddr_in server;
-	int server_size;
-public:
-	Connector(){}
-	static Connector* get_SVC_connector(char* host_addr) {
-		
-		Connector* con = new Connector();
-		con->type = SVC_CONNECTOR;
-
-		SVCHost* remoteHost;
-	
-		string appID = string("CAMERA_APP");
-		remoteHost = new SVCHostIP(host_addr);
-
-		con->authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
-
-		con->svc = new SVC(appID, con->authenticator);
-		
-		con->endpoint = con->svc->establishConnection(remoteHost, 0);
-		if (con->endpoint!=NULL){
-			if (con->endpoint->negotiate()){
-				printf("Connection established.\n");
-				return con;
-			}
-		}
-		return NULL;
-	}
-
-	static Connector* get_UDP_connector(char* host_addr){
-		
-		Connector* con = new Connector();
-	    con->type = UDP_CONNECTOR;
-	    //Create socket
-	    con->udpsock = socket(AF_INET , SOCK_DGRAM , 0);
-	    if (con->udpsock == -1)
-	    {
-	        printf("Could not create socket");
-	        return NULL;
-	    }
-	     
-	    con->server.sin_addr.s_addr = inet_addr(host_addr);
-	    // server.sin_addr.s_addr = inet_addr("127.0.0.1");
-	    con->server.sin_family = AF_INET;
-	    int serverport = 8888;
-	    con->server.sin_port = htons( serverport );
-	 	
-	 	con->server_size = sizeof con->server;
-
-	 	return con;
-	}
-
-	static Connector* get_UDP_server_connector(char* host_addr){
-		
-		Connector* con = new Connector();
-	    con->type = UDP_CONNECTOR;
-	    //Create socket
-	    con->udpsock = socket(AF_INET , SOCK_DGRAM , 0);
-	    if (con->udpsock == -1)
-	    {
-	        printf("Could not create socket");
-	        return NULL;
-	    }
-	     
-	    con->server.sin_addr.s_addr = INADDR_ANY;
-	    // server.sin_addr.s_addr = inet_addr("127.0.0.1");
-	    con->server.sin_family = AF_INET;
-	    int serverport = 8888;
-	    con->server.sin_port = htons( serverport );
-	 	
-	 	con->server_size = sizeof con->server;
-
-	 	if( bind(con->udpsock,(struct sockaddr *)&con->server , con->server_size) < 0)
-	    {
-	        //print the error message
-	        printf("bind failed. Error");
-	        return NULL;
-	    }
-
-	 	return con;
-	}
-
-	int sendData(uint8_t* data, uint32_t len) {
-		switch(type) {
-			case SVC_CONNECTOR:
-				if(endpoint == NULL) {
-					return -1;
-				}
-				return endpoint->sendData(data, len);
-			case UDP_CONNECTOR:
-				// cout << inet_ntoa(server.sin_addr) <<" " <<ntohs(server.sin_port)<<endl;
-				// printBuffer(data, len);
-				return sendto(udpsock, data, len, 0, (sockaddr *)&server, server_size);
-			default:
-				return -1;
-		}
-	}
-
-	int readData(uint8_t* data, uint32_t* len);
-
-	~Connector();
-	
-};
 
 float timeDistance(const struct timespec* greater, const struct timespec* smaller){
 	float sec = greater->tv_sec - smaller->tv_sec;
@@ -315,64 +201,34 @@ void sendStream(Connector* endpoint)
 		// printf("\nimage sended!\n");
 }
 
-// void mainLoop(Connector endpoint) {
-// 	// 
-// 	try{
-// 		SVC* svc = new SVC(appID, authenticator);
-// 		struct timespec startingTime;
-// 		struct timespec echelon;
-// 		clock_gettime(CLOCK_REALTIME, &startingTime);
-		
-// 		SVCEndpoint* endpoint = svc->establishConnection(remoteHost, 0);
-// 		if (endpoint!=NULL){
-// 			if (endpoint->negotiate()){
-// 				clock_gettime(CLOCK_REALTIME, &echelon);
-// 				printf("[%0.2f] Connection established.\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
-
-// 				sendStream(endpoint);
-
-// 			}
-// 			else{
-// 				printf("Cannot establish connection. Program terminated.\n");
-// 			}
-// 			delete endpoint;
-// 		}
-// 		else {
-// 			printf("Cannot create the endpoint. Program terminated.\n");
-// 		}
-// 		svc->shutdownSVC();
-// 		delete svc;
-		
-// 		// clock_gettime(CLOCK_REALTIME, &echelon);
-// 		// printf("\n[%0.2f] Program terminated\n", timeDistance(&echelon, &startingTime)); fflush(stdout);
-// 	}
-// 	catch (const char* str){
-// 		printf("\nError: %s\n", str);
-// 	}
-	
-// 	delete authenticator;
-// 	delete remoteHost;
-// }
-
 int main(int argc, char** argv){
 
 	//int RETRY_TIME = atoi(argv[2]);
 
-	char host_addr[16];
+	char hostAddr[16];
 
 	if (argc>1){
-		strcpy(host_addr, argv[1]);
+		strcpy(hostAddr, argv[1]);
 	}
 	else {
-		strcpy(host_addr, "192.168.43.43");
+		strcpy(hostAddr, "192.168.43.43");
 	}
 
 	Connector* endpoint;
-	if(argc > 2 && strcmp(argv[2],"--nocrypt") == 0) {
-		endpoint = Connector::get_UDP_connector(host_addr);
+	
+	if(argc > 2 && strcmp(argv[2],"--udp")==0) {
+		endpoint = UDP_Connector::get_client_instance(hostAddr);
+	}
+	if(argc > 2) {
+		if(strcmp(argv[2],"--udp")==0) {
+			endpoint = UDP_Connector::get_client_instance(hostAddr);
+		}
+		else if(strcmp(argv[2],"--tcp")==0) {
+			endpoint = TCP_Connector::get_client_instance(hostAddr);
+		}
 	}
 	else {
-		endpoint = Connector::get_SVC_connector(host_addr);
+		endpoint = SVC_Connector::get_client_instance(hostAddr);
 	}
 
 	thread tid(sendStream, endpoint);

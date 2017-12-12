@@ -5,7 +5,7 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 
-#define KEY_LENGTH 256
+#define KEY_LENGTH 32
 
 class AESGCM_SSL
 {

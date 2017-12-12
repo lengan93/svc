@@ -7,7 +7,7 @@
 
 	#define KEY_LENGTH 	32 
 	#define BLOCK_SIZE 	16
-	#define Nr			14 //--	Nr = 14 for KEY_LENGTH = 256
+	const int Nr =		14; //--	Nr = 14 for KEY_LENGTH = 256
 	#define Nb			4
 	#define Nk			8
 	

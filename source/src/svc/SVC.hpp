@@ -22,7 +22,8 @@
 	#include <sys/socket.h>	
 	#include <unordered_map>
 
-	#include "transport/udp.hpp"
+	// #include "transport/udp.hpp"
+	#include "transport/tcp.hpp"
 	
 	#define RECONNECTION_TIMEOUT	5000
 
@@ -86,7 +87,7 @@
 				// this->svc = svc;
 				this->endpointID = endpointID;
 				this->isInitiator = isInitiator;
-				transport = new UDP();	
+				transport = new TCP();	
 			}
 			
 			/*
@@ -582,8 +583,7 @@
 			// std::string getRemoteIdentity();
 						
 			/*
-			 * Send data over the connector to the other endpoint of communication.
-			 * The data will be automatically encrypted by the under layer
+			 * 
 			 * */			 						 
 			int sendData(const uint8_t* data, uint32_t datalen) {
 				static uint64_t seq = 0;
@@ -603,7 +603,7 @@
 			}
 			
 			/*
-			 * Read data from the buffer. The data had already been decrypted by lower layer
+			 * 
 			 * */
 			int readData(uint8_t* data, uint32_t* len, int timeout){
 				SVCPacket* packet = receive_packet();
