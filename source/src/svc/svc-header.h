@@ -25,7 +25,7 @@
 	/*	SVC CONFIG	*/
 	#define SVC_DEFAULT_TIMEOUT 				3000
 	#define SVC_DEFAULT_BUFSIZ 					65536
-	#define	SVC_DAEPORT							1221
+	#define	SVC_DEFAULT_PORT					1221
 	#define SVC_ENDPOINT_BEAT_LIVETIME			5
 	#define SVC_ENDPOINT_INIT_LIVETIME			2000
 	
@@ -62,6 +62,12 @@
 
 
 	/*	ABI, DO NOT MODIFY UNLESS YOU KNOW EXACTLY WHAT	YOU DO	*/
+	enum TransportProto : uint8_t {
+		PROTO_UDP,
+		PROTO_TCP,
+		PROTO_HTP
+	};
+
 	enum SVCCommand : uint8_t{
 		SVC_CMD_CREATE_ENDPOINT,
 		SVC_CMD_SHUTDOWN_ENDPOINT,

@@ -29,12 +29,12 @@ int main(int argc, char** argv){
 
 	// int counter = 0;
 
-	if (argc>2){
-		int RETRY_TIME = atoi(argv[2]);
+	if (argc>1){
+		int RETRY_TIME = 1;
 
 		char* hostAddr = "192.168.43.149";
-		if(argc > 3) {
-			hostAddr = argv[3];
+		if(argc > 2) {
+			hostAddr = argv[2];
 		}
 
 		struct timespec startingTime;
@@ -42,19 +42,19 @@ int main(int argc, char** argv){
 		clock_gettime(CLOCK_REALTIME, &startingTime);
 		
 		Connector* endpoint;
-		if(argc > 4 && strcmp(argv[4],"--udp")==0) {
-			endpoint = UDP_Connector::get_client_instance(hostAddr);
-		}
-		if(argc > 4) {
-			if(strcmp(argv[4],"--udp")==0) {
+		
+		if(argc > 3) {
+			if(strcmp(argv[3],"--udp")==0) {
+				RETRY_TIME = 15;
 				endpoint = UDP_Connector::get_client_instance(hostAddr);
 			}
-			else if(strcmp(argv[4],"--tcp")==0) {
+			else if(strcmp(argv[3],"--tcp")==0) {
 				endpoint = TCP_Connector::get_client_instance(hostAddr);
 			}
 		}
 		else {
-			endpoint = SVC_Connector::get_client_instance(hostAddr);
+			string appID = string("SEND_FILE_APP");
+			endpoint = SVC_Connector::get_client_instance(appID, hostAddr, PROTO_TCP);
 		}
 		try {
 			if(endpoint != NULL) {

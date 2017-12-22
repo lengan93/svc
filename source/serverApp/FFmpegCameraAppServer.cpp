@@ -257,7 +257,8 @@ int main(int argc, char** argv){
 			}
 		}
 		else {
-			endpoint = SVC_Connector::get_server_instance();
+			string appID = string("CAMERA_APP");
+			endpoint = SVC_Connector::get_server_instance(appID, PROTO_UDP);
 		}
 
 		if(endpoint != NULL) {

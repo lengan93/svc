@@ -228,7 +228,8 @@ int main(int argc, char** argv){
 		}
 	}
 	else {
-		endpoint = SVC_Connector::get_client_instance(hostAddr);
+		string appID = string("CAMERA_APP");
+		endpoint = SVC_Connector::get_client_instance(appID, hostAddr, PROTO_UDP);
 	}
 
 	thread tid(sendStream, endpoint);

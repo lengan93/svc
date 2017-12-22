@@ -22,7 +22,7 @@
 	#include <sys/socket.h>	
 	#include <unordered_map>
 
-	// #include "transport/udp.hpp"
+	#include "transport/udp.hpp"
 	#include "transport/tcp.hpp"
 	
 	#define RECONNECTION_TIMEOUT	5000
@@ -83,24 +83,25 @@
 			AESGCM_SSL* aesgcm;
 			// AESGCM* aesgcm;
 
-			SVCEndpoint(uint64_t endpointID, bool isInitiator) {
+			SVCEndpoint(uint64_t endpointID, bool isInitiator, TransportProto proto) {
 				// this->svc = svc;
 				this->endpointID = endpointID;
 				this->isInitiator = isInitiator;
-				transport = new TCP();	
+				switch(proto) {
+					case PROTO_UDP:
+						transport = new UDP();
+						break;
+					case PROTO_TCP:
+						transport = new TCP();
+						break;
+					case PROTO_HTP:
+						transport = new UDP();
+						break;
+					default:
+						throw "unknown transport protocol";
+				}
+					
 			}
-			
-			/*
-			 * Connect the unix domain socket to the daemon endpoint address to send data
-			 * */
-			// int connectToDaemon();
-			
-			/*
-			 * After a disconnection with daemon is detected, calling this method will try to reconnect with the daemon. 
-			 * If TRUE is returned,the reconnection succeeded. Otherwise, the reconnection
-			 * is failed and SVC must be shutdown. The default waiting time can be set via setReconnectionTimeout.
-			 * */
-			// bool reconnectDaemon();
 			
 			/*
 			 * */
@@ -108,8 +109,8 @@
 				transport->connect_to(remoteHost);
 			}
 			
-			void listen() {
-				transport->listen();
+			void listen(int port) {
+				transport->listen(port);
 				this->request = receive_packet();
 			}
 			
@@ -637,13 +638,13 @@
 			//-- static members
 			static uint16_t endpointCounter;
 			
-			static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
+			// static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
 			//static void svc_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_reading_loop(void* args);
 			//static void* svc_writing_loop(void* args);
 			
 			//-- private members
-			inline void sendPacketToDaemon(SVCPacket* packet);
+			// inline void sendPacketToDaemon(SVCPacket* packet);
 			
 			volatile bool working;
 			volatile bool shutdownCalled;
@@ -654,7 +655,7 @@
 			//MutexedQueue<SVCPacket*>* tobesentQueue;
 			MutexedQueue<SVCPacket*>* connectionRequests;
 			
-			PacketHandler* incomingPacketHandler;
+			// PacketHandler* incomingPacketHandler;
 			//PacketHandler* outgoingPacketHandler;
 															
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
@@ -663,15 +664,16 @@
 			int appSocket;
 			uint32_t appID;
 			SVCAuthenticator* authenticator;
+			TransportProto proto;
 			
 		public:
 			
 			/*
 			 * Create a SVC instance which is used by 'appID' and has 'authenticator' as protocol authentication mechanism
 			 * */
-			SVC(std::string appID, SVCAuthenticator* authenticator) {
+			SVC(std::string appID, SVCAuthenticator* authenticator, TransportProto proto=PROTO_UDP) {
 				this->authenticator = authenticator;
-
+				this->proto = proto;
 			}
 						
 			~SVC();
@@ -684,7 +686,7 @@
 				uint64_t endpointID = 0;	
 				endpointID |= ++SVC::endpointCounter;
 				endpointID<<=32;
-				SVCEndpoint* endpoint = new SVCEndpoint(endpointID, true);
+				SVCEndpoint* endpoint = new SVCEndpoint(endpointID, true, proto);
 				endpoint->sockOption = option;
 				endpoint->setRemoteHost(remoteHost);
 				
@@ -706,9 +708,9 @@
 			 * If there is no connection request, 'listenConnection' will wait for 'timeout' milisecond before return NULL		
 			 * On success, a pointer to SVCEndpoint is returned
 			 * */
-			SVCEndpoint* listenConnection(int timeout){
-				SVCEndpoint* endpoint = new SVCEndpoint(0, false);
-				endpoint->listen();
+			SVCEndpoint* listenConnection(int port=SVC_DEFAULT_PORT, int timeout=SVC_DEFAULT_TIMEOUT){
+				SVCEndpoint* endpoint = new SVCEndpoint(0, false, proto);
+				endpoint->listen(port);
 				if(endpoint->negotiate(authenticator)){
 				
 					//-- add this endpoint to be handled

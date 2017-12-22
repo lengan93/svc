@@ -31,18 +31,17 @@ public:
 	
 	SVC_Connector(){}
 
-	static Connector* get_client_instance(char* host_addr) {
+	static Connector* get_client_instance(string appID, char* host_addr, TransportProto proto) {
 		
 		SVC_Connector* con = new SVC_Connector();
 
 		SVCHost* remoteHost;
 	
-		string appID = string("SEND_FILE_APP");
 		remoteHost = new SVCHostIP(host_addr);
 
 		con->authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 
-		con->svc = new SVC(appID, con->authenticator);
+		con->svc = new SVC(appID, con->authenticator, proto);
 		
 		con->endpoint = con->svc->establishConnection(remoteHost, 0);
 		if (con->endpoint!=NULL){
@@ -55,16 +54,14 @@ public:
 		return NULL;
 	}
 
-	static Connector* get_server_instance(){
+	static Connector* get_server_instance(string appID, TransportProto proto){
 		SVC_Connector* con = new SVC_Connector();
 	
-		string appID = string("SEND_FILE_APP");
-
 		con->authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
 
-		con->svc = new SVC(appID, con->authenticator);
+		con->svc = new SVC(appID, con->authenticator, proto);
 		
-		con->endpoint = con->svc->listenConnection(SVC_DEFAULT_TIMEOUT);
+		con->endpoint = con->svc->listenConnection();
 		if (con->endpoint!=NULL){
 			// if (con->endpoint->negotiate()){
 			// 	printf("Connection established.\n");

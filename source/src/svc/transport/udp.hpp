@@ -35,14 +35,14 @@ public:
 	int connect_to(SVCHost* host) {
 		other.sin_addr.s_addr = host->getHostAddress();
 	    other.sin_family = AF_INET;
-	    other.sin_port = htons( 9999 );
+	    other.sin_port = htons( SVC_DEFAULT_PORT );
 	    return 0;
 	}
 	
-	int listen() {
+	int listen(int port) {
 		me.sin_addr.s_addr = INADDR_ANY;
 	    me.sin_family = AF_INET;
-	    me.sin_port = htons( 9999 );
+	    me.sin_port = htons( port );
 		if( bind(sock,(struct sockaddr *)&me , sizeof(me)) < 0)
 	    {
 	        //print the error message
