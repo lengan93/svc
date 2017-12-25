@@ -1,4 +1,4 @@
-#ifndef __SCV_HOSTIP__
+#ifndef __SVC_HOSTIP__
 #define __SVC_HOSTIP__
 
 	#include "SVCHost.h"
@@ -11,17 +11,23 @@
 
 		struct in_addr hostAddr;
 		std::string ipAddress;
+		int port;
 
 		public:
-			SVCHostIP(std::string ipAddress);
+			SVCHostIP(std::string ipAddress, int port=SVC_DEFAULT_PORT);
 			uint32_t getHostAddress();
+			int getPort() {
+				return port;
+			}
+
 	};
 	
-	SVCHostIP::SVCHostIP(string ipAddress){
+	SVCHostIP::SVCHostIP(string ipAddress, int port){
 		this->ipAddress = ipAddress;
 		int result = inet_aton(ipAddress.c_str(), &(this->hostAddr));
 		if (result == -1)
 			throw STR_INVALID_IP_ADDR;		
+		this->port = port;
 	}
 
 	uint32_t SVCHostIP::getHostAddress(){

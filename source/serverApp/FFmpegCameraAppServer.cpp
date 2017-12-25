@@ -12,58 +12,66 @@
 using namespace std;
 
 int frameSeq = 0;
+thread display_thread;
 
 // bool working = true;
 
 
 void display_video(MutexedQueue<AVPacket*> *frameBuffer, int width, int height) {
 	
-	initFFmpeg();
+	try {
+		initFFmpeg();
 
-	Graphics* g = new Graphics(width,  height, "My Window");
-	if(strcmp(g->getError(), "") != 0) {
-		printf("SDL error: %s\n", g->getError());
-		return;
-	}
+		Graphics* g = new Graphics(width,  height, "Camera");
+		if(strcmp(g->getError(), "") != 0) {
+			printf("SDL error: %s\n", g->getError());
+			return;
+		}
 
-	SDL_Event       event;
+		SDL_Event       event;
 
-	SDL_Rect sdlRect;  
-    sdlRect.x = 0;  
-    sdlRect.y = 0;  
-    sdlRect.w = width;  
-    sdlRect.h = height;
+		SDL_Rect sdlRect;  
+	    sdlRect.x = 0;  
+	    sdlRect.y = 0;  
+	    sdlRect.w = width;  
+	    sdlRect.h = height;
 
-    AVCodecContext* decoderCtx;
-	initDecoderContext(&decoderCtx, width, height);
+	    AVCodecContext* decoderCtx;
+		initDecoderContext(&decoderCtx, width, height);
 
-	AVFrame* decodedFrame = NULL;
-	decodedFrame = av_frame_alloc();
+		AVFrame* decodedFrame = NULL;
+		decodedFrame = av_frame_alloc();
 
-	int frameFinished;
+		int frameFinished;
 
-    while(1) {
-    	AVPacket* framePacket = frameBuffer->dequeueWait(-1);
-    	if(framePacket != NULL) {
-    		// cout << endl << framePacket->size << "-" << framePacket->data;
-    		avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, framePacket);
-    		// cout << "2";
-    		av_free(framePacket);
-			if(frameFinished) {
-				g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
-				SDL_Delay(50);
-				SDL_PollEvent(&event);
-		        if(event.type == SDL_QUIT) {
-					g->close();
-					break;
+		printf("start receiving frames\n");
+	    while(1) {
+	    	AVPacket* framePacket = frameBuffer->dequeueWait(10000);
+	    	if(framePacket != NULL) {
+	    		// cout << endl << framePacket->size << "-" << framePacket->data;
+	    		avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, framePacket);
+	    		// cout << "2";
+	    		av_free(framePacket);
+				if(frameFinished) {
+					g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
+					SDL_Delay(50);
+					SDL_PollEvent(&event);
+			        if(event.type == SDL_QUIT) {
+						g->close();
+						break;
+					}
 				}
-			}
-    	}
-    }
-	
+	    	}
+	    }
+		
+		printf("end thread display\n");
 
-	g->close();
-	av_free(decodedFrame);
+		g->close();
+		av_free(decodedFrame);
+	}
+	catch (const char* str){
+		printf("\nError (thread display): %s\n", str);
+	}
 }
 
 void receiveStream(Connector* endpoint) {
@@ -94,7 +102,7 @@ void receiveStream(Connector* endpoint) {
 		return;
 	}
 
-	std::thread display(display_video, &frameBuffer, width, height);
+	display_thread = thread(display_video, &frameBuffer, width, height);
 
 	unsigned char* imgData;
 	int imgSize;
@@ -177,9 +185,11 @@ void receiveStream(Connector* endpoint) {
 		}
 		else {
 			trytimes++;
+			printf("trytimes = %d\n", trytimes);
 		}
 	}
 
+	printf("Loop ended.\n");
 }
 
 // void* process(void* arg) {
@@ -273,6 +283,8 @@ int main(int argc, char** argv){
 	catch (const char* str){
 		printf("\nError: %s\n", str);
 	}
+
+	display_thread.join();
 
 	// int RETRY_TIME = atoi(argv[1]);
 

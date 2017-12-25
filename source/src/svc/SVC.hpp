@@ -364,7 +364,7 @@
 							// aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);
 							aesgcm = new AESGCM_SSL(aeskey);
 
-							cout << "aesgcm key: " <<hashValue <<endl;
+							// cout << "aesgcm key: " <<hashValue <<endl;
 
 							//-- decrypt the solution proof
 							iv = encryptedProof->packet+2;
@@ -376,7 +376,7 @@
 							// if (aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
 							
 							// cout<< "encrypted proof (" << encryptedLen<<") :" <<endl;
-							printBuffer(encrypted, encryptedLen);
+							// printBuffer(encrypted, encryptedLen);
 
 							// cout <<"decrypt tag (" <<tagLen <<"): ";
 	    		// 			printBuffer(tag, tagLen);
@@ -397,12 +397,12 @@
 									isAuth = true;
 								}
 								else {
-									cout << "failed 1";
+									cout << "negociate failed";
 								}
 
 							}
 							else {
-								cout << "failed 2, proof = " <<decrypted <<endl;
+								cout << "negociate failed, proof = " <<decrypted <<endl;
 							}
 						}
 					}
@@ -499,7 +499,7 @@
 							// aesgcm = new AESGCM(aeskey, (enum SecurityParameter)requested_security_strength);					
 							aesgcm = new AESGCM_SSL(aeskey);
 
-							cout << "aesgcm key: " <<hashValue <<endl;
+							// cout << "aesgcm key: " <<hashValue <<endl;
 						}
 					
 						//-- gererate STS-gy
@@ -598,10 +598,10 @@
 				return 0;
 			}
 
-			int sendData(const uint8_t* data, uint32_t datalen, uint8_t option){
+			// int sendData(const uint8_t* data, uint32_t datalen, uint8_t option){
 				
-				return 0;
-			}
+			// 	return 0;
+			// }
 			
 			/*
 			 * 
@@ -686,6 +686,7 @@
 				uint64_t endpointID = 0;	
 				endpointID |= ++SVC::endpointCounter;
 				endpointID<<=32;
+
 				SVCEndpoint* endpoint = new SVCEndpoint(endpointID, true, proto);
 				endpoint->sockOption = option;
 				endpoint->setRemoteHost(remoteHost);

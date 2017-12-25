@@ -1,6 +1,8 @@
 #ifndef __TRANSPORT__
 #define __TRANSPORT__
 
+#include "../host/SVCHostIP.h"
+
 class TransportHandler
 {
 public:

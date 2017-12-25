@@ -33,9 +33,10 @@ public:
 	}
 	
 	int connect_to(SVCHost* host) {
-		other.sin_addr.s_addr = host->getHostAddress();
+		SVCHostIP* IPHost = (SVCHostIP*) host;
+		other.sin_addr.s_addr = IPHost->getHostAddress();
 	    other.sin_family = AF_INET;
-	    other.sin_port = htons( SVC_DEFAULT_PORT );
+	    other.sin_port = htons( IPHost->getPort() );
 	    return 0;
 	}
 	

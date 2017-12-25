@@ -89,9 +89,9 @@ int main(int argc, char** argv){
 								blocsize = bigFile.gcount();
 							}
 
-							printf("%d.\t%d\n", ++counter, blocsize);
+							// printf("%d.\t%d\n", ++counter, blocsize);
 							endpoint->sendData(buffer, blocsize+1);
-							printf(".\n");
+							// printf(".\n");
 							// counter++;
 						}													
 						bigFile.close();

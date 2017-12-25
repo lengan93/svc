@@ -17,7 +17,7 @@
 
 using namespace std;
 
-const uint32_t bufferSize = 1400;
+const uint32_t bufferSize = 1300;
 uint8_t buffer[bufferSize] = "";
 
 bool working = true;

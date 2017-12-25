@@ -84,7 +84,7 @@ int main(int argc, char** argv){
 						case 0x02:
 							if (headerReceived){
 								readSize+=bufferSize-1;
-								printf("%d\n",++blocs);
+								// printf("%d\n",++blocs);
 								// printf("%d\n", bufferSize);
 
 								//save to file
@@ -114,7 +114,7 @@ int main(int argc, char** argv){
 
 					if (fileSize>0){
 						printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
-						printf("\nblocs = %d", blocs);
+						// printf("\nblocs = %d", blocs);
 					}
 					else{
 						printf("\nEmpty file received");

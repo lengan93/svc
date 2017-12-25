@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 
 #include "transport_handler.hpp"
+
 #define TCP_UTM 1400
 
 class TCP : public TransportHandler {
@@ -42,9 +43,10 @@ public:
 	}
 	
 	int connect_to(SVCHost* host) {
+		SVCHostIP* IPHost = (SVCHostIP*) host;
 		other.sin_addr.s_addr = host->getHostAddress();
 	    other.sin_family = AF_INET;
-	    other.sin_port = htons( SVC_DEFAULT_PORT );
+	    other.sin_port = htons( IPHost->getPort() );
 
 	 	if(connect(sock, (struct sockaddr *)&other, other_socklen) < 0) {
 	 		printf("Could not connect to the remote\n");
