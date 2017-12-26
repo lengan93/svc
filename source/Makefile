@@ -14,7 +14,7 @@ CRYPTO = $(SRCDIR)/crypto/crypto-utils.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)
 AUTH = $(SRCDIR)/svc/authenticator/SVCAuthenticatorSharedSecret.cpp
 UTIL = $(SRCDIR)/svc/svc-utils.cpp
 
-all: client server camclient camserver
+all: fileclient fileserver camclient camserver
 
 local: daemon client camclient
 full: daemon client server camclient camserver
@@ -62,9 +62,9 @@ multinetserver:
 # server:	
 # 	$(CCOMPL) -static -o $(BINDIR)/server.exe ./serverApp/SendFileAppServer.cpp $(SRCDIR)/svc/SVC.cpp $(UTIL) $(SRCDIR)/crypto/SHA256.cpp $(SRCDIR)/crypto/AESGCM.cpp $(SRCDIR)/crypto/AES256.cpp $(SRCDIR)/crypto/crypto-utils.cpp $(AUTH) $(CFLAGS) $(CINCLU) $(CDEBUG)
 
-client:	
-	$(CCOMPL) -o $(BINDIR)/client.exe ./clientApp/SendFileApp.cpp $(UTIL) $(CRYPTO) $(AUTH) $(CFLAGS) $(OPENSSL) $(CINCLU) $(CDEBUG)
+fileclient:	
+	$(CCOMPL) -o $(BINDIR)/fileclient.exe ./clientApp/SendFileApp.cpp $(UTIL) $(CRYPTO) $(AUTH) $(CFLAGS) $(OPENSSL) $(CINCLU) $(CDEBUG)
 
 
-server:	
-	$(CCOMPL) -o $(BINDIR)/server.exe ./serverApp/SendFileAppServer.cpp $(UTIL) $(CRYPTO) $(AUTH) $(CFLAGS) $(OPENSSL) $(CINCLU) $(CDEBUG)
+fileserver:	
+	$(CCOMPL) -o $(BINDIR)/fileserver.exe ./serverApp/SendFileAppServer.cpp $(UTIL) $(CRYPTO) $(AUTH) $(CFLAGS) $(OPENSSL) $(CINCLU) $(CDEBUG)

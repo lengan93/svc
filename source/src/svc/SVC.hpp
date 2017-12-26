@@ -49,20 +49,12 @@
 			bool reconnectFailed;
 			string daemonRestartReason;
 
-			// static void liveCheck(void* args);		
-			// static void svc_endpoint_incoming_packet_handler(SVCPacket* packet, void* args);
-			// //static void svc_endpoint_outgoing_packet_handler(SVCPacket* packet, void* args);
-			// static void* svc_endpoint_reading_loop(void* args);
-			// static void* svc_endpoint_writing_loop(void* args);
-			
 			pthread_t readingThread;
 			pthread_t writingThread;
-			//MutexedQueue<SVCPacket*> incomingQueue;
-			//MutexedQueue<SVCPacket*> outgoingQueue;
+			
 			MutexedQueue<SVCPacket*>* tobesentQueue;
 			MutexedQueue<SVCPacket*>* dataholdQueue;
 			PacketHandler* incomingPacketHandler;
-			//PacketHandler* outgoingPacketHandler;
 			
 			int sockOption;
 			TransportHandler* transport;
@@ -143,10 +135,7 @@
 				//-- set infoByte
 				packet->packet[INFO_BYTE] |= SVC_ENCRYPTED;
 				
-				// aesgcmMutex.lock();
-				// this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, &encryptedLen, &tag, &tagLen);
 				this->aesgcm->encrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN, packet->packet, SVC_PACKET_HEADER_LEN, &encrypted, encryptedLen, &tag);
-				// aesgcmMutex.unlock();
 				
 				//-- set body to be encrypted
 				packet->setBody(encrypted, encryptedLen);
@@ -171,10 +160,7 @@
 				uint8_t* decrypted;
 				uint32_t decryptedLen;
 				
-				// aesgcmMutex.lock();
-				// rs = this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, tagLen, &decrypted, &decryptedLen);
 				this->aesgcm->decrypt(iv, ivLen, packet->packet+SVC_PACKET_HEADER_LEN, packet->dataLen - SVC_PACKET_HEADER_LEN - 2 - tagLen, aad, aadLen, tag, &decrypted, decryptedLen);
-				// aesgcmMutex.unlock();
 
 				//-- set body to be decrypted
 				if (decryptedLen > 0){
@@ -373,7 +359,6 @@
 							encryptedLen = *((uint16_t*)(encryptedProof->packet + 2 + ivLen));								
 							tag = encryptedProof->packet + 6 + ivLen + encryptedLen;
 							tagLen = *((uint16_t*)(encryptedProof->packet + 4 + ivLen + encryptedLen));						
-							// if (aesgcm->decrypt(iv, ivLen, encrypted, encryptedLen, NULL, 0, tag, tagLen, &decrypted, &decryptedLen)){
 							
 							// cout<< "encrypted proof (" << encryptedLen<<") :" <<endl;
 							// printBuffer(encrypted, encryptedLen);
@@ -393,7 +378,6 @@
 									send_packet(packet);
 									
 									//-- ok, connection established
-									// printf("\n2\n");						
 									isAuth = true;
 								}
 								else {
@@ -409,7 +393,6 @@
 				}
 				else{
 					//-- read challenge from request packet
-					// printf("negotiate server\n");
 					// cout << "request received: " << endl;
 					// printBuffer(request->packet, request->dataLen);
 
@@ -578,10 +561,6 @@
 				return this->isAuth;
 			}
 			
-			/*
-			 *
-			 * */
-			// std::string getRemoteIdentity();
 						
 			/*
 			 * 
@@ -598,11 +577,6 @@
 				return 0;
 			}
 
-			// int sendData(const uint8_t* data, uint32_t datalen, uint8_t option){
-				
-			// 	return 0;
-			// }
-			
 			/*
 			 * 
 			 * */
@@ -619,12 +593,12 @@
 			/*
 			 * Close the communication endpoint and send terminate signals to underlayer
 			 * */
-			void shutdownEndpoint(){}
+			// void shutdownEndpoint(){}
 			
 			/*
-			 * Set the timeout of reconnection method in case of losing connection with the daemon. 'timeout' cannot be set to negative.
+			 * Set the timeout of reconnection method in case of losing connection. 'timeout' cannot be set to negative.
 			 * */
-			void setReconnectionTimeout(int timeout){}
+			// void setReconnectionTimeout(int timeout){}
 			
 			bool isAlive(){
 				return this->isAuth;
@@ -638,26 +612,16 @@
 			//-- static members
 			static uint16_t endpointCounter;
 			
-			// static void svc_incoming_packet_handler(SVCPacket* packet, void* args);
-			//static void svc_outgoing_packet_handler(SVCPacket* packet, void* args);
 			static void* svc_reading_loop(void* args);
-			//static void* svc_writing_loop(void* args);
 			
 			//-- private members
-			// inline void sendPacketToDaemon(SVCPacket* packet);
 			
 			volatile bool working;
 			volatile bool shutdownCalled;
 			pthread_t readingThread;
-			//pthread_t writingThread;			
-			//MutexedQueue<SVCPacket*>* incomingQueue;
-			//MutexedQueue<SVCPacket*>* outgoingQueue;
-			//MutexedQueue<SVCPacket*>* tobesentQueue;
+			
 			MutexedQueue<SVCPacket*>* connectionRequests;
 			
-			// PacketHandler* incomingPacketHandler;
-			//PacketHandler* outgoingPacketHandler;
-															
 			unordered_map<uint64_t, SVCEndpoint*> endpoints;
 			
 			SHA256* sha256;
@@ -669,7 +633,8 @@
 		public:
 			
 			/*
-			 * Create a SVC instance which is used by 'appID' and has 'authenticator' as protocol authentication mechanism
+			 * Create a SVC instance which is used by 'appID' and has 'authenticator' as protocol authentication mechanism.
+			   'proto' indicate the transport protocol used by SVC, it can be PROTO_UDP, PROTO_TCP or PROTO_HTP
 			 * */
 			SVC(std::string appID, SVCAuthenticator* authenticator, TransportProto proto=PROTO_UDP) {
 				this->authenticator = authenticator;
@@ -679,8 +644,8 @@
 			~SVC();
 			
 			/*
-			 * establishConnection immediately returns a pointer of SVCEndpoint that will later be used to perform the protocol's negotiation
-			 * Because the negotiation takes time, it is highly recommended to start it in a seperated thread
+			 * establishConnection returns a pointer of SVCEndpoint that has successfully negociated with the other side,
+			 * returns NULL in case of failed negociation
 			 * */
 			SVCEndpoint* establishConnection(SVCHost* remoteHost, uint8_t option) {
 				uint64_t endpointID = 0;	
@@ -705,9 +670,8 @@
 			}
 			
 			/*
-			 * 'listenConnection' reads in the connection request queue and returns immediately if a request is found
-			 * If there is no connection request, 'listenConnection' will wait for 'timeout' milisecond before return NULL		
-			 * On success, a pointer to SVCEndpoint is returned
+			 * Listen for upcomming connection and return a pointer to SVCEndpoint on success
+			 * Otherwise, return NULL
 			 * */
 			SVCEndpoint* listenConnection(int port=SVC_DEFAULT_PORT, int timeout=SVC_DEFAULT_TIMEOUT){
 				SVCEndpoint* endpoint = new SVCEndpoint(0, false, proto);

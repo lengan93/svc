@@ -192,67 +192,6 @@ void receiveStream(Connector* endpoint) {
 	printf("Loop ended.\n");
 }
 
-// void* process(void* arg) {
-// 	SVCEndpoint* endpoint = (SVCEndpoint*) arg;
-// 	if (endpoint->negotiate()){
-// 		printf("\nConnection established!");
-		
-// 		receiveStream(endpoint);
-
-// 		endpoint->shutdownEndpoint();			
-// 		// printf("\nProgram terminated!\n");
-// 	}
-// 	else{
-// 		printf("\nCannot establish connection!\n");
-// 	}
-// }
-
-// void* mainLoop(void* arg) {
-// 	string appID = string("CAMERA_APP");	
-// 	SVCAuthenticatorSharedSecret* authenticator = new SVCAuthenticatorSharedSecret("./private/sharedsecret");
-	
-// 	try{
-// 		SVC* svc = new SVC(appID, authenticator);		
-// 		printf("\nserver is listenning..."); fflush(stdout);
-
-// 		while(working) {
-// 			SVCEndpoint* endpoint = svc->listenConnection(-1);
-// 			// printf("1\n");
-// 			if (endpoint!=NULL){
-// 				// create a thread to process
-// 				pthread_t thread_id;
-
-// 			}
-// 		}
-		
-// 			// printf("2\n");
-// 		// 	if (endpoint->negotiate()){
-// 		// 		printf("\nConnection established!");
-// 		// 		if(argc == 1) {
-// 		// 			receiveStream(endpoint);
-// 		// 		}
-
-// 		// 		endpoint->shutdownEndpoint();			
-// 		// 		printf("\nProgram terminated!\n");
-// 		// 	}
-// 		// 	else{
-// 		// 		printf("\nCannot establish connection!\n");
-// 		// 	}
-// 		// 	delete endpoint;
-// 		// }
-// 		// else {
-// 		// 	printf("\nCannot create endpoint!\n");
-// 		// }
-// 		svc->shutdownSVC();
-// 		delete svc;
-// 	}
-// 	catch (...){
-// 		printf("\nError: cannot create an instance of SVC\n");
-// 	}
-	
-// 	delete authenticator;
-// }
-
 int main(int argc, char** argv){
 
 	Connector* endpoint;
@@ -272,8 +211,6 @@ int main(int argc, char** argv){
 		}
 
 		if(endpoint != NULL) {
-			// pthread_t tid;
-			// pthread_create (&tid, NULL, &process, endpoint);
 			receiveStream(endpoint);
 		}
 		else {
@@ -285,22 +222,4 @@ int main(int argc, char** argv){
 	}
 
 	display_thread.join();
-
-	// int RETRY_TIME = atoi(argv[1]);
-
-	// pthread_create (&tid, NULL, &mainLoop, NULL);
-	// char c;
-	// do{
-	// 	c = getchar();		
-	// } while(c != 'q');
-
-	// working = false;
-
-	// pthread_join(tid, NULL);
-	
 }
-
-
-/*
-It's not multi-connections. The buffer queue is commun
-*/

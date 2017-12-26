@@ -1,4 +1,4 @@
-/* Secure Virtual Connector (SVC) API header */
+/* Wrappers of SVC (Secure Virtual Connector), TCP and UDP */
 
 #ifndef __CONNECTOR__
 #define __CONNECTOR__

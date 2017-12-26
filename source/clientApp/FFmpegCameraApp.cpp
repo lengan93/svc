@@ -1,5 +1,5 @@
 /*
-	camclient2.exe [server address]
+	camclient.exe <server_address>
 */
 
 #include <iostream>
