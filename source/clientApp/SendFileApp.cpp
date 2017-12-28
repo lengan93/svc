@@ -30,10 +30,10 @@ float timeDistance(const struct timespec* greater, const struct timespec* smalle
 
 int main(int argc, char** argv){
 
-	int RETRY_TIME = atoi(argv[2]);
 	// int counter = 0;
 
-	if (argc>1){
+	if (argc>2){
+		int RETRY_TIME = atoi(argv[2]);
 		string appID = string("SEND_FILE_APP");
 		string hostAddr = "192.168.43.149";
 		if(argc > 3) {
