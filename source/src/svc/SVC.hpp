@@ -181,7 +181,7 @@
 				SVCPacket * packet;
 
 				SHA256 sha256;
-				AES256* aes256;
+				AES256* aes256 = NULL;
 
 				int requested_security_strength;
 				ECCurve* curve = new ECCurve();
@@ -230,7 +230,7 @@
 					//-- use SHA256(x) as an AES256 key
 					hashValue = sha256.hash(challengeSecretSent.c_str());
 					stringToHex(hashValue, aeskey); //AES key is guaranteed to be 256 bits length
-					if (aes256!=NULL) delete aes256;
+					if (aes256 != NULL) delete aes256;
 					aes256 = new AES256(aeskey);
 					
 					//-- generate STS-gx

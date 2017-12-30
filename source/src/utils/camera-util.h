@@ -106,7 +106,7 @@ void initFFmpeg(int withDevice = 0) {
 	}
 }
 
-bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx, int* streamIndex) {
+bool openCamera(std::string device, AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx, int* streamIndex) {
 	//for linux only
 	AVInputFormat *inputFormat = av_find_input_format("video4linux2");
 
@@ -114,7 +114,8 @@ bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx,
 
 	int code;
 	char errbuf[100];
-	code = avformat_open_input(cameraFmtCtx, "/dev/video0", inputFormat, NULL);
+	code = avformat_open_input(cameraFmtCtx, device.c_str(), inputFormat, NULL);
+	// code = avformat_open_input(cameraFmtCtx, "/dev/video0", inputFormat, NULL);
 	if(code != 0) {
 		av_strerror(code, errbuf, 100);
 		printf("Couldn't open camera, error %d: %s\n", code, errbuf);
@@ -130,7 +131,8 @@ bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx,
 	//find a video stream index
 	int videoStream = -1;
 	for(int i=0; i<(*cameraFmtCtx)->nb_streams; i++)
-		if((*cameraFmtCtx)->streams[i]->codec->codec_type==AVMEDIA_TYPE_VIDEO) {
+		// if((*cameraFmtCtx)->streams[i]->codec->codec_type==AVMEDIA_TYPE_VIDEO) {
+		if((*cameraFmtCtx)->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_VIDEO) {
 			videoStream=i;
 			break;
 		}
@@ -141,11 +143,12 @@ bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx,
 	*streamIndex = videoStream;
 
 	/*Get the camera decoder*/
-	AVCodecContext* pCodecCtxOrig = (*cameraFmtCtx)->streams[videoStream]->codec;
+	// AVCodecContext* pCodecCtxOrig = (*cameraFmtCtx)->streams[videoStream]->codec;
+	AVCodecParameters* pCodecParameters = (*cameraFmtCtx)->streams[videoStream]->codecpar;
 	AVCodec *pCodec = NULL;
 
 	// Find the decoder for the video stream
-	pCodec = avcodec_find_decoder(pCodecCtxOrig->codec_id);
+	pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
 	if(pCodec==NULL) {
 		fprintf(stderr, "Unsupported codec!\n");
 		return false; // Codec not found
@@ -153,17 +156,17 @@ bool openCamera(AVFormatContext **cameraFmtCtx, AVCodecContext **cameraCodecCtx,
 	
 	// Copy context
 	*cameraCodecCtx = avcodec_alloc_context3(pCodec);
-	// printf("5\n");
-	if(avcodec_copy_context(*cameraCodecCtx, pCodecCtxOrig) != 0) {
-		fprintf(stderr, "Couldn't copy codec context");
-		return false; // Error copying codec context
-	}
-	avcodec_close(pCodecCtxOrig);
+	// if(avcodec_copy_context(*cameraCodecCtx, pCodecCtxOrig) != 0) {
+	// 	fprintf(stderr, "Couldn't copy codec context");
+	// 	return false; // Error copying codec context
+	// }
+	// avcodec_close(pCodecCtxOrig);
+	avcodec_parameters_to_context(*cameraCodecCtx, pCodecParameters);
 
 	// Open codec
 	if(avcodec_open2(*cameraCodecCtx, pCodec, NULL) < 0) {
 	  // Could not open codec
-		fprintf(stderr, "Couldn't copy codec context");
+		fprintf(stderr, "Couldn't open codec context");
 	  	return false;
 	}
 	return true;

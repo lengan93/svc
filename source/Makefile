@@ -16,13 +16,13 @@ UTIL = $(SRCDIR)/svc/svc-utils.cpp
 
 all: fileclient fileserver camclient camserver
 
-local: daemon client camclient
-full: daemon client server camclient camserver
-camera: daemon camclient camserver
+local: client camclient
+full: client server camclient camserver
+camera: camclient camserver
 multinet: multinetclient multinetserver
 
-daemon:
-	$(CCOMPL) -static -o $(BINDIR)/daemon.exe $(SRCDIR)/svc/svc-daemon.cpp $(SRCDIR)/htp/HTP.cpp $(UTIL) $(CRYPTO) $(CFLAGS) $(CINCLU) $(CDEBUG)
+# daemon:
+# 	$(CCOMPL) -static -o $(BINDIR)/daemon.exe $(SRCDIR)/svc/svc-daemon.cpp $(SRCDIR)/htp/HTP.cpp $(UTIL) $(CRYPTO) $(CFLAGS) $(CINCLU) $(CDEBUG)
 
 library:	
 	$(CCOMPL) -c $(UTIL) $(CRYPTO) $(CFLAGS) $(CINCLU) $(CDEBUG)

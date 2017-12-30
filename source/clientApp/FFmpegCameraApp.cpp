@@ -84,7 +84,7 @@ void sendStream(Connector* endpoint)
 	AVCodecContext *pCodecCtx = NULL;
 	int videoStream;
 
-	if(!openCamera(&inFormatCtx, &pCodecCtx, &videoStream)){
+	if(!openCamera("/dev/video0", &inFormatCtx, &pCodecCtx, &videoStream)){
 		return;
 	}
 	// if(inFormatCtx == NULL || pCodecCtx==NULL) {
@@ -110,7 +110,7 @@ void sendStream(Connector* endpoint)
 	    pCodecCtx->pix_fmt,
 	    pCodecCtx->width,
 	    pCodecCtx->height,
-	    PIX_FMT_YUV420P,
+	    AV_PIX_FMT_YUV420P,
 	    SWS_BILINEAR,
 	    NULL,
 	    NULL,
@@ -146,21 +146,24 @@ void sendStream(Connector* endpoint)
     sdlRect.w = pCodecCtx->width;  
     sdlRect.h = pCodecCtx->height;  
 
-	AVPacket packet;
-	AVPacket outPacket;
+	AVPacket* packet = new AVPacket();
+	AVPacket* outPacket = new AVPacket();
 	int gotOutput;
 	int frameFinished;
 	
 	int frameSeq = 1;
 	while(working)
     {
-        av_read_frame(inFormatCtx, &packet);
+        av_read_frame(inFormatCtx, packet);
         
-        if(packet.stream_index==videoStream) {
+        if(packet->stream_index==videoStream) {
 	    	
-	    	avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
+	    	// avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
 	    	
-	    	if(frameFinished) {	    
+	    	// if(frameFinished) {	   
+        	if( avcodec_send_packet(pCodecCtx, packet) == 0
+	    		&& avcodec_receive_frame(pCodecCtx, pFrame) == 0)
+        	{
 				sws_scale(sws_ctx_YUV420P, (uint8_t const * const *)pFrame->data,
 				  pFrame->linesize, 0, pCodecCtx->height,
 				  pFrameYUV420->data, pFrameYUV420->linesize);
@@ -168,29 +171,40 @@ void sendStream(Connector* endpoint)
 				// g->displayFFmpegYUVFrame(pFrameYUV420, &sdlRect);
 
 				//encode frame to video
-				av_init_packet(&outPacket);
-	          	outPacket.data = NULL;
-	          	outPacket.size = 0;
+				av_init_packet(outPacket);
+	          	outPacket->data = NULL;
+	          	outPacket->size = 0;
           		
           		pFrameYUV420->pts = (1.0 / 30) * 90 * frameSeq++;
 
-          		if (avcodec_encode_video2(encoderCtx, &outPacket, pFrameYUV420, &gotOutput) < 0) {
-			        fprintf(stderr, "Failed to encode frame\n");
-			        continue;
-			    }
+       //    		if (avcodec_encode_video2(encoderCtx, outPacket, pFrameYUV420, &gotOutput) < 0) {
+			    //     fprintf(stderr, "Failed to encode frame\n");
+			    //     continue;
+			    // }
 				
 
-			    if(gotOutput) {
-			    	//send outPacket
+			    // if(gotOutput) {
+			    // 	//send outPacket
 
-			    	sendPacket(endpoint, outPacket.data, outPacket.size, frameSeq);
+			    // 	sendPacket(endpoint, outPacket->data, outPacket->size, frameSeq);
+			    // }
+
+			    if( avcodec_send_frame(encoderCtx, pFrameYUV420) == 0
+		    		&& avcodec_receive_packet(encoderCtx, outPacket) == 0)
+	        	{
+
+			    	sendPacket(endpoint, outPacket->data, outPacket->size, frameSeq);
+			    }
+			    else {
+			    	fprintf(stderr, "Failed to encode frame\n");
+			        continue;
 			    }
 
-			    av_free_packet(&outPacket);
+			    av_packet_unref(outPacket);
 			}
         }
 
-        av_free_packet(&packet);
+        av_packet_unref(packet);
 		SDL_Delay(50);
 		// SDL_PollEvent(&event);
   //       if(event.type == SDL_QUIT) {
@@ -211,7 +225,7 @@ int main(int argc, char** argv){
 		strcpy(hostAddr, argv[1]);
 	}
 	else {
-		strcpy(hostAddr, "192.168.43.43");
+		strcpy(hostAddr, "127.0.0.1");
 	}
 
 	Connector* endpoint;

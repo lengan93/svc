@@ -49,10 +49,11 @@ void display_video(MutexedQueue<AVPacket*> *frameBuffer, int width, int height) 
 	    	AVPacket* framePacket = frameBuffer->dequeueWait(10000);
 	    	if(framePacket != NULL) {
 	    		// cout << endl << framePacket->size << "-" << framePacket->data;
-	    		avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, framePacket);
-	    		// cout << "2";
-	    		av_free(framePacket);
-				if(frameFinished) {
+	    		// avcodec_decode_video2(decoderCtx, decodedFrame, &frameFinished, framePacket);
+				// if(frameFinished) {
+	    		if( avcodec_send_packet(decoderCtx, framePacket) == 0
+		    		&& avcodec_receive_frame(decoderCtx, decodedFrame) == 0)
+	        	{
 					g->displayFFmpegYUVFrame(decodedFrame, &sdlRect);
 					SDL_Delay(50);
 					SDL_PollEvent(&event);
@@ -61,6 +62,7 @@ void display_video(MutexedQueue<AVPacket*> *frameBuffer, int width, int height) 
 						break;
 					}
 				}
+	    		av_free(framePacket);
 	    	}
 	    }
 		
