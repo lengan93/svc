@@ -113,7 +113,7 @@ int main(int argc, char** argv){
 						myFile->close();
 
 					if (fileSize>0){
-						printf("\nFile received %d/%d bytes, lost rate: %0.2f%\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
+						printf("\nFile received %d/%d bytes, lost rate: %0.2f\n", readSize, fileSize, (1.0 - (float)(readSize)/fileSize)*100); fflush(stdout);
 						// printf("\nblocs = %d", blocs);
 					}
 					else{

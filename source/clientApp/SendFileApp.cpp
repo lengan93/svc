@@ -32,9 +32,13 @@ int main(int argc, char** argv){
 	if (argc>1){
 		int RETRY_TIME = 1;
 
-		char* hostAddr = "192.168.43.149";
+		char* hostAddr;
 		if(argc > 2) {
 			hostAddr = argv[2];
+		}
+		else {
+			hostAddr = new char[15];
+			strcpy(hostAddr, "127.0.0.1");
 		}
 
 		struct timespec startingTime;

@@ -128,10 +128,10 @@ void sendStream(Connector* endpoint)
 	buff[0] = 0x00;
 	memcpy(buff+1, &(pCodecCtx->width), 4);
 	memcpy(buff+1+4, &(pCodecCtx->height), 4);
-	for (int i = 0; i < 9; ++i)
-	{
-		printf("%d ", buff[i]);
-	}
+	// for (int i = 0; i < 9; ++i)
+	// {
+	// 	printf("%d ", buff[i]);
+	// }
 	for (int i = 0; i < RETRY_TIME; ++i)
 	{
 		endpoint->sendData(buff, 9);
@@ -196,7 +196,8 @@ void sendStream(Connector* endpoint)
 			    	sendPacket(endpoint, outPacket->data, outPacket->size, frameSeq);
 			    }
 			    else {
-			    	fprintf(stderr, "Failed to encode frame\n");
+			    	if(frameSeq >= encoderCtx->gop_size + 10)
+			    		fprintf(stderr, "Failed to encode frame\n");
 			        continue;
 			    }
 
